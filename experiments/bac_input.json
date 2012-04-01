@@ -1,0 +1,47 @@
+# This file is an example input for the 'bac' command
+
+{ 'dependencies' :
+  # Build products that BAC understands and check the existence of;
+  # + they contribute to the hash; inserted in environment when
+  # running build script ("$numpy" is set to fully qualified path)
+  { 'numpy' : 'numpy-345wr23wrfw3r4w',
+    'blas' : 'ATLAS-32rasdfasdfasdf',
+    'gcc' : 'gcc-324qwed32e2q3d' },
+
+  # Contents of these files is included in hash,
+  # and copied to build directory.
+  { 'files' : ['/home/dagss/qsnake/foo/spkgs/mypackage.install'] },
+  
+  # Sources are unpacked into build directory; hash by given hash
+  { 'sources' :
+     { 'url' : 'http://foo.com/tarball.tar.gz',
+       'type' : 'tarball',
+       'hash' : '34r5wef345rw3fw34rwfe' }},
+
+  { 'build_cmd' : 
+
+     '''
+     # here, $numpy is defined
+     # --prefix=$out, $out is bac/build/mypackage-3453q245234
+
+     
+     # $hash is mypackage-3453q245234
+
+
+     # pwd is bac/tmp/numpy-3453q245234
+     # tarball has been unzipped to pwd
+     # mypackage.install has been copied to pwd
+
+     source $gcc/build_env
+
+#export CC=gcc
+
+     export USE_FROBNICATOR=True
+     export CFLAGS=-O3
+     bash mypackage.install
+
+     echo '....' > $out/build_env
+     '''},
+
+ 
+}
