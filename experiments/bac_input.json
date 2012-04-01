@@ -1,6 +1,9 @@
 # This file is an example input for the 'bac' command
 
 { 'dependencies' :
+
+  'name' : 'mypackage',
+
   # Build products that BAC understands and check the existence of;
   # + they contribute to the hash; inserted in environment when
   # running build script ("$numpy" is set to fully qualified path)
