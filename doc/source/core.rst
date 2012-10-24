@@ -211,7 +211,7 @@ Creating a profile is done by::
         
     hdist makeprofile /home/dagss/profiles/myprofile numpy-2.6-Ymm0C_HRoH0HxNM9snC3lvcIkMo ...
 
-The command takes a list of profiles, and reads ``install.json`` in
+The command takes a list of artifacts, and reads ``install.json`` in
 each one and use the information to generate the profile.  While the
 ``install.json`` file is generated during the build process, the
 Builder component has no direct knowledge of it, and we document it
