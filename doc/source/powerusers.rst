@@ -69,6 +69,10 @@ Sage has its own Hashdist store in ``~/path/to/sage/store``.
     but if they use the global Hashdist they will share the build
     artifacts they have in common.
 
+    Another advantage is simply sharing the source store among
+    distributions which build many of the same source tarballs
+    and git repos.
+
 Details of managing parallel Hashdist installations
 '''''''''''''''''''''''''''''''''''''''''''''''''''
 
