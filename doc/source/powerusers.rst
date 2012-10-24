@@ -12,7 +12,8 @@ Terminology
     under the hood, e.g., python-hpcmp
 
 **Artifact**:
-    The uniquely hashed result of a build process
+    The result of a build process, identified by a hash of the
+    inputs to the build
 
 **Profile**:
     A "prefix" directory structure ready for use through
@@ -20,9 +21,9 @@ Terminology
     with all/some of the software one wants to use.
 
 **Package**:
-    A program/library, e.g., NumPy, Python etc.; 
+    Used in the loose sense; a program/library, e.g., NumPy, Python etc.; 
     what is **not** meant is a specific package format like ``.spkg``, ``.egg``
-    and so on (which is left undefined in this document)
+    and so on (which is left undefined in the bottom two Hashdist layers)
 
 Design principles
 -----------------
@@ -108,13 +109,13 @@ read ``~/.hashdistconfig`` and then launch a newer version of
 likes.)
 
 The best way of distributing Hashdist is in fact to get it through the
-operating system package manager. In that case, ``~/.hashdistconfig``
+operating system package manager. In that case, the `hdist` key in ``~/.hashdistconfig``
 will point to ``/usr/bin/hdist``. Alternatively, a
 bootstrapping solution is provided and recommended which make sure that each
 distribution using a non-rebranded Hashdist use the same one.
 
 Layers
-======
+------
 
 Hashdist consists of two (eventually perhaps three) layers. The idea
 is to provide something useful for as many as possible. If a
@@ -123,9 +124,9 @@ components within it) it can keep on mostly as before, but get a
 performance boost from the caching aspect.  If the distribution wants
 to buy into the greater Hashdist vision, it can use the *profile
 specification layer*.  Finally, for end-users, a final user-interface
-layer is needed to make things friendly.  In this latter area Hashdist
-will probably remain silent for some times, but some standards and
-best practices may emerge. For now, a user interface ideas section is
+layer is needed to make things friendly.  Here Hashdist
+will probably remain silent for some time, but some standards,
+best practices and utilities may emerge. For now, a user interface ideas section is
 included below.
 
 

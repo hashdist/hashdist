@@ -1,8 +1,8 @@
 Hashdist core components
 ========================
 
-Component: Source store
------------------------
+Source store
+------------
 
 The idea of the source store is to help download source code from the net,
 or "upload" files from the local disk. Items in the store are identified
@@ -70,8 +70,8 @@ days. In general we have a system of arbitrary tags which one can then
 make use of when configuring the GC.
 
 
-Component: Builder
-------------------
+Artifact builder
+----------------
 Assume in ``~/.hashdistrc``::
 
     [builder]
@@ -187,8 +187,8 @@ the use of these options; that decision can only be made by the larger
 system considering a specific userbase.
 
 
-Component: Build environment and helpers
-----------------------------------------
+Build environment and helpers
+-----------------------------
 
 A set of conventions and utilities are present to help build scripts.
 
@@ -200,8 +200,8 @@ Build prefix:
 
 
 
-Component: Profile tools
-------------------------
+Profile tools
+-------------
 
 A (software) "profile" is a directory structure ready for use through
 ``$PATH``, containing subdirectories ``bin``, ``lib``, and so on which
