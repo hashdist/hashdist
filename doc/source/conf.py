@@ -9,7 +9,7 @@ sys.path.append(root_path)
 sys.path.append(os.path.join(root_path, 'doc', 'ext', 'numpydoc-0.4'))
 sys.path.append(os.path.join(root_path, 'doc', 'ext'))
 # We bundle the cloud_sptheme
-sys.path.append(os.path.join(root_path, 'doc', 'cloud_sptheme-1.4'))
+#sys.path.append(os.path.join(root_path, 'doc', 'cloud_sptheme-1.4'))
 
 
 
@@ -92,18 +92,18 @@ pygments_style = 'sphinx'
 
 
 # import Cloud
-import cloud_sptheme as csp
+#import cloud_sptheme as csp
 
 # ... some contents omitted ...
 
 # set the html theme
-html_theme = "cloud"
+#html_theme = "cloud"
 
 # set the theme path to point to cloud's theme data
-html_theme_path = [csp.get_theme_dir()]
+#html_theme_path = [csp.get_theme_dir()]
 
 # [optional] set some of the options listed above...
-html_theme_options = { "roottarget": "index" }
+#html_theme_options = { "roottarget": "index" }
 
 # The name for this set of Sphinx documents.  If None, it defaults to
 # "<project> v<release> documentation".
