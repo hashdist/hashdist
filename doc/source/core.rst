@@ -269,7 +269,7 @@ The recommended use of ``install.json`` is::
         "parameters" : {
             "rules" : [
                 ["symlink", "**"], # ant-style globs
-                ["copy", "/usr/bin/i-will-look-at-my-realpath-and-act-on-it"],
+                ["copy", "/bin/i-will-look-at-my-realpath-and-act-on-it"],
                 # "/build.json", "/install.json" excluded by default
             ]
         }
