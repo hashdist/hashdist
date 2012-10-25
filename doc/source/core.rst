@@ -17,7 +17,7 @@ different userbases.
 
 Then one can fetch some sources; the last line output (only one to ``stdout``)
 is the resulting key::
-
+    
     $ hdist fetch http://python.org/ftp/python/2.7.3/Python-2.7.3.tar.bz2
     Downloading... progress indicator ...
     Done
@@ -109,12 +109,12 @@ The build specification may look like this for a build::
              "blas" : "ATLAS-3.10.0-gijMQibuq39SCBQfy5XoBeMSQKw",
              "gcc" : "gcc-4.6.3-A8x1ZV5ryXvVGLUwoeP2C01LtsY",
              "python" : "python-2.7-io-lizHjC4h8z5e2Q00Ag9xUvus",
-             "bash" : "python-4.2.24.1-Z8GcCVzYOOH97n-ZC6qhfQhciCI",
+             "bash" : "python-4.2.24.1-Z8GcCVzYOOH97n-ZC6qhfQhciCI"
          },
          "sources" : {
              "numpy" : "git:c5ccca92c5f136833ad85614feb2aa4f5bd8b7c3",
              "build.sh" : "file:gijMQibuq39SCBQfy5XoBeMSQKw",
-         }
+         },
          "command" : ["$bash/bin/bash", "build.sh"],
          "env" : {
              "NUMPYLAPACKTYPE" : "ATLAS"
@@ -125,8 +125,7 @@ The build specification may look like this for a build::
          "parameters" : [
              "this is free-form json", "build script can parse this information",
              "and use it as it wants"
-         ]
-         ,
+         ],
          "parameters_nohash" : {
              "again-we-have" : ["custom", "json"]
          }
