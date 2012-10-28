@@ -191,12 +191,47 @@ Build environment and helpers
 
 A set of conventions and utilities are present to help build scripts.
 
-Build prefix:
-    If one calls ``hdist makebuildprofile build.json``, then ``build.json``
-    is parsed and a prefix-environment created containing all listed dependencies,
-    whose path is then printed to standard output.
+Dependency injection
+''''''''''''''''''''
 
+Builds should never reach out and detect settings or software (except
+for very special bootstrapping packages), they should always get the
+artifacts of all dependencies injected through ``build.json``.
 
+This is largely something we cannot enforce and where one relies on sane
+use of the system.
+
+(Nix builds its own toolchain in order to strictly enforce this, we
+consider that a too high cost to pay.)
+
+Temporary build profiles
+''''''''''''''''''''''''
+
+If one calls ``hdist makebuildprofile build.json``, then
+``build.json`` is parsed and a profile environment created containing
+all build dependencies, whose path is then printed to standard
+output. Thus one can hand a single set of paths to ones scripts
+rather than one path per dependency.
+
+This isn't necesarrily a recommended mode of working, but "practicality
+beats purity". If it's equally easy to pass in all dependencies explicitly
+to the configuration phase, then please do that.
+
+Sandboxing
+''''''''''
+
+By setting ``LD_PRELOAD`` it is possible to override ``libc.so`` and
+filter all filesystem calls in order to create a sandbox and make sure
+that the build does not read from ``/usr`` (or anywhere outside the
+Hashdist store, except through symlinks), which would indicate that
+the build reaches out to pull stuff it shouldn't. The Grand Unified
+Builder (GUB) takes this approach.
+
+We may provide a ``hdist sandbox`` command to do this.  One may either
+want to turn that one for debugging, or all the time. One may have to
+create wrappers scripts around ``gcc`` etc. to set up sandboxing since
+some build tools like waf and scons like to control all the
+environment variables during the build.
 
 
 Profile tools
