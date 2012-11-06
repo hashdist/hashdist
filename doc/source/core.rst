@@ -10,12 +10,13 @@ with a cryptographic hash.
 
 Items in the source store are only needed for a few hours while the
 build takes place, and that may be the default configuration for
-"desktop users".  However, an advantage of keeping things around
-forever is to always be able to redo an old build without relying on
-third parties.  This is an aspect that will be very different for
-different userbases.
+desktop users.  However, an advantage of keeping things around forever
+is to always be able to redo an old build without relying on third
+parties. Also, if many users share a source store on the local network
+one can reduce the average time spent waiting for downloads. This is
+an aspect that will be very different for different userbases.
 
-Then one can fetch some sources; the last line output (only one to ``stdout``)
+Here's how to fetch some sources; the last line output (only one to ``stdout``)
 is the resulting key::
     
     $ hdist fetch http://python.org/ftp/python/2.7.3/Python-2.7.3.tar.bz2
