@@ -41,8 +41,8 @@ Hashdist is not a software distribution in itself, but rather a
 "meta-distribution" or distribution framework. It
 provides enough features that power-users may use it directly, however
 we expect that in typical use it will be **rebranded** and expanded on
-to provide a more user-friendly solution. In time, hopefully PyHPC,
-QSnake, Sage, python-hpcmp may all live side by side using Hashdist
+to provide a more user-friendly solution. If all goes well, the current
+scientific Python distribution may all live side by side using Hashdist
 underneath. The ways in which you download, select and configure
 packages in each of these distribution systems will necesarrily be
 different, and that is the intention: To allow flexible
