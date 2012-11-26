@@ -1,0 +1,3 @@
+- Python support level:
+ - Uses functools, 2.5+
+ - Uses argparse, 2.7+ but available for older Python's through PyPI
