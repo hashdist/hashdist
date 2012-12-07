@@ -1,3 +1,21 @@
 - Python support level:
  - Uses functools, 2.5+
  - Uses argparse, 2.7+ but available for older Python's through PyPI
+
+
+- Dependencies:
+  
+  We ship/bundle some trivial dependencies; they are
+  managed through 'git subtree' and located in hashdist/_private.
+  
+  - sh
+
+
+- Manually tested:
+
+ - If 'git' asks for SSH certificate password to connect...
+
+- Issues:
+
+ - source cache git repo creation not race-safe
+

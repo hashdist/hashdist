@@ -1,4 +1,4 @@
 #empty
 
-from . import sourcestore_cmd
+from . import source_cache_cmd
 

@@ -8,6 +8,9 @@ import functools
 import argparse
 import sys
 import textwrap
+import os
+
+from ..config import InifileConfiguration
 
 _subcommands = {}
 
@@ -50,10 +53,11 @@ class Help(object):
 register_subcommand(Help)
 
 class HashdistCommandContext(object):
-    def __init__(self, argparser, subcommand_parsers, out_stream):
+    def __init__(self, argparser, subcommand_parsers, out_stream, config):
         self.argparser = argparser
         self.subcommand_parsers = subcommand_parsers
         self.out_stream = out_stream
+        self.config = config
 
     def error(self, msg):
         self.argparser.error(msg)
@@ -75,8 +79,15 @@ def main(unparsed_argv):
     """The main ``hdist`` command-line entry point
     """
 
-    parser = argparse.ArgumentParser(description='Entry-point for various Hashdist command-line tools',
+    description = textwrap.dedent('''
+    Entry-point for various Hashdist command-line tools
+    ''')
+
+    parser = argparse.ArgumentParser(description=description,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--config-file',
+                        help='Location of hashdist configuration file (default: ~/.hashdistconfig)',
+                        default=os.path.expanduser('~/.hashdistconfig'))
     subparser_group = parser.add_subparsers(title='subcommands')
 
     subcmd_parsers = {}
@@ -97,6 +108,7 @@ def main(unparsed_argv):
         # Print help by default rather than an error about too few arguments
         parser.print_help()
     else:
-        ctx = HashdistCommandContext(parser, subcmd_parsers, sys.stdout)
         args = parser.parse_args(unparsed_argv[1:])
+        config = InifileConfiguration.create(args.config_file)
+        ctx = HashdistCommandContext(parser, subcmd_parsers, sys.stdout, config)
         args.subcommand_handler(ctx, args)
