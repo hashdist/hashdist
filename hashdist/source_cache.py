@@ -54,10 +54,15 @@ class SourceCache(object):
     def unpack(self, key, target_path):
         if os.path.exists(target_path):
             raise RuntimeError("Dir/file '%s' already exists" % target_path)
-        if key.startswith('git:'):
-            return GitSourceCache(self.cache_path).unpack(key, target_path)
+        os.makedirs(target_path)
+        type, digest = key.split(':')
+        if type == 'git':
+            handler = GitSourceCache(self.cache_path)
+        elif type in ArchiveSourceCache.archive_types:
+            handler = ArchiveSourceCache(self.cache_path)
         else:
             raise KeyNotFoundError('Prefix of key not recognized: %s' % key)
+        handler.unpack(type, digest, target_path)
 
 class GitSourceCache(object):
     """
@@ -156,13 +161,9 @@ class GitSourceCache(object):
 
         return 'git:%s' % commit
 
-    def unpack(self, key, target_path):
-        if not key.startswith('git:'):
-            raise ValueError('key must start with "git:"')
-        commit = key[4:]
-        os.makedirs(target_path)
-
-        archive_p = sh.git('archive', '--format=tar', commit, _env=self._git_env, _piped=True)
+    def unpack(self, type, digest, target_path):
+        assert type == 'git'
+        archive_p = sh.git('archive', '--format=tar', digest, _env=self._git_env, _piped=True)
         unpack_p = sh.tar(archive_p, 'x', _cwd=target_path)
         unpack_p.wait()
 
@@ -184,12 +185,12 @@ class ArchiveSourceCache(object):
     chunk_size = 16 * 1024
 
     archive_types = {
-        'tar.gz' : ('application/x-tar', 'gzip'),
-        'tar.bz2' : ('application/x-tar', 'bzip2'),
-        'zip' : ('application/zip', None)
+        'tar.gz' :  (('application/x-tar', 'gzip'), ['tar', 'xzf']),
+        'tar.bz2' : (('application/x-tar', 'bzip2'), ['tar', 'xjf']),
+        'zip' : (('application/zip', None), ['unzip'])
         }
 
-    mime_to_ext = dict((value, key) for key, value in archive_types.iteritems())
+    mime_to_ext = dict((value[0], key) for key, value in archive_types.iteritems())
 
     def __init__(self, cache_path):
         self.packs_path = pjoin(cache_path, 'packs')
@@ -249,7 +250,13 @@ class ArchiveSourceCache(object):
         # Simply rename to the target; in the event of a race it is
         # ok to overwrite any existing files since content is the same
         target_file = pjoin(self.packs_path, '%s.%s' % (digest, type))
-        print temp_file, target_file
         os.rename(temp_file, target_file)
         return '%s:%s' % (type, digest)
+
+    def unpack(self, type, digest, target_path):
+        archive_path = pjoin(self.packs_path, '%s.%s' % (digest, type))
+        if not os.path.exists(archive_path):
+            raise KeyNotFoundError("Key '%s:%s' not found in source cache" % (type, digest))
+        cmd = self.archive_types[type][1] + [archive_path]
+        subprocess.check_call(cmd, cwd=target_path)
 
