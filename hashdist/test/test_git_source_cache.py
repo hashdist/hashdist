@@ -4,8 +4,10 @@ import shutil
 import subprocess
 import contextlib
 
-from .utils import with_temp_dir, working_directory
+from .utils import working_directory, temp_dir
 from ..source_cache import SourceCache
+
+pjoin = os.path.join
 
 VERBOSE = True
 
@@ -58,8 +60,12 @@ def teardown():
 
 def test_basic():
     with temp_source_cache() as sc:
-        result = sc.fetch_git(mock_repo, 'master')
-        assert result == 'git:%s' % mock_commit
+        key = sc.fetch_git(mock_repo, 'master')
+        assert key == 'git:%s' % mock_commit
+        with temp_dir() as d:
+            sc.unpack(key, pjoin(d, 'foo'))
+            with file(pjoin(d, 'foo', 'README')) as f:
+                assert f.read() == 'First revision'
 
 def test_able_to_fetch_twice():
     # With 'master' rev

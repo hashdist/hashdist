@@ -1,8 +1,9 @@
-
 import os
 import re
 import sys
 import subprocess
+
+from .deps import sh
 
 pjoin = os.path.join
 
@@ -12,7 +13,7 @@ TAG_RE = re.compile(TAG_RE_S)
 class SourceNotFoundError(Exception):
     pass
 
-class WrongHashError(Exception):
+class KeyNotFoundError(Exception):
     pass
 
 class SourceCache(object):
@@ -43,10 +44,15 @@ class SourceCache(object):
 
 
     def fetch_git(self, repository, rev):
-        """Fetches an object to the source cache.
-        """
         return GitSourceCache(self.cache_path).fetch_git(repository, rev)
             
+    def unpack(self, key, target_path):
+        if os.path.exists(target_path):
+            raise RuntimeError("Dir/file '%s' already exists" % target_path)
+        if key.startswith('git:'):
+            return GitSourceCache(self.cache_path).unpack(key, target_path)
+        else:
+            raise KeyNotFoundError('Prefix of key not recognized: %s' % key)
 
 class GitSourceCache(object):
     """
@@ -144,3 +150,13 @@ class GitSourceCache(object):
                 raise RuntimeError('git branch failed with code %d: %s' % (retcode, err))
 
         return 'git:%s' % commit
+
+    def unpack(self, key, target_path):
+        if not key.startswith('git:'):
+            raise ValueError('key must start with "git:"')
+        commit = key[4:]
+        os.makedirs(target_path)
+
+        archive_p = sh.git('archive', '--format=tar', commit, _env=self._git_env, _piped=True)
+        unpack_p = sh.tar(archive_p, 'x', _cwd=target_path)
+        unpack_p.wait()
