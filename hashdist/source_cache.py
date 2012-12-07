@@ -5,6 +5,7 @@ import subprocess
 import mimetypes
 import tempfile
 import urllib2
+import json
 
 from .deps import sh
 from .hash import create_hasher, encode_digest
@@ -55,14 +56,11 @@ class SourceCache(object):
         if os.path.exists(target_path):
             raise RuntimeError("Dir/file '%s' already exists" % target_path)
         os.makedirs(target_path)
-        type, digest = key.split(':')
-        if type == 'git':
+        if key.startswith('git:'):
             handler = GitSourceCache(self.cache_path)
-        elif type in ArchiveSourceCache.archive_types:
-            handler = ArchiveSourceCache(self.cache_path)
         else:
-            raise KeyNotFoundError('Prefix of key not recognized: %s' % key)
-        handler.unpack(type, digest, target_path)
+            handler = ArchiveSourceCache(self.cache_path)
+        handler.unpack(key, target_path)
 
 class GitSourceCache(object):
     """
@@ -161,9 +159,10 @@ class GitSourceCache(object):
 
         return 'git:%s' % commit
 
-    def unpack(self, type, digest, target_path):
-        assert type == 'git'
-        archive_p = sh.git('archive', '--format=tar', digest, _env=self._git_env, _piped=True)
+    def unpack(self, key, target_path):
+        assert key.startswith('git:')
+        commit = key[4:]
+        archive_p = sh.git('archive', '--format=tar', commit, _env=self._git_env, _piped=True)
         unpack_p = sh.tar(archive_p, 'x', _cwd=target_path)
         unpack_p.wait()
 
@@ -194,9 +193,13 @@ class ArchiveSourceCache(object):
 
     def __init__(self, cache_path):
         self.packs_path = pjoin(cache_path, 'packs')
+        self.meta_path = pjoin(cache_path, 'meta')
         if not os.path.exists(self.packs_path):
             # TODO not race safe
             os.makedirs(self.packs_path)
+        if not os.path.exists(self.meta_path):
+            # TODO not race safe
+            os.makedirs(self.meta_path)
 
     def _download_and_hash(self, url):
         """Downloads file at url to a temporary location and hashes it
@@ -207,11 +210,7 @@ class ArchiveSourceCache(object):
         temp_file, digest
         """
         # Make request
-        try:
-            req = urllib2.urlopen(url)
-        except ValueError:
-            # may be a local file, try to prepend "file:"
-            req = urllib2.urlopen('file:' + url)
+        req = urllib2.urlopen(url)
         
         # Download file to a temporary file within self.packs_path, while hashing
         # it
@@ -244,19 +243,41 @@ class ArchiveSourceCache(object):
             type = self.mime_to_ext[mime]
         return type
 
+    def _write_archive_info(self, digest, type, url):
+        info = {'type' : type, 'retrieved_from' : url}
+        with file(pjoin(self.meta_path, '%s.info' % digest), 'w') as f:
+            json.dump(info, f)
+
+    def _read_archive_info(self, digest):
+        """Returns information about the archive stored under the given digest-key;
+        or None if it is not found.
+        """
+        try:
+            f = file(pjoin(self.meta_path, '%s.info' % digest))
+        except IOError:
+            return None
+        with f:
+            r = json.load(f)
+        return r
+
     def fetch_archive(self, url, type=None):
         type = self._ensure_type(url, type)
         temp_file, digest = self._download_and_hash(url)
         # Simply rename to the target; in the event of a race it is
         # ok to overwrite any existing files since content is the same
-        target_file = pjoin(self.packs_path, '%s.%s' % (digest, type))
+        target_file = pjoin(self.packs_path, digest)
         os.rename(temp_file, target_file)
-        return '%s:%s' % (type, digest)
+        # Similarly we simply emit the info file without any checks,
+        # in the case of a race it shouldn't matter
+        self._write_archive_info(digest, type, url)
+        return digest
 
-    def unpack(self, type, digest, target_path):
-        archive_path = pjoin(self.packs_path, '%s.%s' % (digest, type))
-        if not os.path.exists(archive_path):
-            raise KeyNotFoundError("Key '%s:%s' not found in source cache" % (type, digest))
+    def unpack(self, digest, target_path):
+        info = self._read_archive_info(digest)
+        if info is None:
+            raise KeyNotFoundError("Key '%s' not found in source cache" % digest)
+        type = info['type']
+        archive_path = pjoin(self.packs_path, digest)
         cmd = self.archive_types[type][1] + [archive_path]
         subprocess.check_call(cmd, cwd=target_path)
 

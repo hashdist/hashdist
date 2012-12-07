@@ -41,6 +41,14 @@ register_subcommand(FetchGit)
 
 _archive_types_doc = ', '.join(sorted(ArchiveSourceCache.archive_types.keys()))
 
+def as_url(url):
+    """Prepends "file:" to ``url`` if it is likely to refer to a local file
+    """
+    if ':' in url and url.split(':')[0] in ('http', 'https', 'ftp', 'scp', 'file'):
+        return url
+    else:
+        return 'file:' + url
+
 class Fetch(object):
     __doc__ = """
     Fetch an archive to the source cache
@@ -59,6 +67,9 @@ class Fetch(object):
     @staticmethod
     def run(ctx, args):
         store = SourceCache.create_from_config(ctx.config)
+        # Simple heuristic for whether to prepend file: to url or not;
+        # could probably do a better job
+        args.url = as_url(args.url)
         key = store.fetch_archive(args.url)
         sys.stderr.write('\n')
         sys.stdout.write('%s\n' % key)

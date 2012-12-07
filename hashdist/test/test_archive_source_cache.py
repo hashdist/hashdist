@@ -43,7 +43,7 @@ def teardown():
 
 def test_basic():
     with temp_source_cache() as sc:
-        key = sc.fetch_archive(mock_archive, None)
+        key = sc.fetch_archive('file:' + mock_archive, None)
         with temp_dir() as d:
             sc.unpack(key, pjoin(d, 'foo'))
             with file(pjoin(d, 'foo', 'README')) as f:
