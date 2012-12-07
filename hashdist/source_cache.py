@@ -2,8 +2,12 @@ import os
 import re
 import sys
 import subprocess
+import mimetypes
+import tempfile
+import urllib2
 
 from .deps import sh
+from .hash import create_hasher, encode_digest
 
 pjoin = os.path.join
 
@@ -29,8 +33,6 @@ class SourceCache(object):
     
     """
 
-    possible_types = ['git', 'tar.gz', 'file', 'dir']
-    
     def __init__(self, cache_path):
         if not os.path.isdir(cache_path):
             raise ValueError('"%s" is not an existing directory' % cache_path)
@@ -45,7 +47,10 @@ class SourceCache(object):
 
     def fetch_git(self, repository, rev):
         return GitSourceCache(self.cache_path).fetch_git(repository, rev)
-            
+
+    def fetch_archive(self, url, type=None):
+        return ArchiveSourceCache(self.cache_path).fetch_archive(url)
+
     def unpack(self, key, target_path):
         if os.path.exists(target_path):
             raise RuntimeError("Dir/file '%s' already exists" % target_path)
@@ -160,3 +165,91 @@ class GitSourceCache(object):
         archive_p = sh.git('archive', '--format=tar', commit, _env=self._git_env, _piped=True)
         unpack_p = sh.tar(archive_p, 'x', _cwd=target_path)
         unpack_p.wait()
+
+
+class ArchiveSourceCache(object):
+    """
+    Group together methods for working with the part of the source cache stored
+    as archives.
+
+    The constructor constructs the repository if necesarry.
+
+    Parameters
+    ----------
+
+    cache_path : str
+        The root of the source cache (same as given to SourceCache)
+    """
+
+    chunk_size = 16 * 1024
+
+    archive_types = {
+        'tar.gz' : ('application/x-tar', 'gzip'),
+        'tar.bz2' : ('application/x-tar', 'bzip2'),
+        'zip' : ('application/zip', None)
+        }
+
+    mime_to_ext = dict((value, key) for key, value in archive_types.iteritems())
+
+    def __init__(self, cache_path):
+        self.packs_path = pjoin(cache_path, 'packs')
+        if not os.path.exists(self.packs_path):
+            # TODO not race safe
+            os.makedirs(self.packs_path)
+
+    def _download_and_hash(self, url):
+        """Downloads file at url to a temporary location and hashes it
+
+        Returns
+        -------
+
+        temp_file, digest
+        """
+        # Make request
+        try:
+            req = urllib2.urlopen(url)
+        except ValueError:
+            # may be a local file, try to prepend "file:"
+            req = urllib2.urlopen('file:' + url)
+        
+        # Download file to a temporary file within self.packs_path, while hashing
+        # it
+        hasher = create_hasher()
+        temp_fd, temp_path = tempfile.mkstemp(prefix='downloading-', dir=self.packs_path)
+        try:
+            f = os.fdopen(temp_fd, 'wb')
+            try:
+                while True:
+                    chunk = req.read(self.chunk_size)
+                    if not chunk: break
+                    hasher.update(chunk)
+                    f.write(chunk)
+            finally:
+                f.close()            
+        except:
+            # Remove temporary file if there was a failure
+            os.unlink(temp_path)
+            raise
+        return temp_path, encode_digest(hasher)
+
+    def _ensure_type(self, url, type):
+        if type is not None:
+            if type not in self.archive_types:
+                raise ValueError('Unknown archive type: %s' % type)
+        else:
+            mime = mimetypes.guess_type(url)
+            if mime not in self.mime_to_ext:
+                raise ValueError('Unable to guess archive type of "%s"' % url)
+            type = self.mime_to_ext[mime]
+        return type
+
+    def fetch_archive(self, url, type=None):
+        type = self._ensure_type(url, type)
+        temp_file, digest = self._download_and_hash(url)
+        # Simply rename to the target; in the event of a race it is
+        # ok to overwrite any existing files since content is the same
+        target_file = pjoin(self.packs_path, '%s.%s' % (digest, type))
+        print temp_file, target_file
+        os.rename(temp_file, target_file)
+        return '%s:%s' % (type, digest)
+

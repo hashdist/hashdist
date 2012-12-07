@@ -5,7 +5,7 @@ from .main import register_subcommand
 import argparse
 import sys
 
-from ..source_cache import SourceCache
+from ..source_cache import ArchiveSourceCache, SourceCache
 
 class FetchGit(object):
     """
@@ -38,6 +38,32 @@ class FetchGit(object):
 
 register_subcommand(FetchGit)
 
+
+_archive_types_doc = ', '.join(sorted(ArchiveSourceCache.archive_types.keys()))
+
+class Fetch(object):
+    __doc__ = """
+    Fetch an archive to the source cache
+
+    The ``--type`` switch can be used to set the archive type (default
+    is to guess by the filename extension). The following archive
+    types are supported: %(archive_types)s
+    
+    """ % dict(archive_types=_archive_types_doc)
+
+    @staticmethod
+    def setup(ap):
+        ap.add_argument('--type', type=str, help='What kind of archive')
+        ap.add_argument('url', help='Local or remote path/URL to archive')
+
+    @staticmethod
+    def run(ctx, args):
+        store = SourceCache.create_from_config(ctx.config)
+        key = store.fetch_archive(args.url)
+        sys.stderr.write('\n')
+        sys.stdout.write('%s\n' % key)
+
+register_subcommand(Fetch)
 
 class Unpack(object):
     """
