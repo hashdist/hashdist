@@ -49,8 +49,8 @@ class SourceCache(object):
     def fetch_git(self, repository, rev):
         return GitSourceCache(self.cache_path).fetch_git(repository, rev)
 
-    def fetch_archive(self, url, type=None):
-        return ArchiveSourceCache(self.cache_path).fetch_archive(url)
+    def fetch_archive(self, url, hash=None, type=None):
+        return ArchiveSourceCache(self.cache_path).fetch_archive(url, hash, type)
 
     def unpack(self, key, target_path):
         if os.path.exists(target_path):
@@ -243,34 +243,50 @@ class ArchiveSourceCache(object):
             type = self.mime_to_ext[mime]
         return type
 
-    def _write_archive_info(self, digest, type, url):
+    def _write_archive_info(self, hash, type, url):
         info = {'type' : type, 'retrieved_from' : url}
-        with file(pjoin(self.meta_path, '%s.info' % digest), 'w') as f:
+        with file(pjoin(self.meta_path, '%s.info' % hash), 'w') as f:
             json.dump(info, f)
 
-    def _read_archive_info(self, digest):
+    def _read_archive_info(self, hash):
         """Returns information about the archive stored under the given digest-key;
         or None if it is not found.
         """
         try:
-            f = file(pjoin(self.meta_path, '%s.info' % digest))
+            f = file(pjoin(self.meta_path, '%s.info' % hash))
         except IOError:
             return None
         with f:
             r = json.load(f)
         return r
 
-    def fetch_archive(self, url, type=None):
-        type = self._ensure_type(url, type)
-        temp_file, digest = self._download_and_hash(url)
-        # Simply rename to the target; in the event of a race it is
-        # ok to overwrite any existing files since content is the same
-        target_file = pjoin(self.packs_path, digest)
-        os.rename(temp_file, target_file)
-        # Similarly we simply emit the info file without any checks,
-        # in the case of a race it shouldn't matter
-        self._write_archive_info(digest, type, url)
-        return digest
+    def contains(self, hash):
+        return os.path.exists(pjoin(self.meta_path, '%s.info' % hash))
+
+    def fetch_archive(self, url, expected_hash=None, type=None):
+        if expected_hash is not None and self.contains(expected_hash):
+            # found, so noop
+            return expected_hash
+        else:
+            type = self._ensure_type(url, type)
+            temp_file, hash = self._download_and_hash(url)
+            try:
+                if expected_hash is not None and expected_hash != hash:
+                    raise RuntimeError('File downloaded from "%s" has hash %s but expected %s' %
+                                       (url, hash, expected_hash))
+                # We simply emit the info file without any checks,
+                # in the case of a race it shouldn't matter to overwrite it
+                self._write_archive_info(hash, type, url) 
+                # Simply rename to the target; again a race shouldn't matter
+                # with, in this case, identical content
+                target_file = pjoin(self.packs_path, hash)
+                os.rename(temp_file, target_file)
+            finally:
+                try:
+                    os.unlink(temp_file)
+                except:
+                    pass
+            return hash
 
     def unpack(self, digest, target_path):
         info = self._read_archive_info(digest)
