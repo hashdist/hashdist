@@ -235,6 +235,44 @@ some build tools like waf and scons like to control all the
 environment variables during the build.
 
 
+Scheduler
+---------
+
+To do many build artifacts in the right order (and in parallel in the
+right way), we should include a basic job scheduler for doing downloading
+and building. Say, ``hdist runtasks tasks.json``, with ``tasks.json`` thus::
+
+    {
+        "numpysources" : {
+            "type" : "fetch",
+            "url" : "git://github.com/numpy/numpy.git"
+            "hash" : "git:9c5a9226e7d742e3549d4e53d07d53517096f123"
+        },
+        "numpy" : {
+            "type" : "build",
+            "ncores" : 1,
+            "body" : {
+                "name" : "numpy",
+                "dependencies" : {
+                    "blas" : "$atlas"
+                    ...
+                },
+                "sources" : {
+                    "numpy" : "git:9c5a9226e7d742e3549d4e53d07d53517096f123"
+                }
+            }
+        }
+        "atlas" : {
+            "type" : "build",
+            "exclusive" : true,
+            ...
+        }
+
+Open question: Support the ``"$atlas"`` notation used above, or require
+that the hash for the atlas build section is computed and use that? Probably
+the latter?
+
+
 Profile tools
 -------------
 
