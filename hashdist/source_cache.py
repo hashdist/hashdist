@@ -210,7 +210,10 @@ class ArchiveSourceCache(object):
         temp_file, digest
         """
         # Make request
-        req = urllib2.urlopen(url)
+        sys.stderr.write('Downloading %s...\n' % url)
+        curl = subprocess.Popen(['curl', url], stdout=subprocess.PIPE,
+                                stdin=subprocess.PIPE)
+        curl.stdin.close()
         
         # Download file to a temporary file within self.packs_path, while hashing
         # it
@@ -220,7 +223,7 @@ class ArchiveSourceCache(object):
             f = os.fdopen(temp_fd, 'wb')
             try:
                 while True:
-                    chunk = req.read(self.chunk_size)
+                    chunk = curl.stdout.read(self.chunk_size)
                     if not chunk: break
                     hasher.update(chunk)
                     f.write(chunk)
