@@ -91,4 +91,17 @@ def test_put():
             with file(pjoin(d, 'foofile')) as f:
                 assert f.read() == 'the contents'
     
+
+def test_simple_file_url_re():
+    from ..source_cache import SIMPLE_FILE_URL_RE
+    assert SIMPLE_FILE_URL_RE.match('file:foo')
+    assert SIMPLE_FILE_URL_RE.match('file:foo/bar')
+    assert SIMPLE_FILE_URL_RE.match('file:foo/bar/')
+    assert SIMPLE_FILE_URL_RE.match('file:/foo')
+    assert SIMPLE_FILE_URL_RE.match('file:/foo/bar')
+    assert SIMPLE_FILE_URL_RE.match('file:/foo/bar/')
+    assert not SIMPLE_FILE_URL_RE.match('file://foo')
+    assert not SIMPLE_FILE_URL_RE.match('file:///foo')
+    assert not SIMPLE_FILE_URL_RE.match('file://localhost/foo')
+
     

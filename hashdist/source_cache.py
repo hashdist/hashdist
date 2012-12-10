@@ -46,7 +46,6 @@ class SourceCache(object):
         """
         return SourceCache(config.get_path('sourcecache', 'path'))
 
-
     def fetch_git(self, repository, rev):
         return GitSourceCache(self.cache_path).fetch_git(repository, rev)
 
@@ -184,6 +183,8 @@ class GitSourceCache(object):
         unpack_p.wait()
 
 
+SIMPLE_FILE_URL_RE = re.compile(r'^file:/?[^/]+.*$')
+
 class ArchiveSourceCache(object):
     """
     Group together methods for working with the part of the source cache stored
@@ -226,11 +227,16 @@ class ArchiveSourceCache(object):
 
         temp_file, digest
         """
-        # Make request
-        sys.stderr.write('Downloading %s...\n' % url)
-        curl = subprocess.Popen(['curl', url], stdout=subprocess.PIPE,
-                                stdin=subprocess.PIPE)
-        curl.stdin.close()
+        # It's annoying to see curl for local files, so provide a special-case
+        if SIMPLE_FILE_URL_RE.match(url):
+            stream = file(url[len('file:'):])
+        else:
+            # Make request
+            sys.stderr.write('Downloading %s...\n' % url)
+            curl = subprocess.Popen(['curl', url], stdout=subprocess.PIPE,
+                                    stdin=subprocess.PIPE)
+            curl.stdin.close()
+            stream = curl.stdout
         
         # Download file to a temporary file within self.packs_path, while hashing
         # it
@@ -240,11 +246,12 @@ class ArchiveSourceCache(object):
             f = os.fdopen(temp_fd, 'wb')
             try:
                 while True:
-                    chunk = curl.stdout.read(self.chunk_size)
+                    chunk = stream.read(self.chunk_size)
                     if not chunk: break
                     hasher.update(chunk)
                     f.write(chunk)
             finally:
+                stream.close()
                 f.close()            
         except:
             # Remove temporary file if there was a failure
