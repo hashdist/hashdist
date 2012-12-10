@@ -315,12 +315,12 @@ class ArchiveSourceCache(object):
                     pass
             return hash
 
-    def unpack(self, digest, target_path):
-        info = self._read_archive_info(digest)
+    def unpack(self, key, target_path):
+        info = self._read_archive_info(key)
         if info is None:
-            raise KeyNotFoundError("Key '%s' not found in source cache" % digest)
+            raise KeyNotFoundError("Key '%s' not found in source cache" % key)
         type = info['type']
-        archive_path = pjoin(self.packs_path, digest)
+        archive_path = pjoin(self.packs_path, key)
         cmd = self.archive_types[type][1] + [archive_path]
         subprocess.check_call(cmd, cwd=target_path)
 
