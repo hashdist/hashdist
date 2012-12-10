@@ -37,7 +37,7 @@ class SourceCache(object):
     def __init__(self, cache_path):
         if not os.path.isdir(cache_path):
             raise ValueError('"%s" is not an existing directory' % cache_path)
-        self.cache_path = cache_path
+        self.cache_path = os.path.realpath(cache_path)
 
     @staticmethod
     def create_from_config(config):
