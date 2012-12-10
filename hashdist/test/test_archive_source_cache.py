@@ -31,10 +31,12 @@ def make_mock_archive():
     mock_archive_tmpdir = tempfile.mkdtemp()
     mock_archive = pjoin(mock_archive_tmpdir, 'somearchive.tar.gz')
     tmp_d = tempfile.mkdtemp()
-    with file(pjoin(tmp_d, 'README'), 'w') as f:
-        f.write('file contents')
-    subprocess.check_call(['tar', 'czf', mock_archive, 'README'], cwd=tmp_d)
-    shutil.rmtree(tmp_d)
+    try:
+        with file(pjoin(tmp_d, 'README'), 'w') as f:
+            f.write('file contents')
+        subprocess.check_call(['tar', 'czf', mock_archive, 'README'], cwd=tmp_d)
+    finally:
+        shutil.rmtree(tmp_d)
     # get hash
     with file(mock_archive) as f:
         mock_archive_hash = encode_digest(create_hasher(f.read()))
