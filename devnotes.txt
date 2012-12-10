@@ -18,4 +18,4 @@
 - Issues:
 
  - source cache git repo creation not race-safe
-
+ - should be consistent "_dir" vs. "_path", change to "_dir"

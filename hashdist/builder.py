@@ -35,13 +35,17 @@ class Builder(object):
         adir = pjoin(self.artifact_store_dir, artifact_name)
         return os.path.exists(adir), artifact_name, adir
 
+    def lookup(self, artifact_id):
+        adir = pjoin(self.artifact_store_dir, artifact_id)
+        return adir
+
     def is_present(self, build_spec):
         return self.resolve(build_spec)[0]
 
     def ensure_present(self, build_spec, keep_on_fail=False):
         is_present, artifact_name, artifact_dir = self.resolve(build_spec)
         if is_present:
-            return artifact_name
+            return artifact_name, artifact_dir
         else:
             build = ArtifactBuild(self, build_spec, artifact_name, artifact_dir)
             build.build(keep_on_fail)
@@ -55,12 +59,29 @@ class ArtifactBuild(object):
         self.artifact_name = artifact_name
         self.artifact_dir = artifact_dir
 
+    def get_dependencies_env(self):
+        # Build the environment variables due to dependencies, and complain if
+        # any dependency is not built
+        env = {}
+        for dep_name, dep_artifact in self.build_spec.get('dependencies', {}).iteritems():
+            dep_dir = self.builder.lookup(dep_artifact)
+            if not os.path.exists(dep_dir):
+                raise InvalidBuildSpecError('Dependency {"%s" : "%s"} not already built (how did '
+                                            'you even get a hash in the first place?) ' %
+                                            (dep_name, dep_artifact))
+            env[dep_name] = dep_artifact
+            env['%s_abspath' % dep_name] = dep_dir
+            env['%s_relpath' % dep_name] = pjoin('..', dep_artifact)
+        return env
+
     def build(self, keep_on_fail):
         """
         Note that `keep_on_fail` only takes effect for failures within the build script;
         if the build specification is mis-specified then any temporary directory is always
         removed.
         """
+        env = self.get_dependencies_env()
+        
         build_dir = tempfile.mkdtemp(prefix='%s-building-' % self.artifact_name, suffix='',
                                      dir=self.builder.artifact_store_dir)
         # Always clean up when these fail
@@ -73,7 +94,7 @@ class ArtifactBuild(object):
         
         # Conditionally clean up if this fails
         try:
-            self.run_build_command(build_dir)
+            self.run_build_command(build_dir, env)
         except subprocess.CalledProcessError, e:
             if not keep_on_fail:
                 shutil.rmtree(build_dir)
@@ -98,14 +119,12 @@ class ArtifactBuild(object):
                                             'from build directory')
             self.builder.source_cache.unpack(key, full_target)
 
-    def run_build_command(self, build_dir):
+    def run_build_command(self, build_dir, env):
         # todo: $-interpolation in command
         command_lst = self.build_spec['command']
 
-        env = {
-            'PATH' : os.environ['PATH'], # for now
-            'BUILD_TARGET' : self.artifact_dir,
-            }
+        env['PATH'] = os.environ['PATH'] # for now
+        env['BUILD_TARGET'] = self.artifact_dir
 
         log_filename = pjoin(build_dir, 'build.log')
         self.logger.info('Building artifact %s, follow log with' % self.artifact_name)
