@@ -20,3 +20,19 @@ def working_directory(path):
         yield
     finally:
         os.chdir(old)
+
+#
+# Logger to use during unit-testing
+#
+class NullLogger(object):
+    def _noop(self, *args, **kw):
+        pass
+    warning = error = debug = info = _noop
+
+if bool(int(os.environ.get('VERBOSE', '1'))):
+    import logging
+    logging.basicConfig(format='log: %(message)s')
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
+else:
+    logger = NullLogger()

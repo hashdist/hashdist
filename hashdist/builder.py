@@ -9,20 +9,21 @@ import sys
 from .hash import hash_json, create_hasher, encode_digest
 
 class BuildFailedError(Exception):
-    def __init__(self, msg, path):
+    def __init__(self, msg, build_dir):
         Exception.__init__(self, msg)
-        self.path = path
+        self.build_dir = build_dir
 
 class InvalidBuildSpecError(ValueError):
     pass
 
 class Builder(object):
 
-    def __init__(self, source_cache, artifact_store_dir):
+    def __init__(self, source_cache, artifact_store_dir, logger):
         if not os.path.isdir(artifact_store_dir):
             raise ValueError('"%s" is not an existing directory' % artifact_store_dir)
         self.source_cache = source_cache
         self.artifact_store_dir = os.path.realpath(artifact_store_dir)
+        self.logger = logger
 
     def get_artifact_name(self, build_spec):
         h = create_hasher()
@@ -42,60 +43,62 @@ class Builder(object):
         if is_present:
             return artifact_name
         else:
-            d = tempfile.mkdtemp(prefix='%s-building-' % artifact_name, suffix='',
-                                 dir=self.artifact_store_dir)
-            try:
-                build = ArtifactBuild(self, build_spec, d, artifact_name, artifact_dir)
-                build.build()
-            except:
-                if keep_on_fail:
-                    raise BuildFailedError('Temporary result in %s' % d, d)
-                else:
-                    shutil.rmtree(d)
-                    raise
-            else:
-                os.rename(d, artifact_dir)
+            build = ArtifactBuild(self, build_spec, artifact_name, artifact_dir)
+            build.build(keep_on_fail)
             return artifact_name, artifact_dir
 
 class ArtifactBuild(object):
-    def __init__(self, builder, build_spec, build_dir, artifact_name, artifact_dir):
+    def __init__(self, builder, build_spec, artifact_name, artifact_dir):
         self.builder = builder
+        self.logger = builder.logger
         self.build_spec = build_spec
-        self.build_dir = build_dir
         self.artifact_name = artifact_name
         self.artifact_dir = artifact_dir
 
-    def build(self):
-        log_filename = pjoin(self.build_dir, 'build.log')
-        sys.stderr.write('Building artifact %s, follow log with\n\n'
-                         '    tail -f %s\n\n' %
-                         (self.artifact_name, log_filename))
-        sys.stderr.write('...')
-        sys.stderr.flush()
-        self.log_file = file(log_filename, 'w')
+    def build(self, keep_on_fail):
+        """
+        Note that `keep_on_fail` only takes effect for failures within the build script;
+        if the build specification is mis-specified then any temporary directory is always
+        removed.
+        """
+        build_dir = tempfile.mkdtemp(prefix='%s-building-' % self.artifact_name, suffix='',
+                                     dir=self.builder.artifact_store_dir)
+        # Always clean up when these fail
         try:
-            self.serialize_build_spec()
-            self.unpack_sources()
-            self.run_build_command()
-        finally:
-            self.log_file.close()
-            sys.stderr.write('done!\n\n')
-
-    def serialize_build_spec(self):
-        with file(pjoin(self.build_dir, 'build.json'), 'w') as f:
+            self.serialize_build_spec(build_dir)
+            self.unpack_sources(build_dir)
+        except:
+            shutil.rmtree(build_dir)
+            raise
+        
+        # Conditionally clean up if this fails
+        try:
+            self.run_build_command(build_dir)
+        except subprocess.CalledProcessError, e:
+            if not keep_on_fail:
+                shutil.rmtree(build_dir)
+                raise BuildFailedError('Build command failed with code %d' % e.returncode, None)
+            else:
+                raise BuildFailedError('Build command failed with code %d, result in %s' %
+                                       (e.returncode, build_dir), build_dir)
+        # Success
+        rename_or_delete(build_dir, self.artifact_dir)
+ 
+    def serialize_build_spec(self, build_dir):
+        with file(pjoin(build_dir, 'build.json'), 'w') as f:
             json.dump(self.build_spec, f, separators=(', ', ' : '), indent=4, sort_keys=True)
 
-    def unpack_sources(self):
+    def unpack_sources(self, build_dir):
         for source_item in self.build_spec['sources']:
             key = source_item['key']
-            target = source_item['target']
-            full_target = os.path.abspath(pjoin(self.build_dir, target))
-            if not full_target.startswith(self.build_dir):
+            target = source_item.get('target', '.')
+            full_target = os.path.abspath(pjoin(build_dir, target))
+            if not full_target.startswith(build_dir):
                 raise InvalidBuildSpecError('source target attempted to escape '
                                             'from build directory')
             self.builder.source_cache.unpack(key, full_target)
 
-    def run_build_command(self):
+    def run_build_command(self, build_dir):
         # todo: $-interpolation in command
         command_lst = self.build_spec['command']
 
@@ -104,6 +107,25 @@ class ArtifactBuild(object):
             'BUILD_TARGET' : self.artifact_dir,
             }
 
-        logfileno = self.log_file.fileno()
-        subprocess.check_call(command_lst, cwd=self.build_dir, env=env,
-                              stdin=None, stdout=logfileno, stderr=logfileno)
+        log_filename = pjoin(build_dir, 'build.log')
+        self.logger.info('Building artifact %s, follow log with' % self.artifact_name)
+        self.logger.info('')
+        self.logger.info('    tail -f %s\n\n' % log_filename)
+        with file(log_filename, 'w') as log_file:
+            logfileno = log_file.fileno()
+            subprocess.check_call(command_lst, cwd=build_dir, env=env,
+                                  stdin=None, stdout=logfileno, stderr=logfileno)
+
+def rename_or_delete(from_, to):
+    """Renames a directory, or recursively deletes it if the target already exists.
+
+    This is used in situations where multiple processes may compute the same result directory.
+    """
+    try:
+        os.rename(from_, to)
+    except OSError, e:
+        if os.path.exists(to):
+            shutil.rmtree(from_)
+        else:
+            raise
+
