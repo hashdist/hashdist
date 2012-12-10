@@ -6,6 +6,7 @@ import mimetypes
 import tempfile
 import urllib2
 import json
+import shutil
 
 from .deps import sh
 from .hash import create_hasher, encode_digest
@@ -52,10 +53,26 @@ class SourceCache(object):
     def fetch_archive(self, url, hash=None, type=None):
         return ArchiveSourceCache(self.cache_path).fetch_archive(url, hash, type)
 
+    def put(self, filename, contents):
+        """Utility method to put a single file with the given filename and contents
+        """
+        # Simply create a temporary tar.gz and archive it
+        tgz_d = tempfile.mkdtemp()
+        stage_d = tempfile.mkdtemp()
+        try:
+            archive_filename = pjoin(tgz_d, 'put.tar.gz')
+            with file(pjoin(stage_d, filename), 'w') as f:
+                f.write(contents)
+            subprocess.check_call(['tar', 'czf', archive_filename, filename], cwd=stage_d)
+            key = self.fetch_archive('file:' + archive_filename, type='tar.gz')
+        finally:
+            shutil.rmtree(tgz_d)
+            shutil.rmtree(stage_d)
+        return key
+
     def unpack(self, key, target_path):
-        if os.path.exists(target_path):
-            raise RuntimeError("Dir/file '%s' already exists" % target_path)
-        os.makedirs(target_path)
+        if not os.path.exists(target_path):
+            os.makedirs(target_path)
         if key.startswith('git:'):
             handler = GitSourceCache(self.cache_path)
         else:

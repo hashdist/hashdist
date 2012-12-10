@@ -52,8 +52,8 @@ def test_basic():
         key = sc.fetch_archive('file:' + mock_archive)
         assert key == mock_archive_hash
         with temp_dir() as d:
-            sc.unpack(key, pjoin(d, 'foo'))
-            with file(pjoin(d, 'foo', 'README')) as f:
+            sc.unpack(key, d)
+            with file(pjoin(d, 'README')) as f:
                 assert f.read() == 'file contents'
 
 def test_hash_check():
@@ -82,3 +82,13 @@ def test_ensure_type():
             asc._ensure_type('test.foo', None)
         with assert_raises(ValueError):
             asc._ensure_type('test.bar', 'foo')
+
+def test_put():
+    with temp_source_cache() as sc:
+        key = sc.put('foofile', 'the contents')
+        with temp_dir() as d:
+            sc.unpack(key, d)
+            with file(pjoin(d, 'foofile')) as f:
+                assert f.read() == 'the contents'
+    
+    
