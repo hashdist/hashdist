@@ -31,7 +31,15 @@ class DocumentSerializer(object):
     Supported types: Basic scalars (ints, floats, True, False, None),
     bytes, unicode, and buffers, lists/tuples and dicts.
 
-    The serialization is"type-safe" so that ``"3"`` and ``3`` and ``3.0``
+    Additionally, when encountering user-defined objects with the
+    ``get_secure_hash`` method, that method is called and the result
+    used as the "serialization". The method should return a tuple
+    (type_id, secure_hash); the former should be a string representing
+    the "type" of the object (often the fully qualified class name), in order to
+    avoid conflicts with the hashes of other objects, and the latter a
+    hash of the contents.
+
+    The serialization is "type-safe" so that ``"3"`` and ``3`` and ``3.0``
     will serialize differently. Lists and tuples
     are treated as the same (``(1,)`` and ``[1]`` are the same) and
     buffers, strings and Unicode objects (in their UTF-8 encoding) are
@@ -112,6 +120,12 @@ class DocumentSerializer(object):
             w.update('F')
         elif x is None:
             w.update('N')
+        elif hasattr(x, 'get_secure_hash'):
+            x_type, h = x.get_secure_hash()
+            w.update('O%d:' % len(x_type))
+            w.update(x_type)
+            w.update('%d:' % len(h))
+            w.update(h)
         else:
             # treated same as first case, but we can only fall back to
             # acquiring the buffer interface after we've tried the
@@ -150,4 +164,3 @@ def encode_digest(hasher):
         Should pass the object returned by create_hasher to extract its digest.
     """
     return base64.b64encode(hasher.digest()[:20], altchars='+-').replace('=', '')
-

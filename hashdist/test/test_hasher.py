@@ -20,6 +20,10 @@ def assert_serialize(expected, doc):
     eq_(expected, sink.getvalue())
 
 def test_serialization():
+    class Foo(object):
+        def get_secure_hash(self):
+            return 'hashdist.test.test_hasher.Foo', 'foo'
+    
     yield assert_serialize, 'D2:' 'B1:a' 'I1:3' 'B1:b' 'I1:4', {'a' : 3, 'b' : 4}
     yield assert_serialize, 'B1:a', u'a'
     yield assert_serialize, 'B2:\xc2\x99', u'\x99'
@@ -30,6 +34,7 @@ def test_serialization():
     yield assert_serialize, 'L2:' 'I1:1' 'I1:2', [1, 2]
     yield assert_serialize, 'L2:' 'I1:1' 'I1:2', (1, 2)
     yield assert_serialize, 'D2:B1:aI1:3B1:bD1:B1:cL2:I1:1I1:2', {'a' : 3, 'b' : {'c' : [1, 2]}}
+    yield assert_serialize, 'O29:hashdist.test.test_hasher.Foo3:foo', Foo()
 
 def test_hashing():
     digest = hasher.Hasher({'a' : 3, 'b' : {'c' : [1, 2]}}).format_digest()
