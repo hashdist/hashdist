@@ -8,7 +8,7 @@ import hashlib
 import base64
 import struct
 
-create_hasher = hashlib.sha256
+hash_type = hashlib.sha256
 
 def argsort(seq):
     return sorted(range(len(seq)), key=seq.__getitem__)
@@ -77,7 +77,13 @@ class DocumentSerializer(object):
     def update(self, x):
         # note: w.update does hashing of str/buffer, self.update recurses to treat object
         w = self._wrapped
-        if isinstance(x, float):
+        if isinstance(x, (bytes, str)):
+            # this one matters when streaming so put it first
+            w.update('B%d:' % len(x))
+            w.update(x)
+        elif isinstance(x, unicode):
+            self.update(x.encode('UTF-8'))
+        elif isinstance(x, float):
             s = struct.pack('<d', x)
             assert len(s) == 8
             w.update('F')
@@ -106,10 +112,10 @@ class DocumentSerializer(object):
             w.update('F')
         elif x is None:
             w.update('N')
-        elif isinstance(x, unicode):
-            self.update(x.encode('UTF-8'))
         else:
-            # buffer/str
+            # treated same as first case, but we can only fall back to
+            # acquiring the buffer interface after we've tried the
+            # rest
             w.update('B%d:' % len(x))
             w.update(x)
 
@@ -121,7 +127,7 @@ class Hasher(DocumentSerializer):
     This is the standard hashing method of Hashdist.
     """
     def __init__(self, x=None):
-        DocumentSerializer.__init__(self, hashlib.sha256())
+        DocumentSerializer.__init__(self, hash_type())
         if x is not None:
             self.update(x)
 
@@ -144,7 +150,4 @@ def encode_digest(hasher):
         Should pass the object returned by create_hasher to extract its digest.
     """
     return base64.b64encode(hasher.digest()[:20], altchars='+-').replace('=', '')
-
-def hash_str(s):
-    return encode_digest(create_hasher(s))
 

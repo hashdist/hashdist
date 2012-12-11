@@ -9,7 +9,7 @@ pjoin = os.path.join
 from nose.tools import assert_raises
 
 from ..source_cache import ArchiveSourceCache, SourceCache
-from ..hash import create_hasher, encode_digest
+from ..hasher import Hasher
 
 from .utils import temp_dir
 
@@ -39,7 +39,7 @@ def make_mock_archive():
         shutil.rmtree(tmp_d)
     # get hash
     with file(mock_archive) as f:
-        mock_archive_hash = encode_digest(create_hasher(f.read()))
+        mock_archive_hash = Hasher(f.read()).format_digest()
 
 def setup():
     make_mock_archive()

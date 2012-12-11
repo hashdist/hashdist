@@ -9,7 +9,7 @@ import json
 import shutil
 
 from .deps import sh
-from .hash import create_hasher, encode_digest
+from .hasher import Hasher
 
 pjoin = os.path.join
 
@@ -240,7 +240,7 @@ class ArchiveSourceCache(object):
         
         # Download file to a temporary file within self.packs_path, while hashing
         # it
-        hasher = create_hasher()
+        hasher = Hasher()
         temp_fd, temp_path = tempfile.mkstemp(prefix='downloading-', dir=self.packs_path)
         try:
             f = os.fdopen(temp_fd, 'wb')
@@ -257,7 +257,7 @@ class ArchiveSourceCache(object):
             # Remove temporary file if there was a failure
             os.unlink(temp_path)
             raise
-        return temp_path, encode_digest(hasher)
+        return temp_path, hasher.format_digest()
 
     def _ensure_type(self, url, type):
         if type is not None:

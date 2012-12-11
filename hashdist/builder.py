@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import sys
 
-from .hash import Hasher
+from .hasher import Hasher
 
 class BuildFailedError(Exception):
     def __init__(self, msg, build_dir):
