@@ -10,6 +10,131 @@ import struct
 
 create_hasher = hashlib.sha256
 
+def argsort(seq):
+    return sorted(range(len(seq)), key=seq.__getitem__)
+
+class DocumentSerializer(object):
+    """
+    Stable one-non-Python-specific serialization of nested
+    objects/documents. The primary usecase is for hashing (see
+    :class:`Hasher`), and specifically hashing of JSON documents,
+    thus no de-serialization is written. However, by
+    hashing-through-serialization we ensure that we don't weaken the
+    hash function.
+
+    The API used is that of ``hashlib`` (i.e. an update method).
+
+    A core goal is that it should be completely stable, and easy to
+    reimplement in other languages. Thus we stay away from
+    Python-specific pickling mechanisms etc.
+
+    Supported types: Basic scalars (ints, floats, True, False, None),
+    bytes, unicode, and buffers, lists/tuples and dicts.
+
+    The serialization is"type-safe" so that ``"3"`` and ``3`` and ``3.0``
+    will serialize differently. Lists and tuples
+    are treated as the same (``(1,)`` and ``[1]`` are the same) and
+    buffers, strings and Unicode objects (in their UTF-8 encoding) are
+    also treated the same.
+
+    .. note::
+
+       Currently only string keys are supported for dicts, and the
+       items are serialized in the order of the keys. This is because all
+       Python objects implement comparison, and comparing by arbitrary
+       Python objects could lead to easy misuse (hashes that are not
+       stable across processes).
+
+       One could instead sort the keys by their hash (getting rid of
+       comparison), but that would make the hash-stream (and thus the
+       unit tests) much more complicated, and the idea is this should
+       be reproducable in other languages. However that is a
+       possibility for further extension, as long as string keys are
+       treated as today.
+
+    Format
+    ------
+
+    In order to prevent somebody from constructing colliding documents,
+    each object is hashed with an envelope specifying the type and the
+    length (in number of items in the case of a container, or number of bytes
+    in the case of str/unicode/buffer).
+
+    In general, see unit tests for format examples/details.
+
+    Constructor parameters
+    ----------------------
+
+    wrapped : object
+        `wrapped.update` is called with strings or buffers to emit the
+        resulting stream (the API of the ``hashlib`` hashers)
+    
+    
+    """
+    def __init__(self, wrapped):
+        self._wrapped = wrapped
+    
+    def update(self, x):
+        # note: w.update does hashing of str/buffer, self.update recurses to treat object
+        w = self._wrapped
+        if isinstance(x, float):
+            s = struct.pack('<d', x)
+            assert len(s) == 8
+            w.update('F')
+            w.update(s)
+        elif isinstance(x, int):
+            # need to provide for arbitrary size...
+            s = str(x)
+            w.update('I%d:' % len(s))
+            w.update(s)
+        elif isinstance(x, (list, tuple)):
+            w.update('L%d:' % len(x))
+            for child in x:
+                self.update(child)
+        elif isinstance(x, dict):
+            w.update('D%d:' % len(x))
+            keys = x.keys()
+            indices = argsort(keys)
+            for i in indices:
+                if not isinstance(keys[i], (str, unicode)):
+                    raise NotImplementedError('hashing of dict with non-string key')
+                self.update(keys[i])
+                self.update(x[keys[i]])
+        elif x is True:
+            w.update('T')
+        elif x is False:
+            w.update('F')
+        elif x is None:
+            w.update('N')
+        elif isinstance(x, unicode):
+            self.update(x.encode('UTF-8'))
+        else:
+            # buffer/str
+            w.update('B%d:' % len(x))
+            w.update(x)
+
+class Hasher(DocumentSerializer):
+    """
+    Cryptographically hashes buffers or nested objects ("JSON-like" object structures).
+    See :class:`DocumentSerializer` for more details.
+
+    This is the standard hashing method of Hashdist.
+    """
+    def __init__(self, x=None):
+        DocumentSerializer.__init__(self, hashlib.sha256())
+        if x is not None:
+            self.update(x)
+
+    def raw_digest(self):
+        return self._wrapped.digest()
+
+    def format_digest(self):
+        """
+        The Hashdist standard digest.
+        """
+        return encode_digest(self._wrapped)
+
+
 def encode_digest(hasher):
     """Hashdist's standard format for encoding hash digests
 
@@ -20,81 +145,6 @@ def encode_digest(hasher):
     """
     return base64.b64encode(hasher.digest()[:20], altchars='+-').replace('=', '')
 
+def hash_str(s):
+    return encode_digest(create_hasher(s))
 
-
-def hash_json(hasher, doc, ignore_pattern=None, prefix=''):
-    """Hashes a JSON structure, ignoring some of the keys
-
-    The `hasher` is updated with the contents of the JSON structure `doc`
-    (i.e., a nested structure of dict, list, str, and various scalar types). Assuming
-    that the "outer" nodes are dictionaries, their key names are matched
-    against `ignore_pattern` and ignored if there is a match. Consider
-    for instance this document::
-
-        {"a" : { "b" : 1, "c" : 2}}
-
-    To ignore the inner ``"b"`` key, `ignore_pattern` should be set up to
-    match ``"/a/b"``.
-
-    Parameters
-    ----------
-
-    hasher : hasher object
-        Will be used to hash the document
-
-    doc : json document
-        Document to hash
-
-    ignore_pattern : compiled regex or None
-        Document keys to ignore (see description above)
-
-    prefix : str or None (optional)
-        Prefix to add to all keys in the document (when `doc` is a dict),
-        mainly for internal use.
-
-    Returns
-    -------
-
-    No return value
-    """
-    # We need to protect against documents that hash to the same
-    # value. We do this by using envelopes corresponding to the object
-    # structure (of the form "type(item)(item)..."); and making
-    # sure that ( and ) are escaped in any strings, and the escape
-    # character escaped too.
-    
-    def sanitize(x):
-        return x.replace('\\', '\\\\').replace('(', '\\(').replace(')', '\\)')
-
-    if isinstance(doc, (str, unicode)):
-        hasher.update('str(')
-        hasher.update(sanitize(doc))
-        hasher.update(')')
-    elif isinstance(doc, float):
-        # can contain ", but always 8 bytes so don't bother to sanitize or envelope
-        hasher.update('float')
-        hasher.update(struct.pack('<d', doc))
-    elif isinstance(doc, int):
-        # assume: ints can't contain " in stringification
-        hasher.update('int(%d)' % doc)
-    elif isinstance(doc, (list, tuple)):
-        hasher.update('list')
-        for item in doc:
-            hasher.update('(')
-            hash_json(hasher, item, None)
-            hasher.update(')')
-    elif isinstance(doc, dict):
-        hasher.update('dict(')
-        for key, value in sorted(doc.items()):
-            if not isinstance(key, (str, unicode)):
-                raise TypeError('doc is not a JSON document (non-str key)')
-            q_key = '/'.join((prefix, key))
-            if ignore_pattern is not None and ignore_pattern.match(q_key):
-                continue
-            hasher.update('(')
-            hasher.update(sanitize(key))
-            hasher.update(')')
-            hash_json(hasher, value, ignore_pattern, q_key)
-        hasher.update(')')
-    else:
-        raise TypeError('doc is not a JSON document')

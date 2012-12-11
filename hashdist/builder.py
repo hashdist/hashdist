@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import sys
 
-from .hash import hash_json, create_hasher, encode_digest
+from .hash import Hasher
 
 class BuildFailedError(Exception):
     def __init__(self, msg, build_dir):
@@ -25,13 +25,12 @@ class Builder(object):
         self.artifact_store_dir = os.path.realpath(artifact_store_dir)
         self.logger = logger
 
-    def get_artifact_name(self, build_spec):
-        h = create_hasher()
-        hash_json(h, build_spec)
-        return '%s-%s' % (encode_digest(h), build_spec['name'])
+    def get_artifact_id(self, build_spec):
+        h = Hasher(build_spec).format_digest()
+        return '%s-%s' % (h, build_spec['name'])
 
     def resolve(self, build_spec):
-        artifact_name = self.get_artifact_name(build_spec)
+        artifact_name = self.get_artifact_id(build_spec)
         adir = pjoin(self.artifact_store_dir, artifact_name)
         return os.path.exists(adir), artifact_name, adir
 
