@@ -22,6 +22,14 @@ class SourceNotFoundError(Exception):
 class KeyNotFoundError(Exception):
     pass
 
+
+def single_file_key(filename, contents):
+    h = Hasher()
+    h.update('file')
+    h.update({'filename': filename,
+              'contents': contents})
+    return 'file:' + h.format_digest()
+
 class SourceCache(object):
     """
     Directory-based source object database
@@ -53,9 +61,13 @@ class SourceCache(object):
         return ArchiveSourceCache(self.cache_path).fetch_archive(url, hash, type)
 
     def put(self, filename, contents):
-        """Utility method to put a single file with the given filename and contents
+        """Utility method to put a single file with the given filename and contents.
+
+        The resulting key is independent of the source store and can be retrieved
+        from the function :func:`single_file_key`.
         """
-        # Simply create a temporary tar.gz and archive it
+        key = single_file_key(filename, contents)
+        # Implementation is that create a temporary tar.gz and archive it
         tgz_d = tempfile.mkdtemp()
         stage_d = tempfile.mkdtemp()
         try:
@@ -63,7 +75,10 @@ class SourceCache(object):
             with file(pjoin(stage_d, filename), 'w') as f:
                 f.write(contents)
             subprocess.check_call(['tar', 'czf', archive_filename, filename], cwd=stage_d)
-            key = self.fetch_archive('file:' + archive_filename, type='tar.gz')
+            
+            ArchiveSourceCache(self.cache_path).fetch_archive('file:' + archive_filename,
+                                                              type='tar.gz',
+                                                              _force_key_as=key)
         finally:
             shutil.rmtree(tgz_d)
             shutil.rmtree(stage_d)
@@ -239,8 +254,9 @@ class ArchiveSourceCache(object):
             stream = curl.stdout
         
         # Download file to a temporary file within self.packs_path, while hashing
-        # it
+        # it.
         hasher = Hasher()
+        hasher.update('archive')
         temp_fd, temp_path = tempfile.mkstemp(prefix='downloading-', dir=self.packs_path)
         try:
             f = os.fdopen(temp_fd, 'wb')
@@ -290,13 +306,22 @@ class ArchiveSourceCache(object):
     def contains(self, hash):
         return os.path.exists(pjoin(self.meta_path, '%s.info' % hash))
 
-    def fetch_archive(self, url, expected_hash=None, type=None):
+    def fetch_archive(self, url, expected_hash=None, type=None, _force_key_as=None):
+        """
+        Parameters
+        ----------
+        
+        _force_key_as : str
+            Use this key instead of the one computed from hashing the archive.
+        """
         if expected_hash is not None and self.contains(expected_hash):
             # found, so noop
             return expected_hash
         else:
             type = self._ensure_type(url, type)
             temp_file, hash = self._download_and_hash(url)
+            if _force_key_as is not None:
+                hash = _force_key_as
             try:
                 if expected_hash is not None and expected_hash != hash:
                     raise RuntimeError('File downloaded from "%s" has hash %s but expected %s' %

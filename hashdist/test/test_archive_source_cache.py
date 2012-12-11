@@ -39,7 +39,10 @@ def make_mock_archive():
         shutil.rmtree(tmp_d)
     # get hash
     with file(mock_archive) as f:
-        mock_archive_hash = Hasher(f.read()).format_digest()
+        hasher = Hasher()
+        hasher.update('archive')
+        hasher.update(f.read())
+        mock_archive_hash = hasher.format_digest()
 
 def setup():
     make_mock_archive()
