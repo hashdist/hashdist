@@ -130,8 +130,9 @@ class DocumentSerializer(object):
             # treated same as first case, but we can only fall back to
             # acquiring the buffer interface after we've tried the
             # rest
-            w.update('B%d:' % len(x))
-            w.update(x)
+            buf = buffer(x)
+            w.update('B%d:' % len(buf))
+            w.update(buf)
 
 class Hasher(DocumentSerializer):
     """
