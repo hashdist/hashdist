@@ -7,6 +7,7 @@ import subprocess
 import sys
 
 from .hasher import Hasher
+from .source_cache import SourceCache
 
 class BuildFailedError(Exception):
     def __init__(self, msg, build_dir):
@@ -24,6 +25,14 @@ class Builder(object):
         self.source_cache = source_cache
         self.artifact_store_dir = os.path.realpath(artifact_store_dir)
         self.logger = logger
+
+    @staticmethod
+    def create_from_config(config, logger):
+        """Creates a SourceCache from the settings in the configuration
+        """
+        source_cache = SourceCache.create_from_config(config)
+        return Builder(source_cache, config.get_path('builder', 'artifacts-path'), logger)
+
 
     def get_artifact_id(self, build_spec):
         h = Hasher(build_spec).format_digest()
@@ -123,7 +132,8 @@ class ArtifactBuild(object):
         command_lst = self.build_spec['command']
 
         env['PATH'] = os.environ['PATH'] # for now
-        env['BUILD_TARGET'] = self.artifact_dir
+        env['PREFIX'] = self.artifact_dir
+        env['STAGE'] = self.artifact_dir
 
         log_filename = pjoin(build_dir, 'build.log')
         self.logger.info('Building artifact %s, follow log with' % self.artifact_name)
