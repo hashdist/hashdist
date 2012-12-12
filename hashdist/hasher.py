@@ -164,4 +164,4 @@ def encode_digest(hasher):
     hasher : hasher object
         Should pass the object returned by create_hasher to extract its digest.
     """
-    return base64.b64encode(hasher.digest()[:20], altchars='+-').replace('=', '')
+    return base64.b64encode(hasher.digest(), altchars='+-').replace('=', '')

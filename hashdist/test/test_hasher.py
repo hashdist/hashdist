@@ -38,7 +38,7 @@ def test_serialization():
 
 def test_hashing():
     digest = hasher.Hasher({'a' : 3, 'b' : {'c' : [1, 2]}}).format_digest()
-    assert 'VYhTUMZ6+KQApO19G8tbuN83sNU' == digest
+    assert 'VYhTUMZ6+KQApO19G8tbuN83sNVFtKCF1PX+AbmXaZ8' == digest
 
 
 # If we re-introduce generic ignore capabilities
