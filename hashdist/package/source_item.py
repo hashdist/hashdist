@@ -1,4 +1,4 @@
-from ..source_cache import single_file_key
+from ..core import single_file_key
 
 class SourceItem(object):
     def __init__(self, key, target):

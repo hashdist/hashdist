@@ -8,7 +8,7 @@ import urllib2
 import json
 import shutil
 
-from .deps import sh
+from ..deps import sh
 from .hasher import Hasher
 
 pjoin = os.path.join
@@ -288,6 +288,7 @@ class ArchiveSourceCache(object):
             if mime not in self.mime_to_ext:
                 raise ValueError('Unable to guess archive type of "%s"' % url)
             type = self.mime_to_ext[mime]
+
         return type
 
     def _write_archive_info(self, hash, type, url):
@@ -353,3 +354,4 @@ class ArchiveSourceCache(object):
         cmd = self.archive_types[type][1] + [archive_path]
         subprocess.check_call(cmd, cwd=target_path)
 
+supported_source_archive_types = sorted(ArchiveSourceCache.archive_types.keys())

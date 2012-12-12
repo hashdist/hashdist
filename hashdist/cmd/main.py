@@ -11,7 +11,7 @@ import textwrap
 import os
 import logging
         
-from ..config import InifileConfiguration
+from ..core import InifileConfiguration
 
 _subcommands = {}
 

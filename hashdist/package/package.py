@@ -1,8 +1,7 @@
 from textwrap import dedent
 import struct
 
-from ..hasher import Hasher
-from ..builder import get_artifact_id
+from ..core import get_artifact_id
 
 from .source_item import DownloadSourceCode, PutScript
 

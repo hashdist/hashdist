@@ -9,35 +9,35 @@ from nose.tools import assert_raises
 
 from .utils import logger, temp_dir
 
-from .. import source_cache, builder
+from .. import source_cache, build_store
 
 
 #
 # Simple tests
 #
 def test_shorten_artifact_id():
-    assert 'foo/1.2/012' == builder.shorten_artifact_id('foo/1.2/01234567890', 3)
+    assert 'foo/1.2/012' == build_store.shorten_artifact_id('foo/1.2/01234567890', 3)
     with assert_raises(ValueError):
-        builder.shorten_artifact_id('foo-1.2-01234567890', 3)
+        build_store.shorten_artifact_id('foo-1.2-01234567890', 3)
 
 def test_rmtree_up_to():
     with temp_dir() as d:
         # Incomplete removal
         os.makedirs(pjoin(d, 'a', 'x', 'A', '2'))
         os.makedirs(pjoin(d, 'a', 'x', 'B', '2'))
-        builder.rmtree_up_to(pjoin(d, 'a', 'x', 'A', '2'), d)
+        build_store.rmtree_up_to(pjoin(d, 'a', 'x', 'A', '2'), d)
         assert ['B'] == os.listdir(pjoin(d, 'a', 'x'))
 
         # Invalid parent parameter
         with assert_raises(ValueError):
-            builder.rmtree_up_to(pjoin(d, 'a', 'x', 'B'), '/nonexisting')
+            build_store.rmtree_up_to(pjoin(d, 'a', 'x', 'B'), '/nonexisting')
 
         # Complete removal -- do not actually remove the parent
-        builder.rmtree_up_to(pjoin(d, 'a', 'x', 'B', '2'), d)
+        build_store.rmtree_up_to(pjoin(d, 'a', 'x', 'B', '2'), d)
         assert os.path.exists(d)
 
         # Parent is exclusive
-        builder.rmtree_up_to(d, d)
+        build_store.rmtree_up_to(d, d)
         assert os.path.exists(d)
         
         
@@ -48,20 +48,20 @@ def fixture(keep_policy='never', ARTIFACT_ID_LEN=None):
     def decorator(func):
         @functools.wraps(func)
         def decorated():
-            old_aid_len = builder.ARTIFACT_ID_LEN
+            old_aid_len = build_store.ARTIFACT_ID_LEN
             tempdir = tempfile.mkdtemp()
             try:
                 if ARTIFACT_ID_LEN is not None:
-                    builder.ARTIFACT_ID_LEN = ARTIFACT_ID_LEN
+                    build_store.ARTIFACT_ID_LEN = ARTIFACT_ID_LEN
                 os.makedirs(pjoin(tempdir, 'src'))
                 os.makedirs(pjoin(tempdir, 'opt'))
                 os.makedirs(pjoin(tempdir, 'bld'))
                 sc = source_cache.SourceCache(pjoin(tempdir, 'src'))
-                bldr = builder.Builder(sc, pjoin(tempdir, 'bld'), pjoin(tempdir, 'opt'), logger,
-                                       keep_policy)
+                bldr = build_store.Builder(sc, pjoin(tempdir, 'bld'), pjoin(tempdir, 'opt'), logger,
+                                           keep_policy)
                 return func(tempdir, sc, bldr)
             finally:
-                builder.ARTIFACT_ID_LEN = old_aid_len
+                build_store.ARTIFACT_ID_LEN = old_aid_len
                 shutil.rmtree(tempdir)
         return decorated
     return decorator
@@ -110,7 +110,7 @@ def test_failing_build(tempdir, sc, bldr):
             "command": ["/bin/bash", "build.sh"]}
     try:
         bldr.ensure_present(spec)
-    except builder.BuildFailedError, e:
+    except build_store.BuildFailedError, e:
         assert os.path.exists(pjoin(e.build_dir, 'build.sh'))
     else:
         assert False
@@ -123,7 +123,7 @@ def test_failing_build_2(tempdir, sc, bldr):
             "command": ["/bin/bash", "build.sh"]}
     try:
         bldr.ensure_present(spec)
-    except builder.BuildFailedError, e:
+    except build_store.BuildFailedError, e:
         assert e.build_dir is None
     else:
         assert False
@@ -135,7 +135,7 @@ def test_source_target_tries_to_escape(tempdir, sc, bldr):
         spec = {"name": "foo", "version": "na",
                 "sources": [{"target": target, "key": "foo"}]
                 }
-        with assert_raises(builder.InvalidBuildSpecError):
+        with assert_raises(build_store.InvalidBuildSpecError):
             bldr.ensure_present(spec)
 
 
@@ -144,7 +144,7 @@ def test_fail_to_find_dependency(tempdir, sc, bldr):
     for target in ["..", "/etc"]:
         spec = {"name": "foo", "version": "na",
                 "dependencies": {"bar": "bogushash"}}
-        with assert_raises(builder.InvalidBuildSpecError):
+        with assert_raises(build_store.InvalidBuildSpecError):
             bldr.ensure_present(spec)
 
 @fixture(ARTIFACT_ID_LEN=1)

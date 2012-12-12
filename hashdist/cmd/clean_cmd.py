@@ -1,6 +1,5 @@
 from .main import register_subcommand
-from ..source_cache import SourceCache
-from ..builder import Builder
+from ..core import Builder, SourceCache
 
 class ResetStore(object):
     """
