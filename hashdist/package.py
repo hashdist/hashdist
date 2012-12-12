@@ -1,9 +1,35 @@
-from textwrap import dedent
-import struct
+from .core import get_artifact_id, single_file_key
 
-from ..core import get_artifact_id
+class SourceItem(object):
+    def __init__(self, key, target):
+        self.key = key
+        self.target = target
+        
+    def get_spec(self):
+        return {'key': self.key,
+                'target': self.target}
 
-from .source_item import DownloadSourceCode, PutScript
+    def get_secure_hash(self):
+        return 'hashdist.package.source_item.SourceItem', self.key
+
+class DownloadSourceCode(SourceItem):
+    def __init__(self, url, key, target='.'):
+        SourceItem.__init__(self, key, target)
+        self.url = url
+
+    def fetch_into(self, source_cache):
+        source_cache.fetch_archive(self.url, self.key)
+                        
+class PutScript(SourceItem):
+    def __init__(self, filename, contents, target='.'):
+        key = single_file_key(filename, contents)
+        SourceItem.__init__(self, key, target)
+        self.filename = filename
+        self.contents = contents
+
+    def fetch_into(self, source_cache):
+        source_cache.put(self.filename, self.contents)
+
 
 class Package(object):
     def __init__(self, name, version, sources, command, dependencies, env):
@@ -64,43 +90,3 @@ def build_packages(build_store, source_cache, packages):
     
     for package in packages:
         _depth_first_build(package)    
-
-
-class ConfigureMakeInstallPackage(Package):
-    def __init__(self, name, version, source_url, source_key, configure_flags=(), **kw):
-        script = self._make_script(configure_flags)
-        
-        # Split **kw into dependencies (packages) and env (strings, ints, floats)
-        dependencies = {}
-        env = {}
-        for key, value in kw.iteritems():
-            if isinstance(value, Package):
-                dependencies[key] = value
-            elif isinstance(value, (str, int, float)):
-                env[key] = value
-            else:
-                raise TypeError('Meaning of passing argument %s of type %r not understood' %
-                                (key, type(value)))
-
-        Package.__init__(self, name, version,
-                         sources=[DownloadSourceCode(source_url, source_key),
-                                  PutScript('build.sh', script)],
-                         command=['/bin/bash', 'build.sh'],
-                         dependencies=dependencies,
-                         env=env)
-    @staticmethod
-    def _make_script(configure_flags):
-        configure_flags_s = ' '.join(
-            '"%s"' % flag.replace('\\', '\\\\').replace('"', '\\"')
-            for flag in configure_flags)
-        
-        script = dedent('''\
-            set -e
-            cd zlib-1.2.7
-            ./configure %(configure_flags_s)s --prefix="${PREFIX}"
-            make
-            make install
-        ''') % locals()
-        
-        return script
-
