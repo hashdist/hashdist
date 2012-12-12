@@ -7,7 +7,7 @@ from textwrap import dedent
 
 from nose.tools import assert_raises
 
-from .utils import logger
+from .utils import logger, temp_dir
 
 from .. import source_cache, builder
 
@@ -20,6 +20,15 @@ def test_shorten_artifact_id():
     with assert_raises(ValueError):
         builder.shorten_artifact_id('foo-1.2-01234567890', 3)
 
+def test_rmtree_up_to():
+    with temp_dir() as d:
+        os.makedirs(pjoin(d, 'a', 'x', 'A', '2'))
+        os.makedirs(pjoin(d, 'a', 'x', 'Q'))
+        builder.rmtree_up_to(pjoin(d, 'a', 'x', 'A', '2'), d)
+        assert ['Q'] == os.listdir(pjoin(d, 'a', 'x'))
+
+        with assert_raises(ValueError):
+            builder.rmtree_up_to(pjoin(d, 'a', 'x', 'Q'), '/nonexisting')
 #
 # Tests requiring fixture
 #

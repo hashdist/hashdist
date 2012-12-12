@@ -48,6 +48,24 @@ def shorten_artifact_id(artifact_id, length):
     """
     return artifact_id[:artifact_id.rindex('/') + length + 1]
 
+def rmtree_up_to(path, parent):
+    """Executes shutil.rmtree(path), and then removes any empty parent directories
+    until parent.
+    """
+    if not path.startswith(parent):
+        raise ValueError('must have path.startswith(parent)')
+    shutil.rmtree(path)
+    while True:
+        path, child = os.path.split(path)
+        #os.system('find %s' % path)
+        #print parent, child, path
+        try:
+            os.rmdir(path)
+        except OSError, e:
+            if e.errno != errno.ENOTEMPTY:
+                raise
+            break
+
 class Builder(object):
 
     def __init__(self, source_cache, temp_build_dir, artifact_store_dir, logger,
@@ -136,7 +154,7 @@ class ArtifactBuild(object):
             self.serialize_build_spec(artifact_dir, build_dir)
             self.unpack_sources(build_dir)
         except:
-            shutil.rmtree(build_dir)
+            self.remove_build_dir(build_dir)
             raise
 
         # Conditionally clean up when this fails
@@ -144,14 +162,14 @@ class ArtifactBuild(object):
             self.run_build_command(build_dir, artifact_dir, env)
         except subprocess.CalledProcessError, e:
             if keep_build_policy == 'never':
-                shutil.rmtree(build_dir)
+                self.remove_build_dir(build_dir)
                 raise BuildFailedError('Build command failed with code %d' % e.returncode, None)
             else:
                 raise BuildFailedError('Build command failed with code %d, result in %s' %
                                        (e.returncode, build_dir), build_dir)
         # Success
         if keep_build_policy != 'always':
-            shutil.rmtree(build_dir)
+            self.remove_build_dir(build_dir)
         return artifact_dir
 
     def make_build_dir(self):
@@ -171,6 +189,9 @@ class ArtifactBuild(object):
             i += 1
             build_dir = '%s-%d' % (orig_build_dir, i)
         return build_dir
+
+    def remove_build_dir(self, build_dir):
+        rmtree_up_to(build_dir, self.builder.temp_build_dir)
 
     def make_artifact_dir(self):
         # try to make shortened dir and symlink to it; incrementally
@@ -228,17 +249,4 @@ class ArtifactBuild(object):
                                   stdin=None, stdout=logfileno, stderr=logfileno)
         # On success, copy log file to artifact_dir
         shutil.copy(log_filename, pjoin(artifact_dir, 'build.log'))
-
-def rename_or_delete(from_, to):
-    """Renames a directory, or recursively deletes it if the target already exists.
-
-    This is used in situations where multiple processes may compute the same result directory.
-    """
-    try:
-        os.rename(from_, to)
-    except OSError, e:
-        if os.path.exists(to):
-            shutil.rmtree(from_)
-        else:
-            raise
 
