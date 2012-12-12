@@ -2,6 +2,8 @@ from textwrap import dedent
 import struct
 
 from ..hasher import Hasher
+from ..builder import get_artifact_id
+
 from .source_item import DownloadSourceCode, PutScript
 
 class Package(object):
@@ -16,30 +18,29 @@ class Package(object):
         self.command = command
         self.dependencies = dependencies
         self.env = env
-        
-        self._secure_hash = Hasher([name, version, sources, command, env]).raw_digest()
-        self._weak_hash = struct.unpack('=i', self._secure_hash[:4])[0]
+        self.build_spec = self._make_build_spec()
+        self.artifact_id = get_artifact_id(self.build_spec)
 
-    def get_build_spec(self, builder):
-        dep_specs = dict((key, dep.artifact_id) for key, dep in self.dependencies.iteritems)
-            
-
-    def _make_hash(self):
-        h = create_hasher()
-        h.update(self.name)
-        h.update(self.version)
-
-    def get_secure_hash(self):
-        return 'hashdist.package.package.Package', self._secure_hash
+    def _make_build_spec(self):
+        source_specs = [source_item.get_spec() for source_item in self.sources]
+        dep_artifact_ids = dict((name, pkg.artifact_id)
+                                for name, pkg in self.dependencies.iteritems())
+        build_spec = {'name': self.name,
+                      'version': self.version,
+                      'command': self.command,
+                      'env': self.env,
+                      'dependencies': dep_artifact_ids,
+                      'sources': source_specs}
+        return build_spec
 
     def __hash__(self):
-        return self._weak_hash
+        return hash(self.artifact_id)
 
     def __eq__(self, other):
         if not isinstance(other, Package):
             return False
         else:
-            return self._secure_hash == other._secure_hash
+            return self.artifact_id == other.artifact_id
 
     def __ne__(self, other):
         return not self == other
@@ -52,25 +53,16 @@ def build_packages(builder, packages):
         if package in built:
             return built[package]
 
+        # Recurse
+        for dep_pkg in package.dependencies.values():
+            _depth_first_build(dep_pkg)
+
         # Fetch sources
         for source_item in package.sources:
             source_item.fetch_into(source_cache)
-        source_specs = [source_item.get_spec() for source_item in package.sources]
 
-        # Recurse and get dependency ids
-        dep_artifact_ids = {}
-        for dep_name, dep_pkg in package.dependencies.iteritems():
-            dep_artifact_ids[dep_name] = _depth_first_build(dep_pkg)
-
-        build_spec = {'name': package.name,
-                      'version': package.version,
-                      'command': package.command,
-                      'env': package.env,
-                      'dependencies': dep_artifact_ids,
-                      'sources': source_specs}
-        
-        artifact_id, path = builder.ensure_present(build_spec)
-        return artifact_id
+        # Do the build
+        builder.ensure_present(package.build_spec)
     
     for package in packages:
         _depth_first_build(package)    
@@ -109,7 +101,7 @@ class ConfigureMakeInstallPackage(Package):
             cd zlib-1.2.7
             ./configure %(configure_flags_s)s --prefix="${PREFIX}"
             make
-            make DESTDIR="${STAGE}" install
+            make install
         ''') % locals()
         
         return script
