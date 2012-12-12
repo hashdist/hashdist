@@ -22,13 +22,25 @@ def test_shorten_artifact_id():
 
 def test_rmtree_up_to():
     with temp_dir() as d:
+        # Incomplete removal
         os.makedirs(pjoin(d, 'a', 'x', 'A', '2'))
-        os.makedirs(pjoin(d, 'a', 'x', 'Q'))
+        os.makedirs(pjoin(d, 'a', 'x', 'B', '2'))
         builder.rmtree_up_to(pjoin(d, 'a', 'x', 'A', '2'), d)
-        assert ['Q'] == os.listdir(pjoin(d, 'a', 'x'))
+        assert ['B'] == os.listdir(pjoin(d, 'a', 'x'))
 
+        # Invalid parent parameter
         with assert_raises(ValueError):
-            builder.rmtree_up_to(pjoin(d, 'a', 'x', 'Q'), '/nonexisting')
+            builder.rmtree_up_to(pjoin(d, 'a', 'x', 'B'), '/nonexisting')
+
+        # Complete removal -- do not actually remove the parent
+        builder.rmtree_up_to(pjoin(d, 'a', 'x', 'B', '2'), d)
+        assert os.path.exists(d)
+
+        # Parent is exclusive
+        builder.rmtree_up_to(d, d)
+        assert os.path.exists(d)
+        
+        
 #
 # Tests requiring fixture
 #

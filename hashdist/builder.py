@@ -50,15 +50,19 @@ def shorten_artifact_id(artifact_id, length):
 
 def rmtree_up_to(path, parent):
     """Executes shutil.rmtree(path), and then removes any empty parent directories
-    until parent.
+    up until (and excluding) parent.
     """
+    path = os.path.realpath(path)
+    parent = os.path.realpath(parent)
+    if path == parent:
+        return
     if not path.startswith(parent):
         raise ValueError('must have path.startswith(parent)')
     shutil.rmtree(path)
-    while True:
+    while path != parent:
         path, child = os.path.split(path)
-        #os.system('find %s' % path)
-        #print parent, child, path
+        if path == parent:
+            break
         try:
             os.rmdir(path)
         except OSError, e:
