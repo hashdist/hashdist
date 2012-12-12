@@ -7,9 +7,10 @@ import tempfile
 import urllib2
 import json
 import shutil
+import hashlib
 
 from ..deps import sh
-from .hasher import Hasher
+from .hasher import Hasher, format_digest
 
 pjoin = os.path.join
 
@@ -22,6 +23,8 @@ class SourceNotFoundError(Exception):
 class KeyNotFoundError(Exception):
     pass
 
+class CorruptSourceCacheError(Exception):
+    pass
 
 def single_file_key(filename, contents):
     h = Hasher()
@@ -88,14 +91,53 @@ class SourceCache(object):
             shutil.rmtree(stage_d)
         return key
 
-    def unpack(self, key, target_path):
+    def unpack(self, key, target_path, unsafe_mode=False):
+        """
+        Unpacks the sources identified by `key` to `target_path`
+
+        The sources are verified against their secure hash to guard
+        against corruption/security problems. `CorruptSourceCacheError`
+        will be raised in this case. In normal circumstances this should
+        never happen.
+
+        Parameters
+        ----------
+
+        key : str
+            The source item key/secure hash
+
+        target_path : str
+            Path to extract in
+
+        unsafe_mode : bool (default: True)
+            Whether a faster, memory-conserving mode should be used.
+            It is safe to use `unsafe_mode` if `target_path` is
+            a fresh directory which is removed in the event of a
+            `CorruptSourceCacheError`. See "Security concerns" below.
+
+        Returns
+        -------
+
+        `None`
+
+        Unsafe mode details
+        -------------------
+
+        By default, the archive will be loaded into memory and
+        checked, and if found corrupt nothing will be extracted. By
+        setting `unsafe_mode`, extraction takes place on the fly while
+        validating, which is faster and use less memory, but it means
+        that a corrupt archive may be partially or fully extracted
+        (though an exception is raised at the end). No removal of the
+        extracted contents is attempted in this case.
+        """
         if not os.path.exists(target_path):
             os.makedirs(target_path)
         if key.startswith('git:'):
             handler = GitSourceCache(self.cache_path)
         else:
             handler = ArchiveSourceCache(self.cache_path)
-        handler.unpack(key, target_path)
+        handler.unpack(key, target_path, unsafe_mode)
 
 class GitSourceCache(object):
     """
@@ -194,7 +236,7 @@ class GitSourceCache(object):
 
         return 'git:%s' % commit
 
-    def unpack(self, key, target_path):
+    def unpack(self, key, target_path, unsafe_mode):
         assert key.startswith('git:')
         commit = key[4:]
         archive_p = sh.git('archive', '--format=tar', commit, _env=self._git_env, _piped=True)
@@ -221,9 +263,8 @@ class ArchiveSourceCache(object):
     chunk_size = 16 * 1024
 
     archive_types = {
-        'tar.gz' :  (('application/x-tar', 'gzip'), ['tar', 'xzf']),
-        'tar.bz2' : (('application/x-tar', 'bzip2'), ['tar', 'xjf']),
-        'zip' : (('application/zip', None), ['unzip'])
+        'tar.gz' :  (('application/x-tar', 'gzip'), ['tar', 'xz']),
+        'tar.bz2' : (('application/x-tar', 'bzip2'), ['tar', 'xj']),
         }
 
     mime_to_ext = dict((value[0], key) for key, value in archive_types.iteritems())
@@ -259,8 +300,7 @@ class ArchiveSourceCache(object):
         
         # Download file to a temporary file within self.packs_path, while hashing
         # it.
-        hasher = Hasher()
-        hasher.update('archive')
+        hasher = hashlib.sha256()
         temp_fd, temp_path = tempfile.mkstemp(prefix='downloading-', dir=self.packs_path)
         try:
             f = os.fdopen(temp_fd, 'wb')
@@ -277,7 +317,7 @@ class ArchiveSourceCache(object):
             # Remove temporary file if there was a failure
             os.unlink(temp_path)
             raise
-        return temp_path, hasher.format_digest()
+        return temp_path, format_digest(hasher)
 
     def _ensure_type(self, url, type):
         if type is not None:
@@ -345,13 +385,46 @@ class ArchiveSourceCache(object):
                     pass
             return hash
 
-    def unpack(self, key, target_path):
+    def unpack(self, key, target_path, unsafe_mode):
         info = self._read_archive_info(key)
         if info is None:
             raise KeyNotFoundError("Key '%s' not found in source cache" % key)
         type = info['type']
         archive_path = pjoin(self.packs_path, key)
-        cmd = self.archive_types[type][1] + [archive_path]
-        subprocess.check_call(cmd, cwd=target_path)
+        cmd = self.archive_types[type][1]
+        if unsafe_mode:
+            retcode = self._unpack_unsafe(key, target_path, archive_path, cmd)
+        else:
+            retcode = self._unpack_safe(key, target_path, archive_path, cmd)
+        if retcode != 0:
+            raise subprocess.CalledProcessError(retcode, cmd[0])
+
+    def _key_check(self, archive_path, hasher, key):
+        if format_digest(hasher) != key and not key.startswith('file:'):
+            raise CorruptSourceCacheError("Corrupted file: '%s'" % archive_path)
+
+    def _unpack_unsafe(self, key, target_path, archive_path, cmd):
+        p  = subprocess.Popen(cmd, stdin=subprocess.PIPE, cwd=target_path)
+        hasher = hashlib.sha256()
+        with file(archive_path) as archive_file:
+            while True:
+                chunk = archive_file.read(self.chunk_size)
+                if not chunk: break
+                hasher.update(chunk)
+                p.stdin.write(chunk)
+        p.stdin.close()
+        retcode = p.wait()
+        self._key_check(archive_path, hasher, key)
+        return retcode
+
+    def _unpack_safe(self, key, target_path, archive_path, cmd):
+        with file(archive_path) as archive_file:
+            archive_data = archive_file.read()
+        hasher = hashlib.sha256(archive_data)
+        self._key_check(archive_path, hasher, key)
+        p  = subprocess.Popen(cmd, stdin=subprocess.PIPE, cwd=target_path)
+        p.stdin.write(archive_data)
+        p.stdin.close()
+        return p.wait()
 
 supported_source_archive_types = sorted(ArchiveSourceCache.archive_types.keys())

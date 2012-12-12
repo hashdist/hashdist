@@ -3,13 +3,14 @@ import contextlib
 import tempfile
 import shutil
 import subprocess
+import hashlib
 
 pjoin = os.path.join
 
 from nose.tools import assert_raises
 
-from ..source_cache import ArchiveSourceCache, SourceCache
-from ..hasher import Hasher
+from ..source_cache import ArchiveSourceCache, SourceCache, CorruptSourceCacheError
+from ..hasher import Hasher, format_digest
 
 from .utils import temp_dir
 
@@ -39,10 +40,7 @@ def make_mock_archive():
         shutil.rmtree(tmp_d)
     # get hash
     with file(mock_archive) as f:
-        hasher = Hasher()
-        hasher.update('archive')
-        hasher.update(f.read())
-        mock_archive_hash = hasher.format_digest()
+        mock_archive_hash = format_digest(hashlib.sha256(f.read()))
 
 def setup():
     make_mock_archive()
@@ -70,6 +68,20 @@ def test_corrupt_download():
         # Check that no temporary files are left
         assert len(os.listdir(pjoin(sc.cache_path, 'packs'))) == 0
 
+def test_corrupt_store():
+    with temp_source_cache() as sc:
+        key = sc.fetch_archive('file:' + mock_archive)
+        with file(pjoin(sc.cache_path, 'packs', mock_archive_hash), 'w') as f:
+            f.write('corrupt archive')
+        with temp_dir() as d:
+            with assert_raises(CorruptSourceCacheError):
+                sc.unpack(mock_archive_hash, d, unsafe_mode=False)
+            assert os.listdir(d) == []
+        with temp_dir() as d:
+            with assert_raises(CorruptSourceCacheError):
+                sc.unpack(mock_archive_hash, d, unsafe_mode=True)        
+
+
 def test_does_not_re_download():
     with temp_source_cache() as sc:
         sc.fetch_archive('file:' + mock_archive, mock_archive_hash)
@@ -80,7 +92,7 @@ def test_ensure_type():
     with temp_source_cache() as sc:
         asc = ArchiveSourceCache(sc.cache_path)
         assert asc._ensure_type('test.tar.gz', None) == 'tar.gz'
-        assert asc._ensure_type('test.tar.gz', 'zip') == 'zip'
+        assert asc._ensure_type('test.tar.gz', 'tar.bz2') == 'tar.bz2'
         with assert_raises(ValueError):
             asc._ensure_type('test.foo', None)
         with assert_raises(ValueError):

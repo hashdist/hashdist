@@ -153,10 +153,10 @@ class Hasher(DocumentSerializer):
         """
         The Hashdist standard digest.
         """
-        return encode_digest(self._wrapped)
+        return format_digest(self._wrapped)
 
 
-def encode_digest(hasher):
+def format_digest(hasher):
     """Hashdist's standard format for encoding hash digests
 
     Parameters
