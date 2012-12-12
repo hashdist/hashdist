@@ -1,5 +1,5 @@
 from .main import register_subcommand
-from ..core import Builder, SourceCache
+from ..core import BuildStore, SourceCache
 
 class ResetStore(object):
     """
@@ -26,7 +26,7 @@ class ResetStore(object):
             source_cache = SourceCache.create_from_config(ctx.config)
             source_cache.delete_all()
         if args.build:
-            build_store = Builder.create_from_config(ctx.config, ctx.logger)
+            build_store = BuildStore.create_from_config(ctx.config, ctx.logger)
             build_store.delete_all()
 
 register_subcommand(ResetStore)

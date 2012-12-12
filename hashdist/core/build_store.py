@@ -9,7 +9,6 @@ import re
 import errno
 
 from .hasher import Hasher
-from .source_cache import SourceCache
 
 class BuildFailedError(Exception):
     def __init__(self, msg, build_dir):
@@ -70,15 +69,14 @@ def rmtree_up_to(path, parent):
                 raise
             break
 
-class Builder(object):
+class BuildStore(object):
 
-    def __init__(self, source_cache, temp_build_dir, artifact_store_dir, logger,
+    def __init__(self, temp_build_dir, artifact_store_dir, logger,
                  keep_build_policy='never'):
         if not os.path.isdir(artifact_store_dir):
             raise ValueError('"%s" is not an existing directory' % artifact_store_dir)
         if keep_build_policy not in ('never', 'error', 'always'):
             raise ValueError("invalid keep_build_dir_policy")
-        self.source_cache = source_cache
         self.artifact_store_dir = os.path.realpath(artifact_store_dir)
         self.temp_build_dir = os.path.realpath(temp_build_dir)
         self.logger = logger
@@ -93,11 +91,9 @@ class Builder(object):
     def create_from_config(config, logger):
         """Creates a SourceCache from the settings in the configuration
         """
-        source_cache = SourceCache.create_from_config(config)
-        return Builder(source_cache,
-                       config.get_path('builder', 'builds-path'),
-                       config.get_path('builder', 'artifacts-path'),
-                       logger)
+        return BuildStore(config.get_path('builder', 'builds-path'),
+                          config.get_path('builder', 'artifacts-path'),
+                          logger)
 
     def resolve(self, artifact_id):
         """Given an artifact_id, resolve the short path for it, or return
@@ -109,12 +105,12 @@ class Builder(object):
     def is_present(self, build_spec):
         return self.resolve(get_artifact_id(build_spec)) is not None
 
-    def ensure_present(self, build_spec):
+    def ensure_present(self, build_spec, source_cache):
         artifact_id = get_artifact_id(build_spec)
         artifact_dir = self.resolve(artifact_id)
         if artifact_dir is None:
             build = ArtifactBuild(self, build_spec, artifact_id)
-            artifact_dir = build.build()
+            artifact_dir = build.build(source_cache)
         return artifact_id, artifact_dir
 
 class ArtifactBuild(object):
@@ -138,17 +134,17 @@ class ArtifactBuild(object):
             env['%s_relpath' % dep_name] = os.path.relpath(dep_dir, relative_from)
         return env
 
-    def build(self):        
+    def build(self, source_cache):
         artifact_dir, artifact_link = self.make_artifact_dir()
         try:
-            self.build_to(artifact_dir)
+            self.build_to(artifact_dir, source_cache)
         except:
             shutil.rmtree(artifact_dir)
             os.unlink(artifact_link)
             raise
         return artifact_dir
 
-    def build_to(self, artifact_dir):
+    def build_to(self, artifact_dir, source_cache):
         env = self.get_dependencies_env(artifact_dir)
         keep_build_policy = self.builder.keep_build_policy
 
@@ -156,7 +152,7 @@ class ArtifactBuild(object):
         build_dir = self.make_build_dir()
         try:
             self.serialize_build_spec(artifact_dir, build_dir)
-            self.unpack_sources(build_dir)
+            self.unpack_sources(build_dir, source_cache)
         except:
             self.remove_build_dir(build_dir)
             raise
@@ -226,7 +222,7 @@ class ArtifactBuild(object):
             with file(pjoin(d, 'build.json'), 'w') as f:
                 json.dump(self.build_spec, f, separators=(', ', ' : '), indent=4, sort_keys=True)
 
-    def unpack_sources(self, build_dir):
+    def unpack_sources(self, build_dir, source_cache):
         for source_item in self.build_spec['sources']:
             key = source_item['key']
             target = source_item.get('target', '.')
@@ -234,7 +230,7 @@ class ArtifactBuild(object):
             if not full_target.startswith(build_dir):
                 raise InvalidBuildSpecError('source target attempted to escape '
                                             'from build directory')
-            self.builder.source_cache.unpack(key, full_target)
+            source_cache.unpack(key, full_target)
 
     def run_build_command(self, build_dir, artifact_dir, env):
         # todo: $-interpolation in command

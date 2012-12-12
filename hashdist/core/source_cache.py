@@ -53,7 +53,7 @@ class SourceCache(object):
         os.mkdir(self.cache_path)
 
     @staticmethod
-    def create_from_config(config):
+    def create_from_config(config, logger):
         """Creates a SourceCache from the settings in the configuration
         """
         return SourceCache(config.get_path('sourcecache', 'path'))

@@ -44,9 +44,8 @@ class Package(object):
     def __ne__(self, other):
         return not self == other
 
-def build_packages(builder, packages):
+def build_packages(build_store, source_cache, packages):
     built = {} # package -> artifact_id
-    source_cache = builder.source_cache
 
     def _depth_first_build(package):
         if package in built:
@@ -56,12 +55,12 @@ def build_packages(builder, packages):
         for dep_pkg in package.dependencies.values():
             _depth_first_build(dep_pkg)
 
-        # Fetch sources
+        # Upload/download sources to source cache
         for source_item in package.sources:
             source_item.fetch_into(source_cache)
 
         # Do the build
-        builder.ensure_present(package.build_spec)
+        build_store.ensure_present(package.build_spec, source_cache)
     
     for package in packages:
         _depth_first_build(package)    

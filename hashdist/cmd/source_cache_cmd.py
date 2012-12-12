@@ -31,7 +31,7 @@ class FetchGit(object):
 
     @staticmethod
     def run(ctx, args):
-        store = SourceCache.create_from_config(ctx.config)
+        store = SourceCache.create_from_config(ctx.config, ctx.logger)
         key = store.fetch_git(args.repository, args.rev)
         sys.stderr.write('\n')
         sys.stdout.write('%s\n' % key)

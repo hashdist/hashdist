@@ -57,8 +57,8 @@ def fixture(keep_policy='never', ARTIFACT_ID_LEN=None):
                 os.makedirs(pjoin(tempdir, 'opt'))
                 os.makedirs(pjoin(tempdir, 'bld'))
                 sc = source_cache.SourceCache(pjoin(tempdir, 'src'))
-                bldr = build_store.Builder(sc, pjoin(tempdir, 'bld'), pjoin(tempdir, 'opt'), logger,
-                                           keep_policy)
+                bldr = build_store.BuildStore(pjoin(tempdir, 'bld'), pjoin(tempdir, 'opt'), logger,
+                                              keep_policy)
                 return func(tempdir, sc, bldr)
             finally:
                 build_store.ARTIFACT_ID_LEN = old_aid_len
@@ -83,7 +83,7 @@ def test_basic(tempdir, sc, bldr):
         "command": ["/bin/bash", "build.sh"]
         }
     assert not bldr.is_present(spec)
-    name, path = bldr.ensure_present(spec)
+    name, path = bldr.ensure_present(spec, sc)
     assert bldr.is_present(spec)
     assert ['build.json', 'build.log', 'hello'] == sorted(os.listdir(path))
     #assert os.listdir(pjoin(path, 'subdir')) == ['build.sh']
@@ -109,7 +109,7 @@ def test_failing_build(tempdir, sc, bldr):
             "sources": [{"key": script_key}],
             "command": ["/bin/bash", "build.sh"]}
     try:
-        bldr.ensure_present(spec)
+        bldr.ensure_present(spec, sc)
     except build_store.BuildFailedError, e:
         assert os.path.exists(pjoin(e.build_dir, 'build.sh'))
     else:
@@ -122,7 +122,7 @@ def test_failing_build_2(tempdir, sc, bldr):
             "sources": [{"key": script_key}],
             "command": ["/bin/bash", "build.sh"]}
     try:
-        bldr.ensure_present(spec)
+        bldr.ensure_present(spec, sc)
     except build_store.BuildFailedError, e:
         assert e.build_dir is None
     else:
@@ -136,7 +136,7 @@ def test_source_target_tries_to_escape(tempdir, sc, bldr):
                 "sources": [{"target": target, "key": "foo"}]
                 }
         with assert_raises(build_store.InvalidBuildSpecError):
-            bldr.ensure_present(spec)
+            bldr.ensure_present(spec, sc)
 
 
 @fixture()
@@ -145,7 +145,7 @@ def test_fail_to_find_dependency(tempdir, sc, bldr):
         spec = {"name": "foo", "version": "na",
                 "dependencies": {"bar": "bogushash"}}
         with assert_raises(build_store.InvalidBuildSpecError):
-            bldr.ensure_present(spec)
+            bldr.ensure_present(spec, sc)
 
 @fixture(ARTIFACT_ID_LEN=1)
 def test_hash_prefix_collision(tempdir, sc, bldr):
@@ -161,7 +161,7 @@ def test_hash_prefix_collision(tempdir, sc, bldr):
             spec = {"name": "foo", "version": "na",
                     "sources": [{"key": script_key}],
                     "command": ["/bin/bash", "build.sh"]}
-            artifact_id, path = bldr.ensure_present(spec)
+            artifact_id, path = bldr.ensure_present(spec, sc)
             hashparts.append(os.path.split(path)[-1])
         lines.append(hashparts)
     # please increase number of k-iterations above, or changes something
@@ -186,20 +186,20 @@ class MockPackage:
         self.deps = deps
 
 
-def build_mock_packages(builder, packages):
+def build_mock_packages(builder, source_cache, packages):
     name_to_artifact = {} # name -> (artifact_id, path)
     for pkg in packages:
         script = 'touch ${PREFIX}/deps\n'
         script += '\n'.join(
             'echo %(x)s $%(x)s $%(x)s_abspath $%(x)s_relpath >> ${PREFIX}/deps' % dict(x=dep.name)
             for dep in pkg.deps)
-        script_key = builder.source_cache.put('build.sh', script)
+        script_key = source_cache.put('build.sh', script)
         spec = {"name": pkg.name, "version": "na",
                 "dependencies": dict((dep.name, name_to_artifact[dep.name][0])
                                      for dep in pkg.deps),
                 "sources": [{"key": script_key}],
                 "command": ["/bin/bash", "build.sh"]}
-        artifact, path = builder.ensure_present(spec)
+        artifact, path = builder.ensure_present(spec, source_cache)
         name_to_artifact[pkg.name] = (artifact, path)
 
         with file(pjoin(path, 'deps')) as f:
@@ -215,4 +215,4 @@ def test_dependency_substitution(tempdir, sc, bldr):
     libc = MockPackage("libc", [])
     blas = MockPackage("blas", [libc])
     numpy = MockPackage("numpy", [blas, libc])
-    build_mock_packages(bldr, [libc, blas, numpy])
+    build_mock_packages(bldr, sc, [libc, blas, numpy])
