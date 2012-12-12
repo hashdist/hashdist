@@ -240,7 +240,8 @@ class ArtifactBuild(object):
         env['PREFIX'] = artifact_dir
 
         log_filename = pjoin(build_dir, 'build.log')
-        self.logger.info('Building artifact %s, follow log with' % self.artifact_id)
+        self.logger.info('Building artifact %s..., follow log with' %
+                         shorten_artifact_id(self.artifact_id, ARTIFACT_ID_LEN + 2))
         self.logger.info('')
         self.logger.info('    tail -f %s\n\n' % log_filename)
         with file(log_filename, 'w') as log_file:
