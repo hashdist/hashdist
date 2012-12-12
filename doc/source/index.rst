@@ -107,6 +107,13 @@ Design principles
    This accesses both power-user low-level features and the higher-level
    "varnish", without implying any deep coupling between them (just like `git`).
 
+Reference
+---------
+
+.. toctree::
+
+    artifacts
+
 
 Powerusers' guide, layer by layer
 ---------------------------------
