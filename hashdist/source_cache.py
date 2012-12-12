@@ -48,6 +48,10 @@ class SourceCache(object):
             raise ValueError('"%s" is not an existing directory' % cache_path)
         self.cache_path = os.path.realpath(cache_path)
 
+    def delete_all(self):
+        shutil.rmtree(self.cache_path)
+        os.mkdir(self.cache_path)
+
     @staticmethod
     def create_from_config(config):
         """Creates a SourceCache from the settings in the configuration

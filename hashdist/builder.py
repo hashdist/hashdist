@@ -62,12 +62,20 @@ class Builder(object):
         self.logger = logger
         self.keep_build_policy = keep_build_policy
 
+    def delete_all(self):
+        for x in [self.artifact_store_dir, self.temp_build_dir]:
+            shutil.rmtree(x)
+            os.mkdir(x)
+
     @staticmethod
     def create_from_config(config, logger):
         """Creates a SourceCache from the settings in the configuration
         """
         source_cache = SourceCache.create_from_config(config)
-        return Builder(source_cache, config.get_path('builder', 'artifacts-path'), logger)
+        return Builder(source_cache,
+                       config.get_path('builder', 'artifacts-path'),
+                       config.get_path('builder', 'builds-path'),
+                       logger)
 
     def resolve(self, artifact_id):
         """Given an artifact_id, resolve the short path for it, or return

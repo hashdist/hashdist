@@ -35,7 +35,7 @@ class FetchGit(object):
         key = store.fetch_git(args.repository, args.rev)
         sys.stderr.write('\n')
         sys.stdout.write('%s\n' % key)
-
+        
 register_subcommand(FetchGit)
 
 

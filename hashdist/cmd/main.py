@@ -9,7 +9,8 @@ import argparse
 import sys
 import textwrap
 import os
-
+import logging
+        
 from ..config import InifileConfiguration
 
 _subcommands = {}
@@ -58,6 +59,10 @@ class HashdistCommandContext(object):
         self.subcommand_parsers = subcommand_parsers
         self.out_stream = out_stream
         self.config = config
+
+        logging.basicConfig(format='%(message)s')
+        self.logger = logging.getLogger()
+        self.logger.setLevel(logging.DEBUG)
 
     def error(self, msg):
         self.argparser.error(msg)
