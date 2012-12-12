@@ -230,7 +230,9 @@ class ArtifactBuild(object):
             if not full_target.startswith(build_dir):
                 raise InvalidBuildSpecError('source target attempted to escape '
                                             'from build directory')
-            source_cache.unpack(key, full_target)
+            # if an exception is raised the directory is removed, so unsafe_mode
+            # should be ok
+            source_cache.unpack(key, full_target, unsafe_mode=True)
 
     def run_build_command(self, build_dir, artifact_dir, env):
         # todo: $-interpolation in command
