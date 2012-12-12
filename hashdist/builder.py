@@ -91,8 +91,8 @@ class Builder(object):
         """
         source_cache = SourceCache.create_from_config(config)
         return Builder(source_cache,
-                       config.get_path('builder', 'artifacts-path'),
                        config.get_path('builder', 'builds-path'),
+                       config.get_path('builder', 'artifacts-path'),
                        logger)
 
     def resolve(self, artifact_id):
