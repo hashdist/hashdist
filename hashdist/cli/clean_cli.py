@@ -23,7 +23,7 @@ class ResetStore(object):
             ctx.logger.error('Did not use --force flag or did not specify something to reset')
             return 1
         if args.source:
-            source_cache = SourceCache.create_from_config(ctx.config)
+            source_cache = SourceCache.create_from_config(ctx.config, ctx.logger)
             source_cache.delete_all()
         if args.build:
             build_store = BuildStore.create_from_config(ctx.config, ctx.logger)
