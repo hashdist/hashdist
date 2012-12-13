@@ -4,12 +4,14 @@ import tempfile
 import shutil
 import subprocess
 import hashlib
+from StringIO import StringIO
 
 pjoin = os.path.join
 
 from nose.tools import assert_raises
 
-from ..source_cache import ArchiveSourceCache, SourceCache, CorruptSourceCacheError
+from ..source_cache import (ArchiveSourceCache, SourceCache, CorruptSourceCacheError,
+                            hdist_pack, hdist_unpack, scatter_files)
 from ..hasher import Hasher, format_digest
 
 from .utils import temp_dir, working_directory, VERBOSE
@@ -168,7 +170,7 @@ def test_ensure_type():
 
 def test_put():
     with temp_source_cache() as sc:
-        key = sc.put('foofile', 'the contents')
+        key = sc.put({'foofile': 'the contents'})
         with temp_dir() as d:
             sc.unpack(key, d)
             with file(pjoin(d, 'foofile')) as f:
@@ -187,6 +189,29 @@ def test_simple_file_url_re():
     assert not SIMPLE_FILE_URL_RE.match('file:///foo')
     assert not SIMPLE_FILE_URL_RE.match('file://localhost/foo')
 
-    
+def test_hdist_pack():
+    files = [('foo', 'contains foo'),
+             ('bar', 'contains bar'),
+             ('a/b', 'in a subdir'),
+             ('a/c', 'also in subdir')]
+    stream = StringIO()
+    key = hdist_pack(files, stream)
+    pack = stream.getvalue()
+    assert key == 'files:jSynkRp09Ff-7MN03TeTmQtABAFWMIE7o+SYLTI6oXg'
+    assert hdist_pack(files[::-1]) == key
+    unpacked_files = hdist_unpack(StringIO(pack), key)
+    assert sorted(files) == sorted(unpacked_files)
 
-
+def test_scatter_files():
+    files = [('foo', 'contains foo'),
+             ('bar', 'contains bar'),
+             ('a/b', 'in a subdir'),
+             ('a/c', 'also in subdir'),
+             ('a/x/y', 'further subdir')]
+    with temp_dir() as d:
+        scatter_files(files, d)
+        assert sorted(os.listdir(d)) == ['a', 'bar', 'foo']
+        assert sorted(os.listdir(pjoin(d, 'a'))) == ['b', 'c', 'x']
+        assert sorted(os.listdir(pjoin(d, 'a', 'x'))) == ['y']
+        with file(pjoin(d, 'a', 'b')) as f:
+            assert f.read() == 'in a subdir'

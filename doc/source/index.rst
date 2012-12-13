@@ -111,8 +111,11 @@ Reference
 ---------
 
 .. toctree::
+   :maxdepth: 1
 
-    artifacts
+   artifacts
+   core/source_cache
+   core/hasher
 
 
 Powerusers' guide, layer by layer

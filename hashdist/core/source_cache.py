@@ -1,3 +1,83 @@
+"""
+:mod:`hashdist.core.source_cache` --- Source cache
+==================================================
+
+The source cache makes sure that one doesn't have to re-download source code
+from the net every time one wants to rebuild. For consistency/simplicity, the
+software builder also requires that local sources are first "uploaded" to the
+cache.
+
+The software cache currently has explicit support for tarballs, git,
+and storing single files as-is. A "source item" (tarball, git commit, or file)
+is identified by a secure hash. The generic API in :meth:`SourceCache.fetch` and
+:meth:`SourceCache.unpack` works by using such hashes as keys. The retrieval
+and unpacking methods are determined by the key prefix::
+
+    sc.fetch('http://python.org/ftp/python/2.7.3/Python-2.7.3.tar.bz2',
+             'tar.bz2:cmRX4RyxU63D9Ciq8ZAfxWGjdMMOXn2mdCwHQqM4Zjw')
+    sc.unpack('tar.bz2:cmRX4RyxU63D9Ciq8ZAfxWGjdMMOXn2mdCwHQqM4Zjw', '/your/location/here')
+
+    sc.fetch('https://github.com/numpy/numpy.git',
+             'git:35dc14b0a59cf16be8ebdac04f7269ac455d5e43')
+
+For cases where one don't know the key up front one uses the
+key-retrieving API. This is typically done in interactive settings to
+aid distribution/package developers::
+
+    key1 = sc.fetch_git('https://github.com/numpy/numpy.git', 'master')
+    key2 = sc.fetch_archive('http://python.org/ftp/python/2.7.3/Python-2.7.3.tar.bz2')
+
+Features
+--------
+
+ * Native support for multiple retrieval mechanisms. This is important as
+   one wants to use tarballs for slowly-changing stable code, but VCS for
+   quickly-changing code.
+
+ * Isolates dealing with various source code retrieval mechanisms from
+   upper layers, who can simply pass along two strings regardless of method.
+
+ * Aims at lock-free concurrency; it should be safe for multiple users
+   to share a source cache directory on a shared file-system as long
+   as all have write access.
+   
+ * Safety: Hashes are re-checked on the fly while unpacking, to protect
+   against corruption or tainting of the source cache.
+
+Source keys
+-----------
+
+By using secure hashing the keys for a given source item can be determined
+a priori. The conventions are as follows:
+
+Tarballs/archives:
+    SHA-256, encoded in base64 using :func:`.format_digest`. The prefix
+    is currently either ``tar.gz`` or ``tar.bz2``.
+
+Git commits:
+    Identified by their (SHA-1) commits prefixed with ``git:``.
+
+Individual files or directories ("hdist-pack"):
+    A tarball hash is not deterministic from the file
+    contents alone (there's metadata, compression, etc.). In order to
+    hash build scripts etc. with hashes based on the contents alone, we
+    use a custom "archive format" as the basis of the hash stream.
+    The format starts with the 8-byte magic string "HDSTPCK1",
+    followed by each file sorted by their filename (potentially
+    containing "/"). Each file is stored as
+
+    ==========================  ==============================
+    little-endian ``uint32_t``  length of filename
+    little-endian ``uint32_t``  length of contents
+    ---                         filename (no terminating null)
+    ---                         contents
+    ==========================  ==============================
+
+    This stream is then encoded like archives (SHA-256 in base-64),
+    and prefixed with ``files:`` to get the key.
+
+"""
+
 import os
 import re
 import sys
@@ -8,14 +88,19 @@ import urllib2
 import json
 import shutil
 import hashlib
+import struct
+import errno
 
 from ..deps import sh
-from .hasher import Hasher, format_digest
+from .hasher import Hasher, format_digest, HashingReadStream, HashingWriteStream
 
 pjoin = os.path.join
 
 TAG_RE_S = r'^[a-zA-Z-_+=]+$'
 TAG_RE = re.compile(TAG_RE_S)
+
+PACKS_DIRNAME = 'packs'
+GIT_DIRNAME = 'all-git.git'
 
 class SourceNotFoundError(Exception):
     pass
@@ -33,23 +118,27 @@ def single_file_key(filename, contents):
               'contents': contents})
     return 'file:' + h.format_digest()
 
+
+def mkdir_if_not_exists(path):
+    try:
+        os.mkdir(path)
+    except OSError, e:
+        if e.errno != errno.EEXIST:
+            raise
+
 class SourceCache(object):
     """
-    Directory-based source object database
-
-    Git
-    ---
-
-    All git sources are all pulled into one big repo containing
-    commits from multiple projects, so that accessing a commit is 
-
-    
     """
 
     def __init__(self, cache_path):
         if not os.path.isdir(cache_path):
             raise ValueError('"%s" is not an existing directory' % cache_path)
         self.cache_path = os.path.realpath(cache_path)
+
+    def _ensure_subdir(self, name):
+        path = pjoin(self.cache_path, name)
+        mkdir_if_not_exists(path)
+        return path
 
     def delete_all(self):
         shutil.rmtree(self.cache_path)
@@ -67,29 +156,41 @@ class SourceCache(object):
     def fetch_archive(self, url, hash=None, type=None):
         return ArchiveSourceCache(self.cache_path).fetch_archive(url, hash, type)
 
-    def put(self, filename, contents):
-        """Utility method to put a single file with the given filename and contents.
+    def put(self, files):
+        """Put in-memory contents into the source cache.
 
-        The resulting key is independent of the source store and can be retrieved
-        from the function :func:`single_file_key`.
+        Parameters
+        ----------
+        files : dict or list of (filename, contents)
+            The contents of the archive. `filename` may contain forward
+            slashes ``/`` as path separators. `contents` is a pure bytes
+            objects which will be dumped directly to `stream`.
+
+        Returns
+        -------
+
+        The resulting key.
+
         """
-        key = single_file_key(filename, contents)
-        # Implementation is that create a temporary tar.gz and archive it
-        tgz_d = tempfile.mkdtemp()
-        stage_d = tempfile.mkdtemp()
-        try:
-            archive_filename = pjoin(tgz_d, 'put.tar.gz')
-            with file(pjoin(stage_d, filename), 'w') as f:
-                f.write(contents)
-            subprocess.check_call(['tar', 'czf', archive_filename, filename], cwd=stage_d)
-            
-            ArchiveSourceCache(self.cache_path).fetch_archive('file:' + archive_filename,
-                                                              type='tar.gz',
-                                                              _force_key_as=key)
-        finally:
-            shutil.rmtree(tgz_d)
-            shutil.rmtree(stage_d)
+        if isinstance(files, dict):
+            files = files.items()
+        key = hdist_pack(files)
+        pack_filename = pjoin(self._ensure_subdir(PACKS_DIRNAME), key)
+        if not os.path.exists(pack_filename):
+            with file(pack_filename, 'w') as f:
+                hdist_pack(files, f)
         return key
+
+    def _extract_hdist_pack(self, key, target_path):
+        pack_filename = pjoin(self._ensure_subdir(PACKS_DIRNAME), key)
+        try:
+            f = file(pack_filename)
+        except IOError, e:
+            if e.errno == errno.ENOENT:
+                raise SourceNotFoundError(key)
+        with f:
+            files = hdist_unpack(f, key)
+        scatter_files(files, target_path)        
 
     def unpack(self, key, target_path, unsafe_mode=False):
         """
@@ -134,26 +235,19 @@ class SourceCache(object):
         if not os.path.exists(target_path):
             os.makedirs(target_path)
         if key.startswith('git:'):
-            handler = GitSourceCache(self.cache_path)
+            GitSourceCache(self.cache_path).unpack(key, target_path, unsafe_mode)
+        elif key.startswith('files:'):
+            self._extract_hdist_pack(key, target_path)
         else:
-            handler = ArchiveSourceCache(self.cache_path)
-        handler.unpack(key, target_path, unsafe_mode)
+            ArchiveSourceCache(self.cache_path).unpack(key, target_path, unsafe_mode)
+
 
 class GitSourceCache(object):
-    """
-    Group together methods for working with the part of the source cache stored
-    with git.
+    # Group together methods for working with the part of the source
+    # cache stored with git.
 
-    The constructor constructs the repository if necesarry.
-
-    Parameters
-    ----------
-
-    cache_path : str
-        The root of the source cache (same as given to SourceCache)
-    """
     def __init__(self, cache_path):
-        self.repo_path = pjoin(cache_path, 'all-git.git')        
+        self.repo_path = pjoin(cache_path, GIT_DIRNAME)
         self._git_env = dict(os.environ)
         self._git_env['GIT_DIR'] = self.repo_path
         self._ensure_repo()
@@ -247,18 +341,8 @@ class GitSourceCache(object):
 SIMPLE_FILE_URL_RE = re.compile(r'^file:/?[^/]+.*$')
 
 class ArchiveSourceCache(object):
-    """
-    Group together methods for working with the part of the source cache stored
-    as archives.
-
-    The constructor constructs the repository if necesarry.
-
-    Parameters
-    ----------
-
-    cache_path : str
-        The root of the source cache (same as given to SourceCache)
-    """
+    # Group together methods for working with the part of the source
+    # cache stored as archives.
 
     chunk_size = 16 * 1024
 
@@ -270,7 +354,7 @@ class ArchiveSourceCache(object):
     mime_to_ext = dict((value[0], key) for key, value in archive_types.iteritems())
 
     def __init__(self, cache_path):
-        self.packs_path = pjoin(cache_path, 'packs')
+        self.packs_path = pjoin(cache_path, PACKS_DIRNAME)
         self.meta_path = pjoin(cache_path, 'meta')
         if not os.path.exists(self.packs_path):
             # TODO not race safe
@@ -428,3 +512,105 @@ class ArchiveSourceCache(object):
         return p.wait()
 
 supported_source_archive_types = sorted(ArchiveSourceCache.archive_types.keys())
+
+
+def hdist_pack(files, stream=None):
+    """
+    Packs the given files in the "hdist-pack" format documented above,
+    and returns the resulting key. This is
+    useful to hash a set of files solely by their contents, not
+    metadata, except the filename.
+
+    Parameters
+    ----------
+
+    files : list of (filename, contents)
+        The contents of the archive. `filename` may contain forward
+        slashes ``/`` as path separators. `contents` is a pure bytes
+        objects which will be dumped directly to `stream`.
+
+    stream : file-like (optional)
+        Result of the packing, or `None` if one only wishes to know
+        the hash.
+
+    Returns
+    -------
+
+    The key of the resulting pack
+    (e.g., ``files:cmRX4RyxU63D9Ciq8ZAfxWGjdMMOXn2mdCwHQqM4Zjw``).
+    """
+    tee = HashingWriteStream(hashlib.sha256(), stream)
+    tee.write('HDSTPCK1')
+    files = sorted(files)
+    for filename, contents in files:
+        tee.write(struct.pack('<II', len(filename), len(contents)))
+        tee.write(filename)
+        tee.write(contents)
+    return 'files:%s' % format_digest(tee)
+
+def hdist_unpack(stream, key):
+    """
+    Unpacks the files in the "hdist-pack" format documented above,
+    verifies that it matches the given key, and returns the contents
+    (in memory).
+
+    Parameters
+    ----------
+
+    stream : file-like
+
+        Stream to read the pack from
+
+    key : str
+
+        Result from :func:`hdist_pack`.
+
+    Returns
+    -------
+
+    list of (filename, contents)
+    """
+    if not key.startswith('files:'):
+        raise ValueError('invalid key')
+    digest = key[len('files:'):]
+    tee = HashingReadStream(hashlib.sha256(), stream)
+    if tee.read(8) != 'HDSTPCK1':
+        raise CorruptSourceCacheError('Not an hdist-pack')
+    files = []
+    while True:
+        buf = tee.read(8)
+        if not buf:
+            break
+        filename_len, contents_len = struct.unpack('<II', buf)
+        filename = tee.read(filename_len)
+        contents = tee.read(contents_len)
+        files.append((filename, contents))
+    if digest != format_digest(tee):
+        raise CorruptSourceCacheError('hdist-pack does not match key "%s"' % key)
+    return files
+        
+def scatter_files(files, target_dir):
+    """
+    Given a list of filenames and their contents, write them to the file system
+
+    This is typically used together with :func:`hdist_unpack`.
+
+    Parameters
+    ----------
+
+    files : list of (filename, contents)
+
+    target_dir : str
+        Filesystem location to emit the files to
+    """
+    existing_dir_cache = set()
+    existing_dir_cache.add(target_dir)
+    for filename, contents in files:
+        dirname, basename = os.path.split(filename)
+        dirname = pjoin(target_dir, dirname)
+        if dirname not in existing_dir_cache and not os.path.exists(dirname):
+            os.makedirs(dirname)
+            existing_dir_cache.add(dirname)
+        with file(pjoin(dirname, basename), 'w') as f:
+            f.write(contents)
+

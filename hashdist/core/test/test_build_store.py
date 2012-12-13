@@ -68,11 +68,11 @@ def fixture(keep_policy='never', ARTIFACT_ID_LEN=None):
 
 @fixture()
 def test_basic(tempdir, sc, bldr):
-    script_key = sc.put('build.sh', dedent("""\
+    script_key = sc.put({'build.sh': dedent("""\
     echo hi stdout
     echo hi stderr>&2
     find > ${PREFIX}/hello
-    """))
+    """)})
     spec = {
         "name": "foo",
         "version": "na",
@@ -104,7 +104,7 @@ def test_basic(tempdir, sc, bldr):
 
 @fixture(keep_policy='error')
 def test_failing_build(tempdir, sc, bldr):
-    script_key = sc.put('build.sh', 'exit 1')
+    script_key = sc.put({'build.sh': 'exit 1'})
     spec = {"name": "foo", "version": "na",
             "sources": [{"key": script_key}],
             "command": ["/bin/bash", "build.sh"]}
@@ -117,7 +117,7 @@ def test_failing_build(tempdir, sc, bldr):
 
 @fixture(keep_policy='never')
 def test_failing_build_2(tempdir, sc, bldr):
-    script_key = sc.put('build.sh', 'exit 1')
+    script_key = sc.put({'build.sh': 'exit 1'})
     spec = {"name": "foo", "version": "na",
             "sources": [{"key": script_key}],
             "command": ["/bin/bash", "build.sh"]}
@@ -156,8 +156,8 @@ def test_hash_prefix_collision(tempdir, sc, bldr):
         # changes to the hashing could change this a bit but assertions below will
         # warn in those cases
         hashparts = []
-        for k in range(10):
-            script_key = sc.put('build.sh', 'echo hello %d; exit 0' % k)
+        for k in range(12):
+            script_key = sc.put({'build.sh': 'echo hello %d; exit 0' % k})
             spec = {"name": "foo", "version": "na",
                     "sources": [{"key": script_key}],
                     "command": ["/bin/bash", "build.sh"]}
@@ -193,7 +193,7 @@ def build_mock_packages(builder, source_cache, packages):
         script += '\n'.join(
             'echo %(x)s $%(x)s $%(x)s_abspath $%(x)s_relpath >> ${PREFIX}/deps' % dict(x=dep.name)
             for dep in pkg.deps)
-        script_key = source_cache.put('build.sh', script)
+        script_key = source_cache.put({'build.sh': script})
         spec = {"name": pkg.name, "version": "na",
                 "dependencies": dict((dep.name, name_to_artifact[dep.name][0])
                                      for dep in pkg.deps),

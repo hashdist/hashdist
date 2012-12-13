@@ -1,5 +1,5 @@
 """
-Utilities and single configuration point for hashing
+:mod:`hashdist.core.hasher` -- Utilities for hashing
 ====================================================
 
 """
@@ -157,11 +157,53 @@ class Hasher(DocumentSerializer):
 
 
 def format_digest(hasher):
-    """Hashdist's standard format for encoding hash digests
+    """The Hashdist standard format for encoding hash digests
+
+    This is one of the cases where it is prudent to just repeat the
+    implementation in the docstring::
+
+        base64.b64encode(hasher.digest(), altchars='+-').replace('=', '')
 
     Parameters
     ----------
     hasher : hasher object
-        Should pass the object returned by create_hasher to extract its digest.
+        An object with a `digest` method (a :class:`Hasher` or
+        an object from the :mod:`hashlib` module)
     """
     return base64.b64encode(hasher.digest(), altchars='+-').replace('=', '')
+
+
+class HashingWriteStream(object):
+    """
+    Utility for hashing and writing to a stream at the same time.
+    The `stream` may be `None` for convenience.
+
+    """
+    def __init__(self, hasher, stream):
+        self.hasher = hasher
+        self.stream = stream
+
+    def write(self, x):
+        self.hasher.update(x)
+        if self.stream is not None:
+            self.stream.write(x)
+
+    def digest(self):
+        return self.hasher.digest()
+
+
+class HashingReadStream(object):
+    """
+    Utility for reading from a stream and hashing at the same time.
+    """
+    def __init__(self, hasher, stream):
+        self.stream = stream
+        self.hasher = hasher
+
+    def read(self, *args):
+        buf = self.stream.read(*args)
+        self.hasher.update(buf)
+        return buf
+
+    def digest(self):
+        return self.hasher.digest()

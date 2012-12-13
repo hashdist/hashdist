@@ -29,7 +29,9 @@ class NullLogger(object):
         pass
     warning = error = debug = info = _noop
 
-if bool(int(os.environ.get('VERBOSE', '0'))):
+VERBOSE = bool(int(os.environ.get('VERBOSE', '0')))
+
+if VERBOSE:
     import logging
     logging.basicConfig(format='log: %(message)s')
     logger = logging.getLogger()
