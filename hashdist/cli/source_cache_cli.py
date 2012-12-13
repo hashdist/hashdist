@@ -67,7 +67,7 @@ class Fetch(object):
 
     @staticmethod
     def run(ctx, args):
-        store = SourceCache.create_from_config(ctx.config)
+        store = SourceCache.create_from_config(ctx.config, ctx.logger)
         # Simple heuristic for whether to prepend file: to url or not;
         # could probably do a better job
         args.url = as_url(args.url)
