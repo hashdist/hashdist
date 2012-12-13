@@ -113,8 +113,8 @@ Reference
 .. toctree::
    :maxdepth: 1
 
-   artifacts
    core/source_cache
+   core/build_store
    core/hasher
 
 
