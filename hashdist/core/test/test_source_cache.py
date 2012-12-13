@@ -12,7 +12,18 @@ from nose.tools import assert_raises
 from ..source_cache import ArchiveSourceCache, SourceCache, CorruptSourceCacheError
 from ..hasher import Hasher, format_digest
 
-from .utils import temp_dir
+from .utils import temp_dir, working_directory, VERBOSE
+
+#
+# Fixture
+#
+
+mock_archive = None
+mock_archive_hash = None
+mock_archive_tmpdir = None
+
+mock_git_repo = None
+mock_git_commit = None
 
 @contextlib.contextmanager
 def temp_source_cache():
@@ -23,9 +34,18 @@ def temp_source_cache():
         shutil.rmtree(tempdir)    
 
 
-mock_archive = None
-mock_archive_hash = None
-mock_archive_tmpdir = None
+def setup():
+    global mock_git_repo, mock_git_commit
+    mock_git_repo = tempfile.mkdtemp()
+    mock_git_commit = make_mock_git_repo()
+    make_mock_archive()
+        
+def teardown():
+    shutil.rmtree(mock_git_repo)
+    shutil.rmtree(mock_archive_tmpdir)
+
+
+# Mock tarball
 
 def make_mock_archive():
     global mock_archive, mock_archive_tmpdir, mock_archive_hash
@@ -42,13 +62,38 @@ def make_mock_archive():
     with file(mock_archive) as f:
         mock_archive_hash = format_digest(hashlib.sha256(f.read()))
 
-def setup():
-    make_mock_archive()
+# Mock git repo
 
-def teardown():
-    shutil.rmtree(mock_archive_tmpdir)
+def git(*args, **kw):
+    repo = kw['repo']
+    git_env = dict(os.environ)
+    git_env['GIT_DIR'] = repo
+    p = subprocess.Popen(['git'] + list(args), env=git_env, stdout=subprocess.PIPE,
+                         stderr=None if VERBOSE else subprocess.PIPE)
+    out, err = p.communicate()
+    if p.returncode != 0:
+        raise RuntimeError('git call %r failed with code %d' % (args, p.returncode))
+    return out
 
-def test_basic():
+def cat(filename, what):
+    with file(filename, 'w') as f:
+        f.write(what)
+
+def make_mock_git_repo():
+    with working_directory(mock_git_repo):
+        repo = os.path.join(mock_git_repo, '.git')
+        git('init', repo=repo)
+        cat('README', 'First revision',)
+        git('add', 'README', repo=repo)
+        git('commit', '-m', 'First revision', repo=repo)
+        commit = git('rev-list', '-n1', 'HEAD', repo=repo).strip()
+        return commit        
+
+#
+# Tests
+#
+
+def test_archive():
     with temp_source_cache() as sc:
         key = sc.fetch_archive('file:' + mock_archive)
         assert key == mock_archive_hash
@@ -56,6 +101,29 @@ def test_basic():
             sc.unpack(key, d)
             with file(pjoin(d, 'README')) as f:
                 assert f.read() == 'file contents'
+
+def test_git():
+    with temp_source_cache() as sc:
+        key = sc.fetch_git(mock_git_repo, 'master')
+        assert key == 'git:%s' % mock_git_commit
+        with temp_dir() as d:
+            sc.unpack(key, pjoin(d, 'foo'))
+            with file(pjoin(d, 'foo', 'README')) as f:
+                assert f.read() == 'First revision'
+
+def test_able_to_fetch_twice():
+    # With 'master' rev
+    with temp_source_cache() as sc:
+        result = sc.fetch_git(mock_git_repo, 'master')
+        assert result == 'git:%s' % mock_git_commit
+        result = sc.fetch_git(mock_git_repo, 'master')
+        assert result == 'git:%s' % mock_git_commit
+    # with commit as rev
+    with temp_source_cache() as sc:
+        result = sc.fetch_git(mock_git_repo, mock_git_commit)
+        assert result == 'git:%s' % mock_git_commit
+        result = sc.fetch_git(mock_git_repo, mock_git_commit)
+        assert result == 'git:%s' % mock_git_commit
 
 def test_hash_check():
     with temp_source_cache() as sc:
@@ -120,3 +188,5 @@ def test_simple_file_url_re():
     assert not SIMPLE_FILE_URL_RE.match('file://localhost/foo')
 
     
+
+
