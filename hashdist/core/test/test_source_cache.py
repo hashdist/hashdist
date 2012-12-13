@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import hashlib
 from StringIO import StringIO
+import stat
 
 pjoin = os.path.join
 
@@ -62,7 +63,7 @@ def make_mock_archive():
         shutil.rmtree(tmp_d)
     # get hash
     with file(mock_archive) as f:
-        mock_archive_hash = format_digest(hashlib.sha256(f.read()))
+        mock_archive_hash = 'tar.gz:' + format_digest(hashlib.sha256(f.read()))
 
 # Mock git repo
 
@@ -134,14 +135,17 @@ def test_hash_check():
 def test_corrupt_download():
     with temp_source_cache() as sc:
         with assert_raises(RuntimeError):
-            sc.fetch_archive('file:' + mock_archive, mock_archive_hash[1:] + 'a')
+            corrupt_hash = mock_archive_hash[:-8] + 'aaaaaaaa'
+            sc.fetch_archive('file:' + mock_archive, corrupt_hash)
         # Check that no temporary files are left
-        assert len(os.listdir(pjoin(sc.cache_path, 'packs'))) == 0
+        assert len(os.listdir(pjoin(sc.cache_path, 'packs', 'tar.gz'))) == 0
 
 def test_corrupt_store():
     with temp_source_cache() as sc:
         key = sc.fetch_archive('file:' + mock_archive)
-        with file(pjoin(sc.cache_path, 'packs', mock_archive_hash), 'w') as f:
+        pack_filename = pjoin(sc.cache_path, 'packs', 'tar.gz', mock_archive_hash.split(':')[1])
+        os.chmod(pack_filename, stat.S_IRUSR | stat.S_IWUSR)
+        with file(pack_filename, 'w') as f:
             f.write('corrupt archive')
         with temp_dir() as d:
             with assert_raises(CorruptSourceCacheError):
@@ -160,7 +164,7 @@ def test_does_not_re_download():
 
 def test_ensure_type():
     with temp_source_cache() as sc:
-        asc = ArchiveSourceCache(sc.cache_path)
+        asc = ArchiveSourceCache(sc)
         assert asc._ensure_type('test.tar.gz', None) == 'tar.gz'
         assert asc._ensure_type('test.tar.gz', 'tar.bz2') == 'tar.bz2'
         with assert_raises(ValueError):

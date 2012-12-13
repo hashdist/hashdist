@@ -36,13 +36,14 @@ Features
 
  * Isolates dealing with various source code retrieval mechanisms from
    upper layers, who can simply pass along two strings regardless of method.
-
- * Aims at lock-free concurrency; it should be safe for multiple users
-   to share a source cache directory on a shared file-system as long
-   as all have write access.
    
  * Safety: Hashes are re-checked on the fly while unpacking, to protect
    against corruption or tainting of the source cache.
+
+ * Should be safe for multiple users to share a source cache directory
+   on a shared file-system as long as all have write access, though this
+   may need some work with permissions.
+
 
 Source keys
 -----------
@@ -90,6 +91,7 @@ import shutil
 import hashlib
 import struct
 import errno
+import stat
 
 from ..deps import sh
 from .hasher import Hasher, format_digest, HashingReadStream, HashingWriteStream
@@ -151,10 +153,15 @@ class SourceCache(object):
         return SourceCache(config.get_path('sourcecache', 'path'))
 
     def fetch_git(self, repository, rev):
-        return GitSourceCache(self.cache_path).fetch_git(repository, rev)
+        return GitSourceCache(self).fetch_git(repository, rev)
 
-    def fetch_archive(self, url, hash=None, type=None):
-        return ArchiveSourceCache(self.cache_path).fetch_archive(url, hash, type)
+    def fetch_archive(self, url, key=None, type=None):
+        if key is not None and type is not None:
+            raise ValueError('Cannot specify both key and type')
+        hash = None
+        if key is not None:
+            type, hash = key.split(':')
+        return ArchiveSourceCache(self).fetch_archive(url, type, hash)
 
     def put(self, files):
         """Put in-memory contents into the source cache.
@@ -172,25 +179,7 @@ class SourceCache(object):
         The resulting key.
 
         """
-        if isinstance(files, dict):
-            files = files.items()
-        key = hdist_pack(files)
-        pack_filename = pjoin(self._ensure_subdir(PACKS_DIRNAME), key)
-        if not os.path.exists(pack_filename):
-            with file(pack_filename, 'w') as f:
-                hdist_pack(files, f)
-        return key
-
-    def _extract_hdist_pack(self, key, target_path):
-        pack_filename = pjoin(self._ensure_subdir(PACKS_DIRNAME), key)
-        try:
-            f = file(pack_filename)
-        except IOError, e:
-            if e.errno == errno.ENOENT:
-                raise SourceNotFoundError(key)
-        with f:
-            files = hdist_unpack(f, key)
-        scatter_files(files, target_path)        
+        return ArchiveSourceCache(self).put(files)
 
     def unpack(self, key, target_path, unsafe_mode=False):
         """
@@ -234,20 +223,28 @@ class SourceCache(object):
         """
         if not os.path.exists(target_path):
             os.makedirs(target_path)
-        if key.startswith('git:'):
-            GitSourceCache(self.cache_path).unpack(key, target_path, unsafe_mode)
-        elif key.startswith('files:'):
-            self._extract_hdist_pack(key, target_path)
+        if not ':' in key:
+            raise ValueError("Key must be on form 'type:hash'")
+        type, hash = key.split(':')
+        if type == 'git':
+            handler = GitSourceCache(self)
+        elif type == 'files' or type in supported_source_archive_types:
+            handler = ArchiveSourceCache(self)
         else:
-            ArchiveSourceCache(self.cache_path).unpack(key, target_path, unsafe_mode)
+            raise KeyNotFoundError('does not recognize key type: %s' % type)
+
+        #if not handler.contains(type, hash):
+        #    raise KeyNotFoundError('sources for key "%s" not found' % key)
+
+        handler.unpack(type, hash, target_path, unsafe_mode)
 
 
 class GitSourceCache(object):
     # Group together methods for working with the part of the source
     # cache stored with git.
 
-    def __init__(self, cache_path):
-        self.repo_path = pjoin(cache_path, GIT_DIRNAME)
+    def __init__(self, source_cache):
+        self.repo_path = pjoin(source_cache.cache_path, GIT_DIRNAME)
         self._git_env = dict(os.environ)
         self._git_env['GIT_DIR'] = self.repo_path
         self._ensure_repo()
@@ -330,10 +327,9 @@ class GitSourceCache(object):
 
         return 'git:%s' % commit
 
-    def unpack(self, key, target_path, unsafe_mode):
-        assert key.startswith('git:')
-        commit = key[4:]
-        archive_p = sh.git('archive', '--format=tar', commit, _env=self._git_env, _piped=True)
+    def unpack(self, type, hash, target_path, unsafe_mode):
+        assert type == 'git'
+        archive_p = sh.git('archive', '--format=tar', hash, _env=self._git_env, _piped=True)
         unpack_p = sh.tar(archive_p, 'x', _cwd=target_path)
         unpack_p.wait()
 
@@ -353,15 +349,15 @@ class ArchiveSourceCache(object):
 
     mime_to_ext = dict((value[0], key) for key, value in archive_types.iteritems())
 
-    def __init__(self, cache_path):
-        self.packs_path = pjoin(cache_path, PACKS_DIRNAME)
-        self.meta_path = pjoin(cache_path, 'meta')
-        if not os.path.exists(self.packs_path):
-            # TODO not race safe
-            os.makedirs(self.packs_path)
-        if not os.path.exists(self.meta_path):
-            # TODO not race safe
-            os.makedirs(self.meta_path)
+    def __init__(self, source_cache):
+        assert not isinstance(source_cache, str)
+        self.source_cache = source_cache
+        self.packs_path = source_cache._ensure_subdir(PACKS_DIRNAME)
+
+    def get_pack_filename(self, type, hash):
+        type_dir = pjoin(self.packs_path, type)
+        mkdir_if_not_exists(type_dir)
+        return pjoin(type_dir, hash)
 
     def _download_and_hash(self, url):
         """Downloads file at url to a temporary location and hashes it
@@ -384,16 +380,15 @@ class ArchiveSourceCache(object):
         
         # Download file to a temporary file within self.packs_path, while hashing
         # it.
-        hasher = hashlib.sha256()
         temp_fd, temp_path = tempfile.mkstemp(prefix='downloading-', dir=self.packs_path)
         try:
             f = os.fdopen(temp_fd, 'wb')
+            tee = HashingWriteStream(hashlib.sha256(), f)
             try:
                 while True:
                     chunk = stream.read(self.chunk_size)
                     if not chunk: break
-                    hasher.update(chunk)
-                    f.write(chunk)
+                    tee.write(chunk)
             finally:
                 stream.close()
                 f.close()            
@@ -401,7 +396,7 @@ class ArchiveSourceCache(object):
             # Remove temporary file if there was a failure
             os.unlink(temp_path)
             raise
-        return temp_path, format_digest(hasher)
+        return temp_path, format_digest(tee)
 
     def _ensure_type(self, url, type):
         if type is not None:
@@ -415,101 +410,101 @@ class ArchiveSourceCache(object):
 
         return type
 
-    def _write_archive_info(self, hash, type, url):
-        info = {'type' : type, 'retrieved_from' : url}
-        with file(pjoin(self.meta_path, '%s.info' % hash), 'w') as f:
-            json.dump(info, f)
+    def contains(self, type, hash):
+        return os.path.exists(self.get_pack_filename(type, hash))
 
-    def _read_archive_info(self, hash):
-        """Returns information about the archive stored under the given digest-key;
-        or None if it is not found.
-        """
-        try:
-            f = file(pjoin(self.meta_path, '%s.info' % hash))
-        except IOError:
-            return None
-        with f:
-            r = json.load(f)
-        return r
+    def fetch(self, url, key):
+        if key.startswith('files:'):
+            raise NotImplementedError("use the put() method to store raw files")
+        else:
+            type, hash = key.split(':')
+            self.fetch_archive(url, type, hash)
 
-    def contains(self, hash):
-        return os.path.exists(pjoin(self.meta_path, '%s.info' % hash))
-
-    def fetch_archive(self, url, expected_hash=None, type=None, _force_key_as=None):
-        """
-        Parameters
-        ----------
+    def fetch_archive(self, url, type, expected_hash):
+        if expected_hash is not None:
+            if self.contains(type, expected_hash):
+                return '%s:%s' % (type, expected_hash)
         
-        _force_key_as : str
-            Use this key instead of the one computed from hashing the archive.
-        """
-        if expected_hash is not None and self.contains(expected_hash):
-            # found, so noop
-            return expected_hash
-        else:
-            type = self._ensure_type(url, type)
-            temp_file, hash = self._download_and_hash(url)
-            if _force_key_as is not None:
-                hash = _force_key_as
-            try:
-                if expected_hash is not None and expected_hash != hash:
-                    raise RuntimeError('File downloaded from "%s" has hash %s but expected %s' %
-                                       (url, hash, expected_hash))
-                # We simply emit the info file without any checks,
-                # in the case of a race it shouldn't matter to overwrite it
-                self._write_archive_info(hash, type, url) 
-                # Simply rename to the target; again a race shouldn't matter
-                # with, in this case, identical content
-                target_file = pjoin(self.packs_path, hash)
-                os.rename(temp_file, target_file)
-            finally:
-                try:
-                    os.unlink(temp_file)
-                except:
-                    pass
-            return hash
+        type = self._ensure_type(url, type)
+        temp_file, hash = self._download_and_hash(url)
+        try:
+            if expected_hash is not None and expected_hash != hash:
+                raise RuntimeError('File downloaded from "%s" has hash %s but expected %s' %
+                                   (url, hash, expected_hash))
+            # Simply rename to the target; again a race shouldn't
+            # matter with, in this case, identical content. Make it
+            # read-only and readable for everybody, everybody can read
+            os.chmod(temp_file, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
+            os.rename(temp_file, self.get_pack_filename(type, hash))
+        finally:
+            silent_unlink(temp_file)
+        return '%s:%s' % (type, hash)
 
-    def unpack(self, key, target_path, unsafe_mode):
-        info = self._read_archive_info(key)
-        if info is None:
-            raise KeyNotFoundError("Key '%s' not found in source cache" % key)
-        type = info['type']
-        archive_path = pjoin(self.packs_path, key)
-        cmd = self.archive_types[type][1]
-        if unsafe_mode:
-            retcode = self._unpack_unsafe(key, target_path, archive_path, cmd)
-        else:
-            retcode = self._unpack_safe(key, target_path, archive_path, cmd)
-        if retcode != 0:
-            raise subprocess.CalledProcessError(retcode, cmd[0])
+    def put(self, files):
+        if isinstance(files, dict):
+            files = files.items()
+        key = hdist_pack(files)
+        type, hash = key.split(':')
+        pack_filename = self.get_pack_filename(type, hash)
+        if not os.path.exists(pack_filename):
+            with file(pack_filename, 'w') as f:
+                hdist_pack(files, f)
+        return key
+    
+    def unpack(self, type, hash, target_dir, unsafe_mode):
+        infile = self.open_file(type, hash)
+        with infile:
+            if type == 'files':
+                files = hdist_unpack(infile, 'files:%s' % hash)
+                scatter_files(files, target_dir)
+            else:
+                tar_cmd = self.archive_types[type][1]
+                if unsafe_mode:
+                    retcode = self._untar_unsafe(infile, hash, target_dir, tar_cmd)
+                else:
+                    retcode = self._untar_safe(infile, hash, target_dir, tar_cmd)
+                if retcode != 0:
+                    raise subprocess.CalledProcessError(retcode, cmd[0])
 
-    def _key_check(self, archive_path, hasher, key):
-        if format_digest(hasher) != key and not key.startswith('file:'):
-            raise CorruptSourceCacheError("Corrupted file: '%s'" % archive_path)
+    def open_file(self, type, hash):
+        try:
+            f = file(self.get_pack_filename(type, hash))
+        except IOError, e:
+            if e.errno == errno.ENOENT:
+                raise KeyNotFoundError("%s:%s" % (type, hash))
+        return f
 
-    def _unpack_unsafe(self, key, target_path, archive_path, cmd):
-        p  = subprocess.Popen(cmd, stdin=subprocess.PIPE, cwd=target_path)
-        hasher = hashlib.sha256()
-        with file(archive_path) as archive_file:
-            while True:
-                chunk = archive_file.read(self.chunk_size)
-                if not chunk: break
-                hasher.update(chunk)
-                p.stdin.write(chunk)
+    def _key_check(self, filename, hasher, hash):
+        if format_digest(hasher) != hash:
+            raise CorruptSourceCacheError("Corrupted file: '%s'" % filename)
+
+    def _untar_unsafe(self, infile, hash, target_dir, tar_cmd):
+        p  = subprocess.Popen(tar_cmd, stdin=subprocess.PIPE, cwd=target_dir)
+        tee = HashingWriteStream(hashlib.sha256(), p.stdin)
+        while True:
+            chunk = infile.read(self.chunk_size)
+            if not chunk: break
+            tee.write(chunk)
         p.stdin.close()
         retcode = p.wait()
-        self._key_check(archive_path, hasher, key)
+        self._key_check(infile.name, tee, hash)
         return retcode
 
-    def _unpack_safe(self, key, target_path, archive_path, cmd):
-        with file(archive_path) as archive_file:
-            archive_data = archive_file.read()
-        hasher = hashlib.sha256(archive_data)
-        self._key_check(archive_path, hasher, key)
-        p  = subprocess.Popen(cmd, stdin=subprocess.PIPE, cwd=target_path)
+    def _untar_safe(self, infile, hash, target_dir, tar_cmd):
+        archive_data = infile.read()
+        self._key_check(infile.name, hashlib.sha256(archive_data), hash)
+        p  = subprocess.Popen(tar_cmd, stdin=subprocess.PIPE, cwd=target_dir)
         p.stdin.write(archive_data)
         p.stdin.close()
         return p.wait()
+
+
+    #
+    # hdist packs
+    #
+    def _extract_hdist_pack(self, f, key, target_dir):
+        files = hdist_unpack(f, key)
+        scatter_files(files, target_dir)        
 
 supported_source_archive_types = sorted(ArchiveSourceCache.archive_types.keys())
 
@@ -614,3 +609,13 @@ def scatter_files(files, target_dir):
         with file(pjoin(dirname, basename), 'w') as f:
             f.write(contents)
 
+            try:
+                os.unlink(temp_file)
+            except:
+                pass
+
+def silent_unlink(path):
+    try:
+        os.unlink(temp_file)
+    except:
+        pass
