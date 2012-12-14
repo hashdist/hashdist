@@ -17,28 +17,28 @@ from .. import source_cache, build_store
 # Simple tests
 #
 def test_shorten_artifact_id():
-    assert 'foo/1.2/012' == build_store.shorten_artifact_id('foo/1.2/01234567890', 3)
+    assert 'foo/1.2/012' == build_store.build_spec.shorten_artifact_id('foo/1.2/01234567890', 3)
     with assert_raises(ValueError):
-        build_store.shorten_artifact_id('foo-1.2-01234567890', 3)
+        build_store.build_spec.shorten_artifact_id('foo-1.2-01234567890', 3)
 
 def test_rmtree_up_to():
     with temp_dir() as d:
         # Incomplete removal
         os.makedirs(pjoin(d, 'a', 'x', 'A', '2'))
         os.makedirs(pjoin(d, 'a', 'x', 'B', '2'))
-        build_store.rmtree_up_to(pjoin(d, 'a', 'x', 'A', '2'), d)
+        build_store.builder.rmtree_up_to(pjoin(d, 'a', 'x', 'A', '2'), d)
         assert ['B'] == os.listdir(pjoin(d, 'a', 'x'))
 
         # Invalid parent parameter
         with assert_raises(ValueError):
-            build_store.rmtree_up_to(pjoin(d, 'a', 'x', 'B'), '/nonexisting')
+            build_store.builder.rmtree_up_to(pjoin(d, 'a', 'x', 'B'), '/nonexisting')
 
         # Complete removal -- do not actually remove the parent
-        build_store.rmtree_up_to(pjoin(d, 'a', 'x', 'B', '2'), d)
+        build_store.builder.rmtree_up_to(pjoin(d, 'a', 'x', 'B', '2'), d)
         assert os.path.exists(d)
 
         # Parent is exclusive
-        build_store.rmtree_up_to(d, d)
+        build_store.builder.rmtree_up_to(d, d)
         assert os.path.exists(d)
 
 def test_canonical_build_spec():
@@ -66,7 +66,7 @@ def test_canonical_build_spec():
             {"target": "zsh-build", "contents": []},
           ]
         },
-        build_store.canonicalize_build_spec(doc))
+        build_store.build_spec.canonicalize_build_spec(doc))
         
 #
 # Tests requiring fixture
@@ -75,11 +75,11 @@ def fixture(keep_policy='never', ARTIFACT_ID_LEN=None):
     def decorator(func):
         @functools.wraps(func)
         def decorated():
-            old_aid_len = build_store.ARTIFACT_ID_LEN
+            old_aid_len = build_store.builder.ARTIFACT_ID_LEN
             tempdir = tempfile.mkdtemp()
             try:
                 if ARTIFACT_ID_LEN is not None:
-                    build_store.ARTIFACT_ID_LEN = ARTIFACT_ID_LEN
+                    build_store.builder.ARTIFACT_ID_LEN = ARTIFACT_ID_LEN
                 os.makedirs(pjoin(tempdir, 'src'))
                 os.makedirs(pjoin(tempdir, 'opt'))
                 os.makedirs(pjoin(tempdir, 'bld'))
@@ -88,7 +88,7 @@ def fixture(keep_policy='never', ARTIFACT_ID_LEN=None):
                                               keep_policy)
                 return func(tempdir, sc, bldr)
             finally:
-                build_store.ARTIFACT_ID_LEN = old_aid_len
+                build_store.builder.ARTIFACT_ID_LEN = old_aid_len
                 shutil.rmtree(tempdir)
         return decorated
     return decorator
