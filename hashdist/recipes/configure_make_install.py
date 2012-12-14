@@ -1,6 +1,6 @@
 from textwrap import dedent
 
-from .package import Package, DownloadSourceCode, PutScript
+from ..package import Package, DownloadSourceCode, PutScript
 
 def configure_make_install_package(name, version, source_url, source_key, configure_flags=(), **kw):
     # Split **kw into dependencies (packages) and env (strings, ints, floats)
