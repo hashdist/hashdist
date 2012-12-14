@@ -57,3 +57,6 @@ Binary file ./bin/python2 matches
 ./bin/python2.7-config:1:#!/home/dagss/testbed/123412354241234qasfdasfdasr32445rq32rfawef/bin/python2.7
 ./bin/python2-config:1:#!/home/dagss/testbed/123412354241234qasfdasfdasr32445rq32rfawef/bin/python2.7
 
+
+- NumPy and BLAS:
+https://github.com/numpy/numpy/pull/2751
