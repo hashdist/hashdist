@@ -6,6 +6,7 @@ import subprocess
 import hashlib
 from StringIO import StringIO
 import stat
+import errno
 
 pjoin = os.path.join
 
@@ -224,3 +225,11 @@ def test_scatter_files():
         assert sorted(os.listdir(pjoin(d, 'a', 'x'))) == ['y']
         with file(pjoin(d, 'a', 'b')) as f:
             assert f.read() == 'in a subdir'
+
+        # duplicate file error
+        try:
+            scatter_files(files, d)
+        except OSError, e:
+            assert e.errno == errno.EEXIST
+        else:
+            assert False

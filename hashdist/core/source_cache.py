@@ -591,7 +591,9 @@ def hdist_unpack(stream, key):
         
 def scatter_files(files, target_dir):
     """
-    Given a list of filenames and their contents, write them to the file system
+    Given a list of filenames and their contents, write them to the file system.
+
+    Will not overwrite files (raises an OSError(errno.EEXIST)).
 
     This is typically used together with :func:`hdist_unpack`.
 
@@ -611,13 +613,12 @@ def scatter_files(files, target_dir):
         if dirname not in existing_dir_cache and not os.path.exists(dirname):
             os.makedirs(dirname)
             existing_dir_cache.add(dirname)
-        with file(pjoin(dirname, basename), 'w') as f:
-            f.write(contents)
 
-            try:
-                os.unlink(temp_file)
-            except:
-                pass
+        # IIUC in Python 3.3+ one can do this with the 'x' file mode, but need to do it
+        # ourselves currently
+        fd = os.open(pjoin(dirname, basename), os.O_EXCL | os.O_CREAT | os.O_WRONLY, 0600)
+        with os.fdopen(fd, 'w') as f:
+            f.write(contents)
 
 def silent_unlink(path):
     try:
