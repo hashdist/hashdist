@@ -90,7 +90,7 @@ class ArtifactBuilder(object):
             try:
                 os.makedirs(build_dir)
             except OSError, e:
-                if e != errno.EEXIST:
+                if e.errno != errno.EEXIST:
                     raise
             else:
                 break

@@ -71,7 +71,7 @@ def test_canonical_build_spec():
 #
 # Tests requiring fixture
 #
-def fixture(keep_policy='never', ARTIFACT_ID_LEN=None):
+def fixture(ARTIFACT_ID_LEN=None):
     def decorator(func):
         @functools.wraps(func)
         def decorated():
@@ -84,8 +84,7 @@ def fixture(keep_policy='never', ARTIFACT_ID_LEN=None):
                 os.makedirs(pjoin(tempdir, 'opt'))
                 os.makedirs(pjoin(tempdir, 'bld'))
                 sc = source_cache.SourceCache(pjoin(tempdir, 'src'))
-                bldr = build_store.BuildStore(pjoin(tempdir, 'bld'), pjoin(tempdir, 'opt'), logger,
-                                              keep_policy)
+                bldr = build_store.BuildStore(pjoin(tempdir, 'bld'), pjoin(tempdir, 'opt'), logger)
                 return func(tempdir, sc, bldr)
             finally:
                 build_store.builder.ARTIFACT_ID_LEN = old_aid_len
@@ -129,7 +128,7 @@ def test_basic(tempdir, sc, bldr):
         assert 'hi stderr' in s
 
 
-@fixture(keep_policy='error')
+@fixture()
 def test_failing_build_and_multiple_commands(tempdir, sc, bldr):
     spec = {"name": "foo", "version": "na",
             "commands": [["/bin/true"],
@@ -137,23 +136,17 @@ def test_failing_build_and_multiple_commands(tempdir, sc, bldr):
             "files" : [{"target": "foo", "contents": ["foo"]}]
            }
     try:
-        bldr.ensure_present(spec, sc)
-    except build_store.BuildFailedError, e:
-        assert os.path.exists(pjoin(e.build_dir, 'foo'))
+        bldr.ensure_present(spec, sc, keep_build='error')
+    except build_store.BuildFailedError, e_first:
+        assert os.path.exists(pjoin(e_first.build_dir, 'foo'))
     else:
         assert False
 
-@fixture(keep_policy='never')
-def test_failing_build_2(tempdir, sc, bldr):
-    spec = {"name": "foo", "version": "na",
-            "commands": [["/bin/true"],
-                         ["/bin/false"]],
-            "files" : [{"target": "foo", "contents": ["foo"]}]
-           }
     try:
-        bldr.ensure_present(spec, sc)
-    except build_store.BuildFailedError, e:
-        assert not os.path.exists(pjoin(e.build_dir))
+        bldr.ensure_present(spec, sc, keep_build='never')
+    except build_store.BuildFailedError, e_second:
+        assert e_first.build_dir != e_second.build_dir
+        assert not os.path.exists(pjoin(e_second.build_dir))
     else:
         assert False
     
