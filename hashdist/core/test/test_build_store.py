@@ -5,7 +5,7 @@ import tempfile
 import shutil
 from textwrap import dedent
 
-from nose.tools import assert_raises
+from nose.tools import assert_raises, eq_
 
 from .utils import logger, temp_dir
 
@@ -39,7 +39,33 @@ def test_rmtree_up_to():
         # Parent is exclusive
         build_store.rmtree_up_to(d, d)
         assert os.path.exists(d)
-        
+
+def test_canonical_build_spec():
+    doc = {
+            "name" : "foo", "version": "r0",
+            "sources" : [
+              {"key": "git:c5ccca92c5f136833ad85614feb2aa4f5bd8b7c3"},
+              {"key": "tar.bz2:RB1JbykVljxdvL07mN60y9V9BVCruWRky2FpK2QCCow", "target": "sources", "strip": 1},
+              {"key": "files:5fcANXHsmjPpukSffBZF913JEnMwzcCoysn-RZEX7cM"}
+            ],
+            "files" : [
+              {"target": "zsh-build", "contents": []},
+              {"target": "build.sh", "contents": []}
+            ]
+          }
+    eq_({
+          "name" : "foo", "version": "r0",
+          "sources" : [
+            {"key": "files:5fcANXHsmjPpukSffBZF913JEnMwzcCoysn-RZEX7cM", "target" : ".", "strip" : 0},
+            {"key": "git:c5ccca92c5f136833ad85614feb2aa4f5bd8b7c3", "target" : ".", "strip" : 0},
+            {"key": "tar.bz2:RB1JbykVljxdvL07mN60y9V9BVCruWRky2FpK2QCCow", "target": "sources", "strip": 1},
+          ],
+          "files" : [
+            {"target": "build.sh", "contents": []},
+            {"target": "zsh-build", "contents": []},
+          ]
+        },
+        build_store.canonicalize_build_spec(doc))
         
 #
 # Tests requiring fixture
