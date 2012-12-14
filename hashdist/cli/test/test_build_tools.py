@@ -27,6 +27,6 @@ def test_symlinks():
               }
             }
             ''')
-        sh.hdist('build-symlinks', '--key=section1/section2')
+        sh.hdist('buildtool-symlinks', '--key=section1/section2')
         assert os.path.realpath('foo/ls') == '/bin/ls'
         assert os.path.realpath('bar/mv') == '/bin/mv'

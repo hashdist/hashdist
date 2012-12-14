@@ -10,6 +10,8 @@ import subprocess
 import shutil
 import json
 import errno
+import sys
+from textwrap import dedent
 
 from ..source_cache import scatter_files
 from .build_spec import shorten_artifact_id, InvalidBuildSpecError
@@ -55,6 +57,33 @@ class ArtifactBuilder(object):
             env['%s_relpath' % dep_ref] = os.path.relpath(dep_dir, relative_from)
             env['%s_id' % dep_ref] = dep_id
         return env
+
+    def make_hdist_launcher(self, build_dir):
+        """Creates a 'bin'-dir containing only a launcher for the 'hdist' command
+
+        It is created with the Python interpreter currently running,
+        loading the Hashdist package currently running (i.e.,
+        independent of any
+        "python" dependency in the build spec).
+        """
+        python = os.path.realpath(sys.executable)
+        hashdist_package = (
+            os.path.realpath(pjoin(os.path.dirname(__file__), '..', '..')))
+        bin_dir = pjoin(build_dir, 'hdist-bin')
+        lib_dir = pjoin(build_dir, 'hdist-lib')
+        os.mkdir(bin_dir)
+        os.mkdir(lib_dir)
+        os.symlink(hashdist_package, pjoin(lib_dir, 'hashdist'))
+        with file(pjoin(bin_dir, 'hdist'), 'w') as f:
+            f.write(dedent("""\
+               #!%(python)s
+               import sys
+               sys.path.insert(0, "%(lib_dir)s")
+               from hashdist.cli.main import main
+               sys.exit(main(sys.argv))
+               """) % dict(python=python, lib_dir=lib_dir))
+        os.chmod(pjoin(bin_dir, 'hdist'), 0700)
+        return bin_dir
 
     def build(self, source_cache, keep_build):
         artifact_dir, artifact_link = self.make_artifact_dir()
@@ -164,7 +193,8 @@ class ArtifactBuilder(object):
 
     def run_build_commands(self, build_dir, artifact_dir, env):
         # Handles log-file, environment, build execution
-        env['PATH'] = os.environ['PATH'] # for now
+        hdist_bin = self.make_hdist_launcher(build_dir)
+        env['PATH'] = hdist_bin + os.pathsep + os.environ['PATH'] # for now
         env['TARGET'] = artifact_dir
         env['BUILD'] = build_dir
 

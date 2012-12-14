@@ -114,11 +114,16 @@ def test_basic(tempdir, sc, bldr):
     assert ['build.json', 'build.log', 'hello'] == sorted(os.listdir(path))
     #assert os.listdir(pjoin(path, 'subdir')) == ['build.sh']
     with file(pjoin(path, 'hello')) as f:
-        assert ''.join(sorted(f.readlines())) == dedent('''\
+        got = sorted(f.readlines())
+        assert ''.join(got) == dedent('''\
         .
         ./build.json
         ./build.log
         ./build.sh
+        ./hdist-bin
+        ./hdist-bin/hdist
+        ./hdist-lib
+        ./hdist-lib/hashdist
         ./subdir
         ./subdir/build.sh
         ''')
@@ -231,6 +236,18 @@ def test_source_unpack_options(tempdir, sc, bldr):
         assert f.read() == "Welcome!"
     with file(pjoin(path, 'b')) as f:
         assert f.read() == "Welcome!"
+
+@fixture()
+def test_hdist_command_invocation(tempdir, sc, bldr):
+    spec = {
+             "name": "foo", "version": "na",
+             "commands": [["hdist", "buildtool-symlinks"]],
+             "parameters": {
+               "symlinks": [{"target": "$TARGET/foo-bin", "link-to": ["/bin/cp"]}]
+             }
+           }
+    artifact_id, path = bldr.ensure_present(spec, sc, keep_build='always')
+    assert os.path.realpath(pjoin(path, 'foo-bin', 'cp')) == '/bin/cp'
     
 
 # To test more complex relationship with packages we need to automate a bit:

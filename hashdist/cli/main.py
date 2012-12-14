@@ -117,3 +117,9 @@ def main(unparsed_argv):
         config = InifileConfiguration.create(args.config_file)
         ctx = HashdistCommandContext(parser, subcmd_parsers, sys.stdout, config)
         args.subcommand_handler(ctx, args)
+
+    return 0 # should trap exceptions and turn into exit codes?
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv))
+    

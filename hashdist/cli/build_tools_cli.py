@@ -20,11 +20,11 @@ class BuildSymlinks(object):
 
         {
           ...
-          "commands": [["hdist", "build-symlinks"]],
+          "commands": [["hdist", "buildtool-symlinks"]],
           "parameters" : {
             "symlinks" : [
               {
-                "target": "bin",
+                "target": "$TARGET/bin",
                 "link-to" : ["/bin/ls", "/bin/cp"]
               },
               <...more target directories here...>
@@ -35,7 +35,7 @@ class BuildSymlinks(object):
     hash more stable.
     """
 
-    command = 'build-symlinks'
+    command = 'buildtool-symlinks'
 
     @staticmethod
     def setup(ap):
@@ -50,6 +50,7 @@ class BuildSymlinks(object):
         doc = fetch_parameters_from_json(args.input, args.key)
         for section in doc:
             target_dir = section['target']
+            target_dir = os.path.expandvars(target_dir)
             silent_makedirs(target_dir)
             for link in section['link-to']:
                 basename = os.path.basename(link)
