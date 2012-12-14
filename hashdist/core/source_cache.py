@@ -366,7 +366,8 @@ class ArchiveSourceCache(object):
         temp_file, digest
         """
         # It's annoying to see curl for local files, so provide a special-case
-        if SIMPLE_FILE_URL_RE.match(url):
+        use_curl = not SIMPLE_FILE_URL_RE.match(url)
+        if not use_curl:
             stream = file(url[len('file:'):])
         else:
             # Make request
@@ -389,7 +390,13 @@ class ArchiveSourceCache(object):
                     tee.write(chunk)
             finally:
                 stream.close()
-                f.close()            
+                f.close()
+            if use_curl:
+                retcode = curl.wait()
+                if retcode == 3:
+                    raise ValueError('invalid URL (did you forget "file:" prefix?)')
+                else:
+                    raise RuntimeError("curl failed to download: %s" % url)
         except:
             # Remove temporary file if there was a failure
             os.unlink(temp_path)

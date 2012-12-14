@@ -16,6 +16,7 @@ from ..source_cache import (ArchiveSourceCache, SourceCache, CorruptSourceCacheE
 from ..hasher import Hasher, format_digest
 
 from .utils import temp_dir, working_directory, VERBOSE
+from . import utils
 
 #
 # Fixture
@@ -52,18 +53,8 @@ def teardown():
 
 def make_mock_archive():
     global mock_archive, mock_archive_tmpdir, mock_archive_hash
-    mock_archive_tmpdir = tempfile.mkdtemp()
-    mock_archive = pjoin(mock_archive_tmpdir, 'somearchive.tar.gz')
-    tmp_d = tempfile.mkdtemp()
-    try:
-        with file(pjoin(tmp_d, 'README'), 'w') as f:
-            f.write('file contents')
-        subprocess.check_call(['tar', 'czf', mock_archive, 'README'], cwd=tmp_d)
-    finally:
-        shutil.rmtree(tmp_d)
-    # get hash
-    with file(mock_archive) as f:
-        mock_archive_hash = 'tar.gz:' + format_digest(hashlib.sha256(f.read()))
+    mock_archive_tmpdir, mock_archive,  mock_archive_hash = utils.make_temporary_tarball(
+        [('README', 'file contents')])
 
 # Mock git repo
 
@@ -104,6 +95,21 @@ def test_archive():
             sc.unpack(key, d)
             with file(pjoin(d, 'README')) as f:
                 assert f.read() == 'file contents'
+
+def test_curl_errors():
+    with temp_source_cache() as sc:
+        with assert_raises(ValueError):
+            sc.fetch_archive('/tmp/foo/garbage.tar.gz') # malformed, would need file: prefix
+        with assert_raises(RuntimeError):
+            sc.fetch_archive('http://localhost:999/foo.tar.gz')
+    
+
+def test_stable_archive_hash():
+    fixed_tarball = pjoin(os.path.dirname(__file__), 'archive.tar.gz')
+    with temp_source_cache() as sc:
+        key = sc.fetch_archive('file:' + fixed_tarball)
+        assert key == 'tar.gz:41DpTztCprN77QJnelrGlLtV+VzJN7JuGzoHfs3Gv2s'
+        assert key != mock_archive_hash
 
 def test_git():
     with temp_source_cache() as sc:
@@ -179,7 +185,6 @@ def test_put():
             sc.unpack(key, d)
             with file(pjoin(d, 'foofile')) as f:
                 assert f.read() == 'the contents'
-    
 
 def test_simple_file_url_re():
     from ..source_cache import SIMPLE_FILE_URL_RE
