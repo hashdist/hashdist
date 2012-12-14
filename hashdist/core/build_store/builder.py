@@ -45,19 +45,18 @@ class ArtifactBuilder(object):
             env['%s_id' % dep_ref] = dep_id
         return env
 
-    def build(self, source_cache):
+    def build(self, source_cache, keep_build):
         artifact_dir, artifact_link = self.make_artifact_dir()
         try:
-            self.build_to(artifact_dir, source_cache)
+            self.build_to(artifact_dir, source_cache, keep_build)
         except:
             shutil.rmtree(artifact_dir)
             os.unlink(artifact_link)
             raise
         return artifact_dir
 
-    def build_to(self, artifact_dir, source_cache):
+    def build_to(self, artifact_dir, source_cache, keep_build):
         env = self.get_dependencies_env(artifact_dir)
-        keep_build_policy = self.builder.keep_build_policy
 
         # Always clean up when these fail regardless of keep_build_policy
         build_dir = self.make_build_dir()
@@ -73,11 +72,11 @@ class ArtifactBuilder(object):
         try:
             self.run_build_commands(build_dir, artifact_dir, env)
         except BuildFailedError, e:
-            if keep_build_policy == 'never':
+            if keep_build == 'never':
                 self.remove_build_dir(build_dir)
             raise e
         # Success
-        if keep_build_policy != 'always':
+        if keep_build != 'always':
             self.remove_build_dir(build_dir)
         return artifact_dir
 
