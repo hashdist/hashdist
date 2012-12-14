@@ -159,10 +159,10 @@ Build specification fields
     files), you should upload to the source cache and put a ``files:...`` key
     in *sources* instead.
 
-    Order does not affect hashing.
+    Order does not affect hashing. Files will always be encoded in UTF-8.
 
 **commands**:
-    Executed to perform the build.
+    Executed to perform the build. If any command fails, the build fails.
 
     Note that while more than one command is allowed, and they will be
     executed in order, this is not a shell script: Each command is
@@ -245,7 +245,7 @@ import re
 import errno
 
 from .hasher import Hasher
-
+from .source_cache import scatter_files
 
 class BuildFailedError(Exception):
     def __init__(self, msg, build_dir):
@@ -259,6 +259,17 @@ BUILD_ID_LEN = 4
 ARTIFACT_ID_LEN = 4
 
 
+
+class BuildSpecification(object):
+    def __init__(self, build_spec):
+        self.doc = canonicalize_build_spec(build_spec)
+        self.artifact_id = get_artifact_id(self.doc)
+            
+def as_build_spec_obj(obj):
+    if isinstance(obj, BuildSpecification):
+        return obj
+    else:
+        return BuildSpecification(obj)
 
 class BuildStore(object):
 
@@ -294,36 +305,39 @@ class BuildStore(object):
         return os.path.realpath(adir) if os.path.exists(adir) else None
 
     def is_present(self, build_spec):
-        return self.resolve(get_artifact_id(build_spec)) is not None
+        build_spec = as_build_spec_obj(build_spec)
+        return self.resolve(build_spec.artifact_id) is not None
 
     def ensure_present(self, build_spec, source_cache):
-        artifact_id = get_artifact_id(build_spec)
-        artifact_dir = self.resolve(artifact_id)
+        build_spec = as_build_spec_obj(build_spec)
+        artifact_dir = self.resolve(build_spec.artifact_id)
         if artifact_dir is None:
-            build = ArtifactBuild(self, build_spec, artifact_id)
+            build = ArtifactBuild(self, build_spec)
             artifact_dir = build.build(source_cache)
-        return artifact_id, artifact_dir
+        return build_spec.artifact_id, artifact_dir
 
 
 class ArtifactBuild(object):
-    def __init__(self, builder, build_spec, artifact_id):
+    def __init__(self, builder, build_spec):
         self.builder = builder
         self.logger = builder.logger
         self.build_spec = build_spec
-        self.artifact_id = artifact_id
+        self.artifact_id = build_spec.artifact_id
 
     def get_dependencies_env(self, relative_from):
         # Build the environment variables due to dependencies, and complain if
         # any dependency is not built
         env = {}
-        for dep_name, dep_artifact in self.build_spec.get('dependencies', {}).iteritems():
-            dep_dir = self.builder.resolve(dep_artifact)
+        for dep in self.build_spec.doc.get('dependencies', ()):
+            dep_ref = dep['ref']
+            dep_id = dep['id']
+            dep_dir = self.builder.resolve(dep_id)
             if dep_dir is None:
-                raise InvalidBuildSpecError('Dependency {"%s" : "%s"} not already built, please build it first' %
-                                            (dep_name, dep_artifact))
-            env[dep_name] = dep_artifact
-            env['%s_abspath' % dep_name] = dep_dir
-            env['%s_relpath' % dep_name] = os.path.relpath(dep_dir, relative_from)
+                raise InvalidBuildSpecError('Dependency "%s"="%s" not already built, please build it first' %
+                                            (dep_ref, dep_id))
+            env[dep_ref] = dep_dir
+            env['%s_relpath' % dep_ref] = os.path.relpath(dep_dir, relative_from)
+            env['%s_id' % dep_ref] = dep_id
         return env
 
     def build(self, source_cache):
@@ -345,20 +359,18 @@ class ArtifactBuild(object):
         try:
             self.serialize_build_spec(artifact_dir, build_dir)
             self.unpack_sources(build_dir, source_cache)
+            self.unpack_files(build_dir)
         except:
             self.remove_build_dir(build_dir)
             raise
 
         # Conditionally clean up when this fails
         try:
-            self.run_build_command(build_dir, artifact_dir, env)
-        except subprocess.CalledProcessError, e:
+            self.run_build_commands(build_dir, artifact_dir, env)
+        except BuildFailedError, e:
             if keep_build_policy == 'never':
                 self.remove_build_dir(build_dir)
-                raise BuildFailedError('Build command failed with code %d' % e.returncode, None)
-            else:
-                raise BuildFailedError('Build command failed with code %d, result in %s' %
-                                       (e.returncode, build_dir), build_dir)
+            raise e
         # Success
         if keep_build_policy != 'always':
             self.remove_build_dir(build_dir)
@@ -412,10 +424,11 @@ class ArtifactBuild(object):
     def serialize_build_spec(self, build_dir, artifact_dir):
         for d in [build_dir, artifact_dir]:
             with file(pjoin(d, 'build.json'), 'w') as f:
-                json.dump(self.build_spec, f, separators=(', ', ' : '), indent=4, sort_keys=True)
+                json.dump(self.build_spec.doc, f, separators=(', ', ' : '), indent=4, sort_keys=True)
 
     def unpack_sources(self, build_dir, source_cache):
-        for source_item in self.build_spec['sources']:
+        # sources
+        for source_item in self.build_spec.doc.get('sources', []):
             key = source_item['key']
             target = source_item.get('target', '.')
             full_target = os.path.abspath(pjoin(build_dir, target))
@@ -424,14 +437,21 @@ class ArtifactBuild(object):
                                             'from build directory')
             # if an exception is raised the directory is removed, so unsafe_mode
             # should be ok
-            source_cache.unpack(key, full_target, unsafe_mode=True)
+            source_cache.unpack(key, full_target, unsafe_mode=True, strip=source_item['strip'])
 
-    def run_build_command(self, build_dir, artifact_dir, env):
-        # todo: $-interpolation in command
-        command_lst = self.build_spec['command']
+    def unpack_files(self, build_dir):
+        def parse_file_entry(entry):
+            contents = os.linesep.join(entry['contents']).encode('UTF-8')
+            return entry['target'], contents
+            
+        files = [parse_file_entry(x) for x in self.build_spec.doc.get('files', ())]
+        scatter_files(files, build_dir)
 
+    def run_build_commands(self, build_dir, artifact_dir, env):
+        # Handles log-file, environment, build execution
         env['PATH'] = os.environ['PATH'] # for now
-        env['PREFIX'] = artifact_dir
+        env['TARGET'] = artifact_dir
+        env['BUILD'] = build_dir
 
         log_filename = pjoin(build_dir, 'build.log')
         self.logger.info('Building artifact %s..., follow log with' %
@@ -440,8 +460,16 @@ class ArtifactBuild(object):
         self.logger.info('    tail -f %s\n\n' % log_filename)
         with file(log_filename, 'w') as log_file:
             logfileno = log_file.fileno()
-            subprocess.check_call(command_lst, cwd=build_dir, env=env,
-                                  stdin=None, stdout=logfileno, stderr=logfileno)
+            for command_lst in self.build_spec.doc['commands']:
+                log_file.write("hdist: running command %r" % command_lst)
+                try:
+                    subprocess.check_call(command_lst, cwd=build_dir, env=env,
+                                          stdin=None, stdout=logfileno, stderr=logfileno)
+                except subprocess.CalledProcessError, e:
+                    log_file.write("hdist: command FAILED with code %d" % e.returncode)
+                    raise BuildFailedError('Build command failed with code %d (cwd: "%s")' %
+                                           (e.returncode, build_dir), build_dir)
+            log_file.write("hdist: SUCCESS")
         # On success, copy log file to artifact_dir
         shutil.copy(log_filename, pjoin(artifact_dir, 'build.log'))
 
@@ -488,6 +516,7 @@ def canonicalize_build_spec(spec):
     return result
 
 
+
 _SAFE_NAME_RE = re.compile(r'[a-zA-Z0-9-_+]+')
 def assert_safe_name(x):
     """Raises a ValueError if x does not match ``[a-zA-Z0-9-_+]+``.
@@ -498,13 +527,15 @@ def assert_safe_name(x):
         raise ValueError('"%s" is empty or contains illegal characters')
     return x
 
-def get_artifact_id(build_spec):
+def get_artifact_id(build_spec, is_canonical=False):
     """Produces the hash/"artifact id" from the given build spec.
 
     This can be produced merely from the textual form of the spec without
     considering any run-time state on any system.
     
     """
+    if not is_canonical:
+        build_spec = canonicalize_build_spec(build_spec)
     digest = Hasher(build_spec).format_digest()
     name = assert_safe_name(build_spec['name'])
     version = assert_safe_name(build_spec['version'])

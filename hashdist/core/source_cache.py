@@ -186,7 +186,7 @@ class SourceCache(object):
         """
         return ArchiveSourceCache(self).put(files)
 
-    def unpack(self, key, target_path, unsafe_mode=False):
+    def unpack(self, key, target_path, unsafe_mode=False, strip=0):
         """
         Unpacks the sources identified by `key` to `target_path`
 
@@ -218,6 +218,11 @@ class SourceCache(object):
             a fresh directory which is removed in the event of a
             `CorruptSourceCacheError`.
 
+        strip : int (default: 0)
+            Strips the first `strip` components off the path of each
+            extracted file. Set to 1 to remove the typical
+            ``projectname-2.2`` directory in tarballs.
+
         """
         if not os.path.exists(target_path):
             os.makedirs(target_path)
@@ -231,10 +236,7 @@ class SourceCache(object):
         else:
             raise KeyNotFoundError('does not recognize key type: %s' % type)
 
-        #if not handler.contains(type, hash):
-        #    raise KeyNotFoundError('sources for key "%s" not found' % key)
-
-        handler.unpack(type, hash, target_path, unsafe_mode)
+        handler.unpack(type, hash, target_path, unsafe_mode, strip)
 
 
 class GitSourceCache(object):
@@ -325,8 +327,10 @@ class GitSourceCache(object):
 
         return 'git:%s' % commit
 
-    def unpack(self, type, hash, target_path, unsafe_mode):
+    def unpack(self, type, hash, target_path, unsafe_mode, strip):
         assert type == 'git'
+        if strip != 0:
+            raise NotImplementedError('unpacking with git does not support strip != 0')
         archive_p = sh.git('archive', '--format=tar', hash, _env=self._git_env, _piped=True)
         unpack_p = sh.tar(archive_p, 'x', _cwd=target_path)
         unpack_p.wait()
@@ -341,8 +345,8 @@ class ArchiveSourceCache(object):
     chunk_size = 16 * 1024
 
     archive_types = {
-        'tar.gz' :  (('application/x-tar', 'gzip'), ['tar', 'xz']),
-        'tar.bz2' : (('application/x-tar', 'bzip2'), ['tar', 'xj']),
+        'tar.gz' :  (('application/x-tar', 'gzip'), ('tar', 'xz')),
+        'tar.bz2' : (('application/x-tar', 'bzip2'), ('tar', 'xj')),
         }
 
     mime_to_ext = dict((value[0], key) for key, value in archive_types.iteritems())
@@ -456,14 +460,18 @@ class ArchiveSourceCache(object):
                 hdist_pack(files, f)
         return key
     
-    def unpack(self, type, hash, target_dir, unsafe_mode):
+    def unpack(self, type, hash, target_dir, unsafe_mode, strip):
         infile = self.open_file(type, hash)
         with infile:
             if type == 'files':
+                if strip != 0:
+                    raise NotImplementedError('unpacking with git does not support strip != 0')
                 files = hdist_unpack(infile, 'files:%s' % hash)
                 scatter_files(files, target_dir)
             else:
-                tar_cmd = self.archive_types[type][1]
+                tar_cmd = list(self.archive_types[type][1])
+                if strip != 0:
+                    tar_cmd.append('--strip-components=%d' % strip)
                 if unsafe_mode:
                     retcode = self._untar_unsafe(infile, hash, target_dir, tar_cmd)
                 else:

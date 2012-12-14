@@ -8,6 +8,7 @@ from textwrap import dedent
 from nose.tools import assert_raises, eq_
 
 from .utils import logger, temp_dir
+from . import utils
 
 from .. import source_cache, build_store
 
@@ -97,7 +98,7 @@ def test_basic(tempdir, sc, bldr):
     script_key = sc.put({'build.sh': dedent("""\
     echo hi stdout
     echo hi stderr>&2
-    find > ${PREFIX}/hello
+    find > ${TARGET}/hello
     """)})
     spec = {
         "name": "foo",
@@ -106,7 +107,7 @@ def test_basic(tempdir, sc, bldr):
             {"target": ".", "key": script_key},
             {"target": "subdir", "key": script_key}
             ],
-        "command": ["/bin/bash", "build.sh"]
+        "commands": [["/bin/bash", "build.sh"]]
         }
     assert not bldr.is_present(spec)
     name, path = bldr.ensure_present(spec, sc)
@@ -129,28 +130,30 @@ def test_basic(tempdir, sc, bldr):
 
 
 @fixture(keep_policy='error')
-def test_failing_build(tempdir, sc, bldr):
-    script_key = sc.put({'build.sh': 'exit 1'})
+def test_failing_build_and_multiple_commands(tempdir, sc, bldr):
     spec = {"name": "foo", "version": "na",
-            "sources": [{"key": script_key}],
-            "command": ["/bin/bash", "build.sh"]}
+            "commands": [["/bin/true"],
+                         ["/bin/false"]],
+            "files" : [{"target": "foo", "contents": ["foo"]}]
+           }
     try:
         bldr.ensure_present(spec, sc)
     except build_store.BuildFailedError, e:
-        assert os.path.exists(pjoin(e.build_dir, 'build.sh'))
+        assert os.path.exists(pjoin(e.build_dir, 'foo'))
     else:
         assert False
 
 @fixture(keep_policy='never')
 def test_failing_build_2(tempdir, sc, bldr):
-    script_key = sc.put({'build.sh': 'exit 1'})
     spec = {"name": "foo", "version": "na",
-            "sources": [{"key": script_key}],
-            "command": ["/bin/bash", "build.sh"]}
+            "commands": [["/bin/true"],
+                         ["/bin/false"]],
+            "files" : [{"target": "foo", "contents": ["foo"]}]
+           }
     try:
         bldr.ensure_present(spec, sc)
     except build_store.BuildFailedError, e:
-        assert e.build_dir is None
+        assert not os.path.exists(pjoin(e.build_dir))
     else:
         assert False
     
@@ -169,7 +172,7 @@ def test_source_target_tries_to_escape(tempdir, sc, bldr):
 def test_fail_to_find_dependency(tempdir, sc, bldr):
     for target in ["..", "/etc"]:
         spec = {"name": "foo", "version": "na",
-                "dependencies": {"bar": "bogushash"}}
+                "dependencies": [{"ref": "bar", "id": "bogushash"}]}
         with assert_raises(build_store.InvalidBuildSpecError):
             bldr.ensure_present(spec, sc)
 
@@ -186,7 +189,7 @@ def test_hash_prefix_collision(tempdir, sc, bldr):
             script_key = sc.put({'build.sh': 'echo hello %d; exit 0' % k})
             spec = {"name": "foo", "version": "na",
                     "sources": [{"key": script_key}],
-                    "command": ["/bin/bash", "build.sh"]}
+                    "commands": [["/bin/bash", "build.sh"]]}
             artifact_id, path = bldr.ensure_present(spec, sc)
             hashparts.append(os.path.split(path)[-1])
         lines.append(hashparts)
@@ -203,6 +206,39 @@ def test_hash_prefix_collision(tempdir, sc, bldr):
         if len(x) > 1:
             assert x[:1] in hashparts
     
+@fixture()
+def test_source_unpack_options(tempdir, sc, bldr):
+    container_dir, tarball, tarball_key = utils.make_temporary_tarball([
+        ('coolproject-2.3/README', 'Welcome!')
+        ])
+    try:
+        sc.fetch_archive('file:' + tarball, tarball_key)
+    finally:
+        shutil.rmtree(container_dir)
+    spec = {
+           "name": "foo",
+           "version": "na",
+           "sources": [
+               {"target": ".", "key": tarball_key, "strip": 1},
+               {"target": "subdir", "key": tarball_key, "strip": 0},
+               ],
+           "commands": [["/bin/bash", "build.sh"]],
+           "files": [
+                {
+                    "target": "build.sh",
+                    "contents": [
+                        "cp subdir/coolproject-2.3/README $TARGET/a",
+                        "cp README $TARGET/b",
+                    ]
+                }
+           ]
+        }
+    name, path = bldr.ensure_present(spec, sc)
+    with file(pjoin(path, 'a')) as f:
+        assert f.read() == "Welcome!"
+    with file(pjoin(path, 'b')) as f:
+        assert f.read() == "Welcome!"
+    
 
 # To test more complex relationship with packages we need to automate a bit:
 
@@ -215,16 +251,16 @@ class MockPackage:
 def build_mock_packages(builder, source_cache, packages):
     name_to_artifact = {} # name -> (artifact_id, path)
     for pkg in packages:
-        script = 'touch ${PREFIX}/deps\n'
+        script = 'touch ${TARGET}/deps\n'
         script += '\n'.join(
-            'echo %(x)s $%(x)s $%(x)s_abspath $%(x)s_relpath >> ${PREFIX}/deps' % dict(x=dep.name)
+            'echo %(x)s $%(x)s_id $%(x)s $%(x)s_relpath >> ${TARGET}/deps' % dict(x=dep.name)
             for dep in pkg.deps)
         script_key = source_cache.put({'build.sh': script})
         spec = {"name": pkg.name, "version": "na",
-                "dependencies": dict((dep.name, name_to_artifact[dep.name][0])
-                                     for dep in pkg.deps),
+                "dependencies": [{"ref": dep.name, "id": name_to_artifact[dep.name][0]}
+                                 for dep in pkg.deps],
                 "sources": [{"key": script_key}],
-                "command": ["/bin/bash", "build.sh"]}
+                "commands": [["/bin/bash", "build.sh"]]}
         artifact, path = builder.ensure_present(spec, source_cache)
         name_to_artifact[pkg.name] = (artifact, path)
 
