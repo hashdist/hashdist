@@ -8,8 +8,8 @@ software builder also requires that local sources are first "uploaded" to the
 cache.
 
 The software cache currently has explicit support for tarballs, git,
-and storing single files as-is. A "source item" (tarball, git commit, or file)
-is identified by a secure hash. The generic API in :meth:`SourceCache.fetch` and
+and storing files as-is without metadata. A "source item" (tarball, git commit, or set
+of files) is identified by a secure hash. The generic API in :meth:`SourceCache.fetch` and
 :meth:`SourceCache.unpack` works by using such hashes as keys. The retrieval
 and unpacking methods are determined by the key prefix::
 
@@ -20,7 +20,7 @@ and unpacking methods are determined by the key prefix::
     sc.fetch('https://github.com/numpy/numpy.git',
              'git:35dc14b0a59cf16be8ebdac04f7269ac455d5e43')
 
-For cases where one don't know the key up front one uses the
+For cases where one doesn't know the key up front one uses the
 key-retrieving API. This is typically done in interactive settings to
 aid distribution/package developers::
 
@@ -30,13 +30,15 @@ aid distribution/package developers::
 Features
 --------
 
+ * Re-downloading all the sources on each build gets old quickly...
+
  * Native support for multiple retrieval mechanisms. This is important as
    one wants to use tarballs for slowly-changing stable code, but VCS for
    quickly-changing code.
 
  * Isolates dealing with various source code retrieval mechanisms from
    upper layers, who can simply pass along two strings regardless of method.
-   
+
  * Safety: Hashes are re-checked on the fly while unpacking, to protect
    against corruption or tainting of the source cache.
 
@@ -48,8 +50,8 @@ Features
 Source keys
 -----------
 
-By using secure hashing the keys for a given source item can be determined
-a priori. The conventions are as follows:
+The keys for a given source item can be determined
+*a priori*. The rules are as follows:
 
 Tarballs/archives:
     SHA-256, encoded in base64 using :func:`.format_digest`. The prefix
@@ -76,6 +78,9 @@ Individual files or directories ("hdist-pack"):
 
     This stream is then encoded like archives (SHA-256 in base-64),
     and prefixed with ``files:`` to get the key.
+
+Module reference
+----------------
 
 """
 
@@ -190,6 +195,14 @@ class SourceCache(object):
         will be raised in this case. In normal circumstances this should
         never happen.
 
+        By default, the archive will be loaded into memory and
+        checked, and if found corrupt nothing will be extracted. By
+        setting `unsafe_mode`, extraction takes place on the fly while
+        validating, which is faster and use less memory, but it means
+        that a corrupt archive may be partially or fully extracted
+        (though an exception is raised at the end). No removal of the
+        extracted contents is attempted in this case.
+
         Parameters
         ----------
 
@@ -199,27 +212,12 @@ class SourceCache(object):
         target_path : str
             Path to extract in
 
-        unsafe_mode : bool (default: True)
+        unsafe_mode : bool (default: False)
             Whether a faster, memory-conserving mode should be used.
             It is safe to use `unsafe_mode` if `target_path` is
             a fresh directory which is removed in the event of a
-            `CorruptSourceCacheError`. See "Security concerns" below.
+            `CorruptSourceCacheError`.
 
-        Returns
-        -------
-
-        `None`
-
-        Unsafe mode details
-        -------------------
-
-        By default, the archive will be loaded into memory and
-        checked, and if found corrupt nothing will be extracted. By
-        setting `unsafe_mode`, extraction takes place on the fly while
-        validating, which is faster and use less memory, but it means
-        that a corrupt archive may be partially or fully extracted
-        (though an exception is raised at the end). No removal of the
-        extracted contents is attempted in this case.
         """
         if not os.path.exists(target_path):
             os.makedirs(target_path)
