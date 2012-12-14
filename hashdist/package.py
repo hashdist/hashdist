@@ -1,38 +1,37 @@
-from .core import get_artifact_id, single_file_key
+from .core import get_artifact_id
+from .core.source_cache import hdist_pack
 
 class SourceItem(object):
-    def __init__(self, key, target):
+    def __init__(self, key, target, strip=0):
         self.key = key
         self.target = target
+        self.strip = strip
         
     def get_spec(self):
         return {'key': self.key,
-                'target': self.target}
-
-    def get_secure_hash(self):
-        return 'hashdist.package.source_item.SourceItem', self.key
+                'target': self.target,
+                'strip': self.strip}
 
 class DownloadSourceCode(SourceItem):
-    def __init__(self, url, key, target='.'):
-        SourceItem.__init__(self, key, target)
+    def __init__(self, url, key, target='.', strip=0):
+        SourceItem.__init__(self, key, target, strip)
         self.url = url
 
     def fetch_into(self, source_cache):
         source_cache.fetch_archive(self.url, self.key)
                         
 class PutScript(SourceItem):
-    def __init__(self, filename, contents, target='.'):
-        key = single_file_key(filename, contents)
+    def __init__(self, files, target='.'):
+        key = hdist_pack(files)
         SourceItem.__init__(self, key, target)
-        self.filename = filename
-        self.contents = contents
+        self.files = files
 
     def fetch_into(self, source_cache):
-        source_cache.put(self.filename, self.contents)
+        source_cache.put(self.files)
 
 
 class Package(object):
-    def __init__(self, name, version, sources, command, dependencies, env):
+    def __init__(self, name, version, sources, commands, dependencies, env):
         for dep in dependencies:
             if not isinstance(dep, Package):
                 raise TypeError('Expected Package instance as dependency')
@@ -40,7 +39,7 @@ class Package(object):
         self.name = name
         self.version = version
         self.sources = sources
-        self.command = command
+        self.commands = commands
         self.dependencies = dependencies
         self.env = env
         self.build_spec = self._make_build_spec()
@@ -52,7 +51,7 @@ class Package(object):
                                 for name, pkg in self.dependencies.iteritems())
         build_spec = {'name': self.name,
                       'version': self.version,
-                      'command': self.command,
+                      'commands': self.commands,
                       'env': self.env,
                       'dependencies': dep_artifact_ids,
                       'sources': source_specs}
@@ -70,7 +69,7 @@ class Package(object):
     def __ne__(self, other):
         return not self == other
 
-def build_packages(build_store, source_cache, packages):
+def build_packages(build_store, source_cache, packages, keep_build='never'):
     built = {} # package -> artifact_id
 
     def _depth_first_build(package):
@@ -86,7 +85,7 @@ def build_packages(build_store, source_cache, packages):
             source_item.fetch_into(source_cache)
 
         # Do the build
-        build_store.ensure_present(package.build_spec, source_cache)
+        build_store.ensure_present(package.build_spec, source_cache, keep_build)
     
     for package in packages:
         _depth_first_build(package)    

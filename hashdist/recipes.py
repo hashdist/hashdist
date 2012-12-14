@@ -22,16 +22,15 @@ def configure_make_install_package(name, version, source_url, source_key, config
         
     script = dedent('''\
         set -e
-        cd zlib-1.2.7
-        ./configure %(configure_flags_s)s --prefix="${PREFIX}"
+        ./configure %(configure_flags_s)s --prefix="${TARGET}"
         make
         make install
     ''') % locals()
 
 
     return Package(name, version,
-                   sources=[DownloadSourceCode(source_url, source_key),
-                            PutScript('build.sh', script)],
-                   command=['/bin/bash', 'build.sh'],
+                   sources=[DownloadSourceCode(source_url, source_key, strip=1),
+                            PutScript([('build.sh', script)])],
+                   commands=[['/bin/bash', 'build.sh']],
                    dependencies=dependencies,
                    env=env)
