@@ -17,6 +17,15 @@ def temp_dir():
         shutil.rmtree(tempdir)
 
 @contextlib.contextmanager
+def temp_working_dir():
+    tempdir = tempfile.mkdtemp()
+    try:
+        with working_directory(tempdir):
+            yield tempdir
+    finally:
+        shutil.rmtree(tempdir)
+
+@contextlib.contextmanager
 def working_directory(path):
     old = os.getcwd()
     try:

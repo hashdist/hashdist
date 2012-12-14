@@ -15,7 +15,7 @@ from ..core import InifileConfiguration
 
 _subcommands = {}
 
-def register_subcommand(cls, name=None):
+def register_subcommand(cls, command=None):
     """Register a subcommand for the ``hdist`` command-line tool
 
     The provided `cls` should provide the following (see :cls:`Help` below
@@ -27,8 +27,8 @@ def register_subcommand(cls, name=None):
        the passed-in argument parser
      - ``cls.run`` runs the command
     """
-    if name is None:
-        name = cls.__name__.lower()
+    if command is None:
+        name = getattr(cls, 'command', cls.__name__.lower())
     _subcommands[name] = cls
 
 
