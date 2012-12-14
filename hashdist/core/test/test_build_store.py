@@ -241,20 +241,19 @@ class MockPackage:
         self.deps = deps
 
 
-def build_mock_packages(builder, source_cache, packages):
-    name_to_artifact = {} # name -> (artifact_id, path)
+def build_mock_packages(builder, source_cache, packages, virtuals={}, name_to_artifact=None):
+    if name_to_artifact is None:
+        name_to_artifact = {} # name -> (artifact_id, path)
     for pkg in packages:
-        script = 'touch ${TARGET}/deps\n'
-        script += '\n'.join(
-            'echo %(x)s $%(x)s_id $%(x)s $%(x)s_relpath >> ${TARGET}/deps' % dict(x=dep.name)
-            for dep in pkg.deps)
-        script_key = source_cache.put({'build.sh': script})
+        script = ['touch ${TARGET}/deps\n']
+        script += ['echo %(x)s $%(x)s_id $%(x)s $%(x)s_relpath >> ${TARGET}/deps' % dict(x=dep.name)
+                   for dep in pkg.deps]
         spec = {"name": pkg.name, "version": "na",
                 "dependencies": [{"ref": dep.name, "id": name_to_artifact[dep.name][0]}
                                  for dep in pkg.deps],
-                "sources": [{"key": script_key}],
-                "commands": [["/bin/bash", "build.sh"]]}
-        artifact, path = builder.ensure_present(spec, source_cache)
+                "commands": [["/bin/bash", "build.sh"]],
+                "files" : [{"target": "build.sh", "contents": script}]}
+        artifact, path = builder.ensure_present(spec, source_cache, virtuals=virtuals)
         name_to_artifact[pkg.name] = (artifact, path)
 
         with file(pjoin(path, 'deps')) as f:
@@ -263,6 +262,7 @@ def build_mock_packages(builder, source_cache, packages):
                 assert d == dep.name
                 assert os.path.abspath(pjoin(path, relpath)) == abspath
                 assert abspath == name_to_artifact[d][1]
+    return name_to_artifact
         
 @fixture()
 def test_dependency_substitution(tempdir, sc, bldr):
@@ -271,3 +271,18 @@ def test_dependency_substitution(tempdir, sc, bldr):
     blas = MockPackage("blas", [libc])
     numpy = MockPackage("numpy", [blas, libc])
     build_mock_packages(bldr, sc, [libc, blas, numpy])
+
+@fixture()
+def test_virtual_dependencies(tempdir, sc, bldr):
+    blas = MockPackage("blas", [])
+    blas_id, blas_path = build_mock_packages(bldr, sc, [blas])["blas"]
+
+    numpy = MockPackage("numpy", [MockPackage("blas", "virtual:blas/1.2.3")])
+
+    with assert_raises(ValueError):
+        build_mock_packages(bldr, sc, [numpy],
+                            name_to_artifact={"blas": ("virtual:blas/1.2.3", blas_path)})
+
+    build_mock_packages(bldr, sc, [numpy], virtuals={"virtual:blas/1.2.3": blas_id},
+                        name_to_artifact={"blas": ("virtual:blas/1.2.3", blas_path)})
+    

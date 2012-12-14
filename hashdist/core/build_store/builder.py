@@ -23,11 +23,12 @@ class BuildFailedError(Exception):
         self.build_dir = build_dir
 
 class ArtifactBuilder(object):
-    def __init__(self, builder, build_spec):
+    def __init__(self, builder, build_spec, virtuals):
         self.builder = builder
         self.logger = builder.logger
         self.build_spec = build_spec
         self.artifact_id = build_spec.artifact_id
+        self.virtuals = virtuals
 
     def get_dependencies_env(self, relative_from):
         # Build the environment variables due to dependencies, and complain if
@@ -36,6 +37,16 @@ class ArtifactBuilder(object):
         for dep in self.build_spec.doc.get('dependencies', ()):
             dep_ref = dep['ref']
             dep_id = dep['id']
+
+            # Resolutions of virtual dependencies should be provided by the user
+            # at the time of build
+            if dep_id.startswith('virtual:'):
+                try:
+                    dep_id = self.virtuals[dep_id]
+                except KeyError:
+                    raise ValueError('build spec contained a virtual dependency "%s" that was not '
+                                     'provided' % dep_id)
+            
             dep_dir = self.builder.resolve(dep_id)
             if dep_dir is None:
                 raise InvalidBuildSpecError('Dependency "%s"="%s" not already built, please build it first' %

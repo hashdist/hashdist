@@ -281,13 +281,15 @@ class BuildStore(object):
         build_spec = as_build_spec(build_spec)
         return self.resolve(build_spec.artifact_id) is not None
 
-    def ensure_present(self, build_spec, source_cache, keep_build='never'):
+    def ensure_present(self, build_spec, source_cache, virtuals=None, keep_build='never'):
+        if virtuals is None:
+            virtuals = {}
         if keep_build not in ('never', 'error', 'always'):
             raise ValueError("invalid keep_build value")
         build_spec = as_build_spec(build_spec)
         artifact_dir = self.resolve(build_spec.artifact_id)
         if artifact_dir is None:
-            builder = ArtifactBuilder(self, build_spec)
+            builder = ArtifactBuilder(self, build_spec, virtuals)
             artifact_dir = builder.build(source_cache, keep_build)
         return build_spec.artifact_id, artifact_dir
 
