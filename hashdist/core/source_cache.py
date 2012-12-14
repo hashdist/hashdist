@@ -399,8 +399,8 @@ class ArchiveSourceCache(object):
                 retcode = curl.wait()
                 if retcode == 3:
                     raise ValueError('invalid URL (did you forget "file:" prefix?)')
-                else:
-                    raise RuntimeError("curl failed to download: %s" % url)
+                elif retcode != 0:
+                    raise RuntimeError("curl failed to download (code: %d): %s" % (retcode, url))
         except:
             # Remove temporary file if there was a failure
             os.unlink(temp_path)
