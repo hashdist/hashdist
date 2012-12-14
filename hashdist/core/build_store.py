@@ -56,31 +56,59 @@ from the full ID to the shortened form. See also Discussion below.
 Build specifications and inferring artifact IDs
 -----------------------------------------------
 
-The fundamental object of the build store is the JSON build specification.
-If you know the build spec, you know the artifact ID, since the former
-is essentially the hash of the latter. The key to achieving this is that
-both `dependencies` and `sources` are specified in terms of their hashes.
+The fundamental object of the build store is the JSON build
+specification.  If you know the build spec, you know the artifact ID,
+since the former is the hash of the latter. The key is that both
+`dependencies` and `sources` are specified in terms of their hashes.
+
+An example build spec:
 
 .. code-block:: python
-
+    
     {
         "name" : "<name of piece of software>",
         "version" : "<human-readable description what makes this build special>",
-        "dependencies" : {
-            "unix" : "virtual:unix",
-            "bash" : "virtual:bash",
-            "zlib" : "zlib/1.2.7/fXHu+8dcqmREfXaz+ixMkh2LQbvIKlHf+rtl5HEfgmU",
-            "gcc" : "gcc/host-4.6.3/q0VSL7JmzH1P17meqITYc4kMbnIjIexrWPdlAlqPn3s",
-         },
+        "dependencies" : [
+            {"ref": "bash", "id": "virtual:bash"},
+            {"ref": "make", "id": "virtual:gnu-make/3+"},
+            {"ref": "gcc", "id": "zlib/1.2.7/fXHu+8dcqmREfXaz+ixMkh2LQbvIKlHf+rtl5HEfgmU"},
+            {"ref": "unix", "id": "virtual:unix"},
+            {"ref": "zlib", "id": "gcc/host-4.6.3/q0VSL7JmzH1P17meqITYc4kMbnIjIexrWPdlAlqPn3s"},
+         ],
          "sources" : [
              {"key": "git:c5ccca92c5f136833ad85614feb2aa4f5bd8b7c3"},
-             {"key": "tar.bz2:RB1JbykVljxdvL07mN60y9V9BVCruWRky2FpK2QCCow", "target": "sources", "strip": 1}
+             {"key": "tar.bz2:RB1JbykVljxdvL07mN60y9V9BVCruWRky2FpK2QCCow", "target": "sources", "strip": 1},
              {"key": "files:5fcANXHsmjPpukSffBZF913JEnMwzcCoysn-RZEX7cM"}
-         ]
-         "command" : ["$bash/bin/bash", "build.sh"]
+         ],
+         "files" : [
+             { "target": "build.sh",
+               "contents": [
+                 "set -e",
+                 "./configure --prefix=\\"${TARGET}\\"",
+                 "make",
+                 "make install"
+               ]
+             }
+         ],
+         "commands" : [["bash", "build.sh"]],
     }
 
-Field documentation.
+The build environment
+---------------------
+
+The build environment is totally clean except for what is documented here.
+``$PATH`` is reset as discussed in the next section.
+
+The build starts in a temporary directory ``$BUILD`` with *sources*
+and *files* unpacked into it, and should result in something being
+copied/installed to ``$TARGET``. The build specification is available
+under ``$BUILD/build.json``, and output redirected to
+``$BUILD/build.log``; these two files will also be present in
+``$TARGET`` after the build.
+
+
+Build specification fields
+--------------------------
 
 **name**:
     See previous section
@@ -89,19 +117,28 @@ Field documentation.
     See previous section
 
 **dependencies**:
-    The dependencies needed for the  *build*, remember that after the
-    artifact is built these have no effect. The effect of these are:
+    The dependencies needed for the *build* (after the
+    artifact is built these have no effect).
 
-    * The build can not be performed if the dependencies are not present
-      in the build store
-    * ``$PATH`` for execution contains the ``bin`` subdirectory
-      of each dependency (one can always override the PATH in a script)
-    * Environment variables are set up as follows (using the ``zlib``
-      dependency as an example):
+    * **ref**: A name to use to inject information of this dependency
+      into the build environment. Above, 
+      ``$zlib`` will be the absolute path to the ``zlib`` artifact,
+      ``$zlib_id`` will be the full artifact ID, while
+      ``$zlib_relpath`` will be the relative path from ``$PREFIX`` to the
+      zlib artifact.
 
-      * ``$zlib``: Absolute path to ``zlib`` build artifact
-      * ``$zlib_id``: Build artifact ID
-      * ``$zlib_relpath``: Relative path from ``$PREFIX`` to the zlib artifact
+    * **id**: The artifact ID. If the value is prepended with
+      ``"virtual:"``, the ID is a virtual ID, used so that the real
+      one does not contribute to the hash. See section on virtual
+      dependencies below.
+
+    Each dependency that has a ``bin`` sub-directory will have this inserted
+    in ``$PATH`` in the order the dependencies are listed (and these
+    are the *only* entries in ``$PATH``, ``/bin`` etc. are not present).
+
+    **Note**: The order affects the hash (since it affects ``$PATH``).
+    Whenever ordering does not matter, the list should be sorted prior
+    to input by the ``ref`` argument to maintain hash stability.
 
 **sources**:
     Unpacked into the temporary build directory. The optional ``target`` parameter
@@ -109,26 +146,56 @@ Field documentation.
     parameter (only applies to tarballs) acts like the
     `tar` ``--strip-components`` flag.
 
-Build execution
----------------
+    Order does not affect the hashing. The build will fail if any of
+    the archives contain conflicting files.
 
- #. A temporary build directory is created (current directory and ``$BUILD_DIR``)
+**files**:
+    Embed small text files in-line in the build spec. This is really equivalent
+    to uploading the file to the source store, but can provide more immediate
+    documentation. **target** gives the target filename and **contents** is
+    a list of lines (which will be joined by the platform newline character).
 
- #. A directory for the build results is created, available in the ``$PREFIX``
-    environment variable.
+    For anything more than a hundred lines or so (small scripts and configuration
+    files), you should upload to the source cache and put a ``files:...`` key
+    in *sources* instead.
 
- #. The build spec is serialized as ``build.json`` in both the directories
-    above.
+    Order does not affect hashing.
 
- #. The sources listed are unpacked
+**commands**:
+    Executed to perform the build.
 
- #. Environment is set up (see build spec section) and the command
-    given executed. All output is piped to ``$BUILD_DIR/build.log``.
+    Note that while more than one command is allowed, and they will be
+    executed in order, this is not a shell script: Each command is
+    spawned from the builder process with a pristine environment. For anything
+    that is not completely trivial one should use a scripting language.
 
- #. On success, logfile is copied to ``$PREFIX`` as well. The build directory
-    may be removed depending on configuration.
 
+Virtual dependencies
+--------------------
 
+Some times one do not wish some dependencies to become part of the
+hash.  For instance, if the ``cp`` tool is used during the build, one
+is normally ready to trust that the build wouldn't have been different
+if a newer version of the ``cp`` tool was used instead.
+
+Virtual dependencies, such as ``virtual:unix`` in the example above,
+are present in order. If a bug in ``cp`` is indeed discovered,
+
+Embedding version information in the virtual artifact names provide
+the possibility of recovering from mis-builds caused by bugs in the
+tools provided. If a serious bug is indeed discovered in ``cp``, one
+can start to use the name ``virtual:unix/r2`` instead, thus triggering
+rebuilds of artifacts built with the old version.
+
+This feature should not be over-used. For instance, GCC should almost
+certainly not be a virtual dependency.
+
+.. note::
+   One should think about virtual dependencies merely as a tool that gives
+   the user control (and responsibility) over when the hash should change.
+   They are *not* the primary mechanism for providing software
+   from the host; though software from the host will sometimes be
+   specified as virtual dependencies.
 
 
 Discussion
@@ -178,6 +245,7 @@ import re
 import errno
 
 from .hasher import Hasher
+
 
 class BuildFailedError(Exception):
     def __init__(self, msg, build_dir):
