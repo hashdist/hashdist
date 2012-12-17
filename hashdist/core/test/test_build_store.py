@@ -10,7 +10,7 @@ from nose.tools import assert_raises, eq_
 from .utils import logger, temp_dir
 from . import utils
 
-from .. import source_cache, build_store
+from .. import source_cache, build_store, InvalidBuildSpecError
 
 
 #
@@ -162,7 +162,7 @@ def test_source_target_tries_to_escape(tempdir, sc, bldr):
         spec = {"name": "foo", "version": "na",
                 "sources": [{"target": target, "key": "foo"}]
                 }
-        with assert_raises(build_store.InvalidBuildSpecError):
+        with assert_raises(InvalidBuildSpecError):
             bldr.ensure_present(spec, sc)
 
 
@@ -171,7 +171,7 @@ def test_fail_to_find_dependency(tempdir, sc, bldr):
     for target in ["..", "/etc"]:
         spec = {"name": "foo", "version": "na",
                 "dependencies": [{"ref": "bar", "id": "bogushash"}]}
-        with assert_raises(build_store.InvalidBuildSpecError):
+        with assert_raises(InvalidBuildSpecError):
             bldr.ensure_present(spec, sc)
 
 @fixture(ARTIFACT_ID_LEN=1)
@@ -263,7 +263,7 @@ def build_mock_packages(builder, source_cache, packages, virtuals={}, name_to_ar
         name_to_artifact = {} # name -> (artifact_id, path)
     for pkg in packages:
         script = ['touch ${TARGET}/deps\n']
-        script += ['echo %(x)s $%(x)s_id $%(x)s $%(x)s_relpath >> ${TARGET}/deps' % dict(x=dep.name)
+        script += ['echo %(x)s $%(x)s_id $%(x)s >> ${TARGET}/deps' % dict(x=dep.name)
                    for dep in pkg.deps]
         spec = {"name": pkg.name, "version": "na",
                 "dependencies": [{"ref": dep.name, "id": name_to_artifact[dep.name][0]}
@@ -275,9 +275,8 @@ def build_mock_packages(builder, source_cache, packages, virtuals={}, name_to_ar
 
         with file(pjoin(path, 'deps')) as f:
             for line, dep in zip(f.readlines(), pkg.deps):
-                d, artifact_id, abspath, relpath = line.split()
+                d, artifact_id, abspath = line.split()
                 assert d == dep.name
-                assert os.path.abspath(pjoin(path, relpath)) == abspath
                 assert abspath == name_to_artifact[d][1]
     return name_to_artifact
         

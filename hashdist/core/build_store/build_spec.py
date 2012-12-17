@@ -3,9 +3,6 @@ import re
 from ..hasher import Hasher
 
 
-class InvalidBuildSpecError(ValueError):
-    pass
-
 
 class BuildSpec(object):
     def __init__(self, build_spec):

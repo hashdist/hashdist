@@ -1,0 +1,4 @@
+
+class InvalidBuildSpecError(ValueError):
+    pass
+

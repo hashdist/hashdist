@@ -236,6 +236,5 @@ Reference
 
 # package exports
 from .builder import BuildFailedError
-from .build_spec import (BuildSpec, as_build_spec, get_artifact_id,
-                         InvalidBuildSpecError)
+from .build_spec import BuildSpec, as_build_spec, get_artifact_id
 from .build_store import BuildStore

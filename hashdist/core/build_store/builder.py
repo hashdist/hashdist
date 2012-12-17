@@ -14,7 +14,10 @@ import sys
 from textwrap import dedent
 
 from ..source_cache import scatter_files
-from .build_spec import shorten_artifact_id, InvalidBuildSpecError
+from ..sandbox import get_dependencies_env
+from .build_spec import shorten_artifact_id
+from ..common import InvalidBuildSpecError
+
 
 BUILD_ID_LEN = 4
 ARTIFACT_ID_LEN = 4
@@ -25,38 +28,12 @@ class BuildFailedError(Exception):
         self.build_dir = build_dir
 
 class ArtifactBuilder(object):
-    def __init__(self, builder, build_spec, virtuals):
-        self.builder = builder
-        self.logger = builder.logger
+    def __init__(self, build_store, build_spec, virtuals):
+        self.build_store = build_store
+        self.logger = build_store.logger
         self.build_spec = build_spec
         self.artifact_id = build_spec.artifact_id
         self.virtuals = virtuals
-
-    def get_dependencies_env(self, relative_from):
-        # Build the environment variables due to dependencies, and complain if
-        # any dependency is not built
-        env = {}
-        for dep in self.build_spec.doc.get('dependencies', ()):
-            dep_ref = dep['ref']
-            dep_id = dep['id']
-
-            # Resolutions of virtual dependencies should be provided by the user
-            # at the time of build
-            if dep_id.startswith('virtual:'):
-                try:
-                    dep_id = self.virtuals[dep_id]
-                except KeyError:
-                    raise ValueError('build spec contained a virtual dependency "%s" that was not '
-                                     'provided' % dep_id)
-            
-            dep_dir = self.builder.resolve(dep_id)
-            if dep_dir is None:
-                raise InvalidBuildSpecError('Dependency "%s"="%s" not already built, please build it first' %
-                                            (dep_ref, dep_id))
-            env[dep_ref] = dep_dir
-            env['%s_relpath' % dep_ref] = os.path.relpath(dep_dir, relative_from)
-            env['%s_id' % dep_ref] = dep_id
-        return env
 
     def make_hdist_launcher(self, build_dir):
         """Creates a 'bin'-dir containing only a launcher for the 'hdist' command
@@ -96,7 +73,8 @@ class ArtifactBuilder(object):
         return artifact_dir
 
     def build_to(self, artifact_dir, source_cache, keep_build):
-        env = self.get_dependencies_env(artifact_dir)
+        env = get_dependencies_env(self.build_store, self.virtuals,
+                                   self.build_spec.doc.get('dependencies', ()))
 
         # Always clean up when these fail regardless of keep_build_policy
         build_dir = self.make_build_dir()
@@ -122,7 +100,7 @@ class ArtifactBuilder(object):
 
     def make_build_dir(self):
         short_id = shorten_artifact_id(self.artifact_id, BUILD_ID_LEN)
-        build_dir = orig_build_dir = pjoin(self.builder.temp_build_dir, short_id)
+        build_dir = orig_build_dir = pjoin(self.build_store.temp_build_dir, short_id)
         i = 0
         # Try to make build_dir, if not then increment a -%d suffix until we
         # fine a free slot
@@ -139,12 +117,12 @@ class ArtifactBuilder(object):
         return build_dir
 
     def remove_build_dir(self, build_dir):
-        rmtree_up_to(build_dir, self.builder.temp_build_dir)
+        rmtree_up_to(build_dir, self.build_store.temp_build_dir)
 
     def make_artifact_dir(self):
         # try to make shortened dir and symlink to it; incrementally
         # lengthen the name in the case of hash collision
-        store = self.builder.artifact_store_dir
+        store = self.build_store.artifact_store_dir
         extra = 0
         while True:
             short_id = shorten_artifact_id(self.artifact_id, ARTIFACT_ID_LEN + extra)
