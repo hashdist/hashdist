@@ -7,7 +7,7 @@ from textwrap import dedent
 
 from nose.tools import assert_raises, eq_
 
-from .utils import logger, temp_dir
+from .utils import logger, temp_dir, temp_working_dir
 from . import utils
 
 from .. import source_cache, build_store, InvalidBuildSpecError
@@ -50,8 +50,8 @@ def test_canonical_build_spec():
               {"key": "files:5fcANXHsmjPpukSffBZF913JEnMwzcCoysn-RZEX7cM"}
             ],
             "files" : [
-              {"target": "zsh-build", "contents": []},
-              {"target": "build.sh", "contents": []}
+              {"target": "zsh-build", "text": []},
+              {"target": "build.sh", "text": []}
             ]
           }
     eq_({
@@ -62,11 +62,64 @@ def test_canonical_build_spec():
             {"key": "tar.bz2:RB1JbykVljxdvL07mN60y9V9BVCruWRky2FpK2QCCow", "target": "sources", "strip": 1},
           ],
           "files" : [
-            {"target": "build.sh", "contents": []},
-            {"target": "zsh-build", "contents": []},
+            {"target": "build.sh", "text": []},
+            {"target": "zsh-build", "text": []},
           ]
         },
         build_store.build_spec.canonicalize_build_spec(doc))
+
+def test_execute_files_dsl():
+    def assertions(dirname):
+        assert os.path.realpath(pjoin(dirname, 'lib')) == '/usr/lib'
+
+        with file(pjoin(dirname, 'bin', 'hdist')) as f:
+            x = f.read().strip()
+            assert x == ("sys.path.insert(0, sys.path.join('%s', 'lib'))" % dirname)
+        assert os.stat(pjoin(dirname, 'bin', 'hdist')).st_mode & 0100
+
+    with temp_working_dir() as d:
+        doc = [
+            {
+                "target": "$ARTIFACT/bin/hdist",
+                "executable": True,
+                "expandvars": True,
+                "text": [
+                    "sys.path.insert(0, sys.path.join('$ARTIFACT', 'lib'))"
+                ]
+            },
+            {
+                "target": "$ARTIFACT/lib",
+                "symlink_to": "/usr/lib"
+            }
+        ]
+        # relative paths
+        build_store.builder.execute_files_dsl(doc, dict(ARTIFACT='A'))
+        assertions('A')
+
+        # error on collisions for both types
+        with assert_raises(OSError):
+            build_store.builder.execute_files_dsl([doc[0]], dict(ARTIFACT='A'))
+        with assert_raises(OSError):
+            build_store.builder.execute_files_dsl([doc[1]], dict(ARTIFACT='A'))
+        
+        # absolute paths
+        with temp_working_dir() as another_dir:
+            build_store.builder.execute_files_dsl(doc, dict(ARTIFACT=pjoin(d, 'B')))
+        assertions(pjoin(d, 'B'))
+
+        # test with a plain file and relative target
+        doc = [{"target": "foo/bar/plainfile", "text": ["$ARTIFACT"]}]
+        build_store.builder.execute_files_dsl(doc, dict(ARTIFACT='ERROR_IF_USED'))
+        with file(pjoin('foo', 'bar', 'plainfile')) as f:
+            assert f.read() == '$ARTIFACT'
+        assert not (os.stat(pjoin('foo', 'bar', 'plainfile')).st_mode & 0100)
+
+        # test with a file in root directory
+        doc = [{"target": "plainfile", "text": ["bar"]}]
+        build_store.builder.execute_files_dsl(doc, {})
+        with file(pjoin('plainfile')) as f:
+            assert f.read() == 'bar'
+
         
 #
 # Tests requiring fixture
@@ -97,7 +150,7 @@ def test_basic(tempdir, sc, bldr):
     script_key = sc.put({'build.sh': dedent("""\
     echo hi stdout
     echo hi stderr>&2
-    find > ${TARGET}/hello
+    find > ${ARTIFACT}/hello
     """)})
     spec = {
         "name": "foo",
@@ -138,7 +191,7 @@ def test_failing_build_and_multiple_commands(tempdir, sc, bldr):
     spec = {"name": "foo", "version": "na",
             "commands": [["/bin/true"],
                          ["/bin/false"]],
-            "files" : [{"target": "foo", "contents": ["foo"]}]
+            "files" : [{"target": "foo", "text": ["foo"]}]
            }
     try:
         bldr.ensure_present(spec, sc, keep_build='error')
@@ -224,9 +277,9 @@ def test_source_unpack_options(tempdir, sc, bldr):
            "files": [
                 {
                     "target": "build.sh",
-                    "contents": [
-                        "cp subdir/coolproject-2.3/README $TARGET/a",
-                        "cp README $TARGET/b",
+                    "text": [
+                        "cp subdir/coolproject-2.3/README $ARTIFACT/a",
+                        "cp README $ARTIFACT/b",
                     ]
                 }
            ]
@@ -243,7 +296,7 @@ def test_hdist_command_invocation(tempdir, sc, bldr):
              "name": "foo", "version": "na",
              "commands": [["hdist", "buildtool-symlinks"]],
              "parameters": {
-               "symlinks": [{"target": "$TARGET/foo-bin", "link-to": ["/bin/cp"]}]
+               "symlinks": [{"target": "$ARTIFACT/foo-bin", "link-to": ["/bin/cp"]}]
              }
            }
     artifact_id, path = bldr.ensure_present(spec, sc, keep_build='always')
@@ -269,7 +322,7 @@ def build_mock_packages(builder, source_cache, packages, virtuals={}, name_to_ar
                 "dependencies": [{"ref": dep.name, "id": name_to_artifact[dep.name][0]}
                                  for dep in pkg.deps],
                 "commands": [["/bin/bash", "build.sh"]],
-                "files" : [{"target": "build.sh", "contents": script}]}
+                "files" : [{"target": "build.sh", "text": script}]}
         artifact, path = builder.ensure_present(spec, source_cache, virtuals=virtuals)
         name_to_artifact[pkg.name] = (artifact, path)
 

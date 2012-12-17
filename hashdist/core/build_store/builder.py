@@ -12,9 +12,11 @@ import json
 import errno
 import sys
 from textwrap import dedent
+from string import Template
+import contextlib
 
 from ..source_cache import scatter_files
-from ..sandbox import get_dependencies_env
+from ..sandbox import get_artifact_dependencies_env
 from .build_spec import shorten_artifact_id
 from ..common import InvalidBuildSpecError
 
@@ -73,15 +75,18 @@ class ArtifactBuilder(object):
         return artifact_dir
 
     def build_to(self, artifact_dir, source_cache, keep_build):
-        env = get_dependencies_env(self.build_store, self.virtuals,
-                                   self.build_spec.doc.get('dependencies', ()))
+        env = get_artifact_dependencies_env(self.build_store, self.virtuals,
+                                            self.build_spec.doc.get('dependencies', ()))
 
         # Always clean up when these fail regardless of keep_build_policy
         build_dir = self.make_build_dir()
         try:
+            env['ARTIFACT'] = artifact_dir
+            env['BUILD'] = build_dir
+
             self.serialize_build_spec(artifact_dir, build_dir)
             self.unpack_sources(build_dir, source_cache)
-            self.unpack_files(build_dir)
+            self.unpack_files(build_dir, env)
         except:
             self.remove_build_dir(build_dir)
             raise
@@ -161,13 +166,9 @@ class ArtifactBuilder(object):
             # should be ok
             source_cache.unpack(key, full_target, unsafe_mode=True, strip=source_item['strip'])
 
-    def unpack_files(self, build_dir):
-        def parse_file_entry(entry):
-            contents = os.linesep.join(entry['contents']).encode('UTF-8')
-            return entry['target'], contents
-            
-        files = [parse_file_entry(x) for x in self.build_spec.doc.get('files', ())]
-        scatter_files(files, build_dir)
+    def unpack_files(self, build_dir, env):
+        with working_directory(build_dir):
+            execute_files_dsl(self.build_spec.doc.get('files', ()), env)
 
     def run_build_commands(self, build_dir, artifact_dir, env):
         # Handles log-file, environment, build execution
@@ -217,3 +218,63 @@ def rmtree_up_to(path, parent):
             if e.errno != errno.ENOTEMPTY:
                 raise
             break
+
+
+
+
+def execute_files_dsl(files, env):
+    """
+    Executes the mini-language used in the "files" section of the build-spec.
+
+    Relative directories in targets are relative to current cwd.
+
+    Parameters
+    ----------
+
+    files : json-like
+        Files to create in the "files" mini-language (todo: document)
+
+    env : dict
+        Environment to use for variable substitutation
+    """
+    def subs(x):
+        return Template(x).substitute(env)
+    
+    for file_spec in files:
+        target = subs(file_spec['target'])
+        # Automatically create parent directory of target
+        dirname, basename = os.path.split(target)
+        if dirname != '' and not os.path.exists(dirname):
+            os.makedirs(dirname)
+        
+        if 'text' in file_spec:
+            text = os.linesep.join(file_spec['text'])
+            if file_spec.get('expandvars', False):
+                text = subs(text)
+            
+            if file_spec.get('executable', False):
+                mode = 0700
+            else:
+                mode = 0600
+
+            # IIUC in Python 3.3+ one can do this with the 'x' file mode, but need to do it
+            # ourselves currently
+            fd = os.open(pjoin(dirname, basename), os.O_EXCL | os.O_CREAT | os.O_WRONLY, mode)
+            with os.fdopen(fd, 'w') as f:
+                f.write(text)
+
+        elif 'symlink_to' in file_spec:
+            os.symlink(file_spec['symlink_to'], target)
+
+        else:
+            raise ValueError('neither "text" nor "symlink_to" property found')
+
+
+@contextlib.contextmanager
+def working_directory(path):
+    old = os.getcwd()
+    try:
+        os.chdir(path)
+        yield
+    finally:
+        os.chdir(old)
