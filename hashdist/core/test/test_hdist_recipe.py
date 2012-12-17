@@ -18,13 +18,15 @@ def test_hdist_cli_artifact(tempdir, sc, bldr):
     spec = {
              "name": "foo", "version": "na",
              "dependencies": [{"ref": "hdist", "id": "virtual:hdist"}],
-             "commands": [["hdist", "buildtool-symlinks"]],
+             "commands": [["hdist", "create-links", "build.json"]],
              "parameters": {
-               "symlinks": [{"target": "$ARTIFACT/foo-bin", "link-to": ["/bin/cp"]}]
+               "links": [
+                  {"action": "symlink", "target": "$ARTIFACT", "select": "/bin/cp", "prefix": "/"},
+                ]
              }
            }
     virtuals = {'virtual:hdist': hdist_id}
-    artifact_id, path = bldr.ensure_present(spec, sc, virtuals)
-    assert os.path.realpath(pjoin(path, 'foo-bin', 'cp')) == '/bin/cp'
+    artifact_id, path = bldr.ensure_present(spec, sc, virtuals, log_inline=True)
+    assert os.path.realpath(pjoin(path, 'bin', 'cp')) == '/bin/cp'
 
     

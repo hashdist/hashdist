@@ -21,12 +21,14 @@ def test_symlinks():
             {
               "section1" : {
                 "section2" : [
-                  {"target": "foo", "link-to" : ["/bin/ls", "/bin/cp"]},
-                  {"target": "bar", "link-to" : ["/bin/ls", "/bin/mv"]}
+                   {"action": "symlink", "target": "$FOO", "select" : "/bin/ls"},
+                   {"action": "symlink", "target": "bar", "select" : "/bin/ls", "prefix": "/"}
                 ]
               }
             }
             ''')
-        sh.hdist('buildtool-symlinks', '--key=section1/section2')
-        assert os.path.realpath('foo/ls') == '/bin/ls'
-        assert os.path.realpath('bar/mv') == '/bin/mv'
+        env = dict(os.environ)
+        env['FOO'] = 'foo'
+        sh.hdist('create-links', '--key=section1/section2', 'build.json', _env=env)
+        assert os.path.realpath('foo') == '/bin/ls'
+        assert os.path.realpath('bar/bin/ls') == '/bin/ls'

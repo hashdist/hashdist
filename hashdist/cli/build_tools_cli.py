@@ -13,47 +13,45 @@ def fetch_parameters_from_json(filename, key):
         doc = doc[step]
     return doc
 
-class BuildSymlinks(object):
+class CreateLinks(object):
     """
     Sets up a set of symlinks to the host system. The following
     ``build.json`` would set up links to "ls" and "cp" from the host system::
 
         {
           ...
-          "commands": [["hdist", "buildtool-symlinks"]],
+          "commands": [["hdist", "create-links"]],
           "parameters" : {
-            "symlinks" : [
+            "links" : [
               {
-                "target": "$TARGET/bin",
-                "link-to" : ["/bin/ls", "/bin/cp"]
-              },
-              <...more target directories here...>
+                "action": "symlink",
+                "select": "/bin/cp",
+                "prefix": "/",
+                "target": "$ARTIFACT"
+              }
+            ]
           }
         }
 
+    Variables are expanded from the OS environment.
+    
     Note: It is a good idea to sort the link target list to make the
     hash more stable.
     """
 
-    command = 'buildtool-symlinks'
+    command = 'create-links'
 
     @staticmethod
     def setup(ap):
-        ap.add_argument('--key', default="parameters/symlinks",
-                        help='key in json file to read (default: "parameters/symlinks")')
-        ap.add_argument('input', nargs='?', help='parameter json file (default: "build.json")')
+        ap.add_argument('--key', default="parameters/links",
+                        help='key in json file to read (default: "parameters/links")')
+        ap.add_argument('input', help='parameter json file')
 
     @staticmethod
     def run(ctx, args):
-        if args.input is None:
-            args.input = "build.json"
+        from ..core.links import execute_links_dsl
+        
         doc = fetch_parameters_from_json(args.input, args.key)
-        for section in doc:
-            target_dir = section['target']
-            target_dir = os.path.expandvars(target_dir)
-            silent_makedirs(target_dir)
-            for link in section['link-to']:
-                basename = os.path.basename(link)
-                os.symlink(link, pjoin(target_dir, basename))
+        execute_links_dsl(doc, os.environ)
 
-register_subcommand(BuildSymlinks)
+register_subcommand(CreateLinks)
