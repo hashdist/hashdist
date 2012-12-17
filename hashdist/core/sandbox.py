@@ -2,9 +2,13 @@
 Execution environment for ``build.json`` and ``install.json``.
 """
 
+import os
+from os.path import join as pjoin
+import subprocess
+
 from .common import InvalidBuildSpecError
 
-def get_dependencies_env(build_store, virtuals, dependencies):
+def get_artifact_dependencies_env(build_store, virtuals, dependencies):
     """
     Given the `dependencies` object (see :mod:`hashdist.core.build_store`),
     set up a shell environment.
@@ -25,7 +29,7 @@ def get_dependencies_env(build_store, virtuals, dependencies):
     Returns
     -------
 
-    env: dict
+    env : dict
         Environment variables to set containing variables for the dependency
         artifacts
     """
@@ -51,6 +55,12 @@ def get_dependencies_env(build_store, virtuals, dependencies):
                                         (dep_ref, dep_id))
         env[dep_ref] = dep_dir
         env['%s_id' % dep_ref] = dep_id
+        bin_dir = pjoin(dep_dir, 'bin')
+        if os.path.exists(bin_dir):
+            if 'PATH' in env:
+                env['PATH'] = bin_dir + os.pathsep + env['PATH']
+            else:
+                env['PATH'] = bin_dir
     return env
     
 

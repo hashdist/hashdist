@@ -148,9 +148,9 @@ def fixture(ARTIFACT_ID_LEN=None):
 @fixture()
 def test_basic(tempdir, sc, bldr):
     script_key = sc.put({'build.sh': dedent("""\
-    echo hi stdout
+    echo hi stdout path=[$PATH]
     echo hi stderr>&2
-    find > ${ARTIFACT}/hello
+    /usr/bin/find > ${ARTIFACT}/hello
     """)})
     spec = {
         "name": "foo",
@@ -173,16 +173,12 @@ def test_basic(tempdir, sc, bldr):
         ./build.json
         ./build.log
         ./build.sh
-        ./hdist-bin
-        ./hdist-bin/hdist
-        ./hdist-lib
-        ./hdist-lib/hashdist
         ./subdir
         ./subdir/build.sh
         ''')
     with file(pjoin(path, 'build.log')) as f:
         s =  f.read()
-        assert 'hi stdout' in s
+        assert 'hi stdout path=[]' in s
         assert 'hi stderr' in s
 
 
@@ -278,8 +274,8 @@ def test_source_unpack_options(tempdir, sc, bldr):
                 {
                     "target": "build.sh",
                     "text": [
-                        "cp subdir/coolproject-2.3/README $ARTIFACT/a",
-                        "cp README $ARTIFACT/b",
+                        "/bin/cp subdir/coolproject-2.3/README $ARTIFACT/a",
+                        "/bin/cp README $ARTIFACT/b",
                     ]
                 }
            ]
@@ -290,18 +286,6 @@ def test_source_unpack_options(tempdir, sc, bldr):
     with file(pjoin(path, 'b')) as f:
         assert f.read() == "Welcome!"
 
-@fixture()
-def test_hdist_command_invocation(tempdir, sc, bldr):
-    spec = {
-             "name": "foo", "version": "na",
-             "commands": [["hdist", "buildtool-symlinks"]],
-             "parameters": {
-               "symlinks": [{"target": "$ARTIFACT/foo-bin", "link-to": ["/bin/cp"]}]
-             }
-           }
-    artifact_id, path = bldr.ensure_present(spec, sc, keep_build='always')
-    assert os.path.realpath(pjoin(path, 'foo-bin', 'cp')) == '/bin/cp'
-    
 
 # To test more complex relationship with packages we need to automate a bit:
 
@@ -315,7 +299,7 @@ def build_mock_packages(builder, source_cache, packages, virtuals={}, name_to_ar
     if name_to_artifact is None:
         name_to_artifact = {} # name -> (artifact_id, path)
     for pkg in packages:
-        script = ['touch ${TARGET}/deps\n']
+        script = ['/bin/touch ${TARGET}/deps\n']
         script += ['echo %(x)s $%(x)s_id $%(x)s >> ${TARGET}/deps' % dict(x=dep.name)
                    for dep in pkg.deps]
         spec = {"name": pkg.name, "version": "na",
