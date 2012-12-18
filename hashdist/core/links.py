@@ -123,5 +123,10 @@ def execute_links_dsl(rules, env={}):
         Environment to use for variable substitution.
     """
     for action in dry_run_links_dsl(rules, env):
-        action[0](*action[1:])
+        try:
+            action[0](*action[1:])
+        except OSError, e:
+            # improve error message to include operation attempted
+            raise OSError(e.errno, str(e) + " in %s%r" %
+                          (action[0].__name__, action[1:]))
 
