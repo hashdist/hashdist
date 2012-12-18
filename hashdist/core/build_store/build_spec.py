@@ -60,7 +60,7 @@ def assert_safe_name(x):
     Returns `x`
     """
     if not _SAFE_NAME_RE.match(x):
-        raise ValueError('"%s" is empty or contains illegal characters')
+        raise ValueError('version or name "%s" is empty or contains illegal characters' % x)
     return x
 
 def get_artifact_id(build_spec, is_canonical=False):
