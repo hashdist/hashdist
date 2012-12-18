@@ -6,7 +6,7 @@ Handles reading the Hashdist configuration file. By default this is
 import os
 from ConfigParser import RawConfigParser
 
-DEFAULT_CONFIG_FILENAME = os.path.expanduser('~/.hashdistconfig')
+DEFAULT_CONFIG_FILENAME = '~/.hdistconfig'
 
 class InifileConfiguration(object):
     """
@@ -28,7 +28,7 @@ class InifileConfiguration(object):
     @staticmethod
     def create(filename=None):
         if filename is None:
-            filename = DEFAULT_CONFIG_FILENAME
+            filename = os.path.expanduser(DEFAULT_CONFIG_FILENAME)
         parser = RawConfigParser()
         parser.read(filename)
         return InifileConfiguration(parser)

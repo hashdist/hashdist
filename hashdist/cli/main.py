@@ -11,7 +11,7 @@ import textwrap
 import os
 import logging
         
-from ..core import InifileConfiguration
+from ..core import InifileConfiguration, DEFAULT_CONFIG_FILENAME
 
 _subcommands = {}
 
@@ -91,8 +91,8 @@ def main(unparsed_argv):
     parser = argparse.ArgumentParser(description=description,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--config-file',
-                        help='Location of hashdist configuration file (default: ~/.hashdistconfig)',
-                        default=os.path.expanduser('~/.hashdistconfig'))
+                        help='Location of hashdist configuration file (default: %s)' % DEFAULT_CONFIG_FILENAME,
+                        default=os.path.expanduser(DEFAULT_CONFIG_FILENAME))
     subparser_group = parser.add_subparsers(title='subcommands')
 
     subcmd_parsers = {}
