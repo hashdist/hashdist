@@ -37,17 +37,17 @@ class ArtifactBuilder(object):
         self.artifact_id = build_spec.artifact_id
         self.virtuals = virtuals
 
-    def build(self, source_cache, keep_build):
+    def build(self, source_cache, keep_build, log_inline):
         artifact_dir, artifact_link = self.make_artifact_dir()
         try:
-            self.build_to(artifact_dir, source_cache, keep_build)
+            self.build_to(artifact_dir, source_cache, keep_build, log_inline)
         except:
             shutil.rmtree(artifact_dir)
             os.unlink(artifact_link)
             raise
         return artifact_dir
 
-    def build_to(self, artifact_dir, source_cache, keep_build):
+    def build_to(self, artifact_dir, source_cache, keep_build, log_inline):
         env = get_artifact_dependencies_env(self.build_store, self.virtuals,
                                             self.build_spec.doc.get('dependencies', ()))
 
@@ -66,7 +66,7 @@ class ArtifactBuilder(object):
 
         # Conditionally clean up when this fails
         try:
-            self.run_build_commands(build_dir, artifact_dir, env)
+            self.run_build_commands(build_dir, artifact_dir, env, log_inline)
         except BuildFailedError, e:
             if keep_build == 'never':
                 self.remove_build_dir(build_dir)
@@ -143,7 +143,7 @@ class ArtifactBuilder(object):
         with working_directory(build_dir):
             execute_files_dsl(self.build_spec.doc.get('files', ()), env)
 
-    def run_build_commands(self, build_dir, artifact_dir, env):
+    def run_build_commands(self, build_dir, artifact_dir, env, log_inline):
         # Handles log-file, environment, build execution
         env['TARGET'] = artifact_dir
         env['BUILD'] = build_dir
@@ -159,14 +159,26 @@ class ArtifactBuilder(object):
             logfileno = log_file.fileno()
             for command_lst in self.build_spec.doc.get('commands', ()):
                 log_file.write("hdist: running command %r" % command_lst)
+                if log_inline:
+                    # HACK; we should really do a 'tee' here
+                    logfileno = None
+                
                 try:
                     subprocess.check_call(command_lst, cwd=build_dir, env=env,
                                           stdin=None, stdout=logfileno, stderr=logfileno)
                 except subprocess.CalledProcessError, e:
-                    log_file.write("hdist: command FAILED with code %d" % e.returncode)
+                    log_file.write("hdist: command FAILED with code %d\n" % e.returncode)
                     raise BuildFailedError('Build command failed with code %d (cwd: "%s")' %
                                            (e.returncode, build_dir), build_dir)
-            log_file.write("hdist: SUCCESS")
+                except OSError, e:
+                    if e.errno == errno.ENOENT:
+                        log_file.write('hdist: command "%s" not found in PATH\n' % command_lst[0])
+                        raise BuildFailedError('command "%s" not found in PATH (cwd: "%s")' %
+                                               (command_lst[0], build_dir), build_dir)
+                    else:
+                        raise
+                        
+            log_file.write("hdist: SUCCESS\n")
         # On success, copy log file to artifact_dir
         shutil.copy(log_filename, pjoin(artifact_dir, 'build.log'))
 
