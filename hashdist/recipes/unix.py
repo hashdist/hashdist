@@ -1,6 +1,6 @@
 from . import recipes
 
-class UnhashedHostPrograms(recipes.Recipe):
+class NonhashedHostPrograms(recipes.Recipe):
     def __init__(self, name, programs_and_prefixes=None):
         recipes.Recipe.__init__(self, name, "host",
                                 hdist=recipes.hdist_tool,
@@ -39,18 +39,18 @@ unix_programs_usr_bin = (
     " awk gawk pgawk igawk"
     ).split()
 
-class UnhashedUnix(UnhashedHostPrograms):
+class NonhashedUnix(NonhashedHostPrograms):
     def __init__(self):
         links = []
         for prog in unix_programs_bin:
             links.append(('/bin/%s' % prog, '/'))
         for prog in unix_programs_usr_bin:
             links.append(('/usr/bin/%s' % prog, '/usr'))
-        UnhashedHostPrograms.__init__(self, "unix", links)
+        NonhashedHostPrograms.__init__(self, "unix", links)
 
-class UnhashedMake(UnhashedHostPrograms):
+class NonhashedMake(NonhashedHostPrograms):
     def __init__(self):
-        UnhashedHostPrograms.__init__(self, "make", [("/usr/bin/make", "/usr")])
+        NonhashedHostPrograms.__init__(self, "make", [("/usr/bin/make", "/usr")])
 
 
 gcc_stack_programs = (
@@ -58,10 +58,10 @@ gcc_stack_programs = (
     "nm elfedit strip ranlib ld gold gcc g++"
     ).split()
 
-class UnhashedGCCStack(UnhashedHostPrograms):
+class NonhashedGCCStack(NonhashedHostPrograms):
     def __init__(self):
         links = []
         for prog in gcc_stack_programs:
             links.append(('/usr/bin/%s' % prog, '/usr'))
-        UnhashedHostPrograms.__init__(self, "gcc-stack", links)
+        NonhashedHostPrograms.__init__(self, "gcc-stack", links)
 
