@@ -116,6 +116,10 @@ def test_git():
     with temp_source_cache() as sc:
         key = sc.fetch_git(mock_git_repo, 'master')
         assert key == 'git:%s' % mock_git_commit
+
+        sc.fetch('git://not-valid', key)
+        sc.fetch(None, key)
+        
         with temp_dir() as d:
             sc.unpack(key, pjoin(d, 'foo'))
             with file(pjoin(d, 'foo', 'README')) as f:
@@ -137,13 +141,13 @@ def test_able_to_fetch_twice():
 
 def test_hash_check():
     with temp_source_cache() as sc:
-        sc.fetch_archive('file:' + mock_archive, mock_archive_hash)
+        sc.fetch('file:' + mock_archive, mock_archive_hash)
 
 def test_corrupt_download():
     with temp_source_cache() as sc:
         with assert_raises(RuntimeError):
             corrupt_hash = mock_archive_hash[:-8] + 'aaaaaaaa'
-            sc.fetch_archive('file:' + mock_archive, corrupt_hash)
+            sc.fetch('file:' + mock_archive, corrupt_hash)
         # Check that no temporary files are left
         assert len(os.listdir(pjoin(sc.cache_path, 'packs', 'tar.gz'))) == 0
 
@@ -165,9 +169,11 @@ def test_corrupt_store():
 
 def test_does_not_re_download():
     with temp_source_cache() as sc:
-        sc.fetch_archive('file:' + mock_archive, mock_archive_hash)
+        sc.fetch('file:' + mock_archive, mock_archive_hash)
         # next line does not error because it finds it already by hash
-        sc.fetch_archive('file:does-not-exist', mock_archive_hash)
+        sc.fetch('file:does-not-exist', mock_archive_hash)
+        # passing None is ok too
+        sc.fetch(None, mock_archive_hash)
 
 def test_ensure_type():
     with temp_source_cache() as sc:

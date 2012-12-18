@@ -259,7 +259,7 @@ def test_source_unpack_options(tempdir, sc, bldr):
         ('coolproject-2.3/README', 'Welcome!')
         ])
     try:
-        sc.fetch_archive('file:' + tarball, tarball_key)
+        sc.fetch('file:' + tarball, tarball_key)
     finally:
         shutil.rmtree(container_dir)
     spec = {

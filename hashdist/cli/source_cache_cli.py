@@ -63,7 +63,7 @@ class Fetch(object):
     def setup(ap):
         ap.add_argument('--type', type=str, help='What kind of archive')
         ap.add_argument('url', help='Local or remote path/URL to archive')
-        ap.add_argument('hash', nargs='?', help='Expected hash of archive')
+        ap.add_argument('key', nargs='?', help='Expected key of archive')
 
     @staticmethod
     def run(ctx, args):
@@ -71,9 +71,14 @@ class Fetch(object):
         # Simple heuristic for whether to prepend file: to url or not;
         # could probably do a better job
         args.url = as_url(args.url)
-        key = store.fetch_archive(args.url, args.hash, args.type)
+        key = store.fetch_archive(args.url, args.type)
         sys.stderr.write('\n')
         sys.stdout.write('%s\n' % key)
+        if args.key and key != args.key:
+            sys.stderr.write('Keys did not match\n')
+            return 2
+        else:
+            return 0
 
 register_subcommand(Fetch)
 

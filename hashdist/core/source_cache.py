@@ -158,15 +158,51 @@ class SourceCache(object):
         return SourceCache(config.get_path('sourcecache', 'path'))
 
     def fetch_git(self, repository, rev):
+        """Fetches source code from git repository
+
+        With this method one does not need to know a specific commit,
+        but can use a generic git rev such as `master` or
+        `revs/heads/master`.  In automated settings or if the commit
+        hash is known exactly, :meth:`fetch` should be used instead.
+
+        Parameters
+        ----------
+
+        repository : str
+            The repository URL (forwarded to git)
+
+        rev : str
+            The rev to download (forwarded to git)
+
+        Returns
+        -------
+
+        key : str
+            The globally unique key; this is the git commit SHA-1 hash
+            prepended by ``git:``.
+        
+        """
         return GitSourceCache(self).fetch_git(repository, rev)
 
-    def fetch_archive(self, url, key=None, type=None):
-        if key is not None and type is not None:
-            raise ValueError('Cannot specify both key and type')
-        hash = None
-        if key is not None:
-            type, hash = key.split(':')
-        return ArchiveSourceCache(self).fetch_archive(url, type, hash)
+    def fetch_archive(self, url, type=None):
+        """Fetches  a tarball without knowing the key up-front.
+
+        In automated settings, :meth:`fetch` should be used instead.
+
+        Parameters
+        ----------
+
+        url : str
+            Where to download archive from. Local files can be specified
+            by prepending ``"file:"`` to the path.
+
+        type : str (optional)
+            Type of archive, such as ``"tar.gz"``, ``"tar.gz2"``. For use
+            when this cannot be determined from the suffix of the url.
+        
+        """
+        return ArchiveSourceCache(self).fetch_archive(url, type, None)
+
 
     def put(self, files):
         """Put in-memory contents into the source cache.
@@ -181,10 +217,44 @@ class SourceCache(object):
         Returns
         -------
 
-        The resulting key.
+        key : str
+            The resulting key, it has the ``files:`` prefix.
 
         """
         return ArchiveSourceCache(self).put(files)
+
+    def _get_handler(self, type):
+        if type == 'git':
+            handler = GitSourceCache(self)
+        elif type == 'files' or type in supported_source_archive_types:
+            handler = ArchiveSourceCache(self)
+        else:
+            raise ValueError('does not recognize key prefix: %s' % type)
+        return handler
+
+    def fetch(self, url, key):
+        """Fetch sources whose key is known.
+
+        This is the method to use in automated settings. If the
+        sources globally identified by `key` are already present in
+        the cache, the method returns immediately, otherwise it
+        attempts to download the sources from `url`. How to interpret
+        the URL is determined by the prefix of `key`.
+
+        Parameters
+        ----------
+
+        url : str or None
+            Location to download sources from. Exact meaning depends on
+            prefix of `key`. If `None` is passed, an exception is raised
+            if the source object is not present.
+
+        key : str
+            Globally unique key for the source object.
+        """
+        type, hash = key.split(':')
+        handler = self._get_handler(type)
+        handler.fetch(url, type, hash)
 
     def unpack(self, key, target_path, unsafe_mode=False, strip=0):
         """
@@ -229,13 +299,7 @@ class SourceCache(object):
         if not ':' in key:
             raise ValueError("Key must be on form 'type:hash'")
         type, hash = key.split(':')
-        if type == 'git':
-            handler = GitSourceCache(self)
-        elif type == 'files' or type in supported_source_archive_types:
-            handler = ArchiveSourceCache(self)
-        else:
-            raise KeyNotFoundError('does not recognize key type: %s' % type)
-
+        handler = self._get_handler(type)
         handler.unpack(type, hash, target_path, unsafe_mode, strip)
 
 
@@ -281,8 +345,9 @@ class GitSourceCache(object):
         lines = str(p).splitlines()
         if len(lines) == 0:
             if len(rev) != 40:
-                raise ValueError('When using a git SHA1 commit hash one needs to use all 40 '
-                                 'characters')
+                raise SourceNotFoundError("no rev '%s'; note that when using a git "
+                                          "SHA1 commit hash one needs to use all 40 "
+                                          "characters" % rev)
                 # If not, one could risk getting another commit
                 # returned transparently with the current
                 # implementation; resolving the hash in only the
@@ -300,13 +365,30 @@ class GitSourceCache(object):
         retcode, out, err = self.git('show-ref', '--verify', '--quiet', 'refs/heads/%s' % branch)
         return retcode == 0        
 
-    def fetch_git(self, repository, rev):
-        if len(rev) == 40 and self._does_branch_exist('inuse/%s' % rev):
-            # If the exact commit is given and it is present we don't want to
-            # connect to remote server
-            return 'git:%s' % rev
-        
-        commit = self._resolve_remote_rev(repository, rev)
+    def _mark_commit_as_in_use(self, commit):
+        retcode, out, err = self.git('branch', 'inuse/%s' % commit, commit)
+        if retcode != 0:
+            # Did it already exist? If so we're good (except if hashdist gc runs
+            # at the same time...)
+            if not self._does_branch_exist('inuse/%s' % commit):
+                raise RuntimeError('git branch failed with code %d: %s' % (retcode, err))
+
+    def fetch(self, url, type, commit):
+        assert type == 'git'
+        retcode, out, err = self.git('rev-list', '-n1', '--quiet', commit)
+        if retcode == 0:
+            self._mark_commit_as_in_use(commit)
+        elif url is None:
+            raise SourceNotFoundError('git:%s not present and repo url not provided' % commit)
+        else:
+            self.fetch_git(repository, None, commit)            
+
+    def fetch_git(self, repository, rev=None, commit=None):
+        # It is important to resolve the rev remotely, we can't trust local
+        # branch-names at all since we merge all projects encountered into the
+        # same repo
+        if commit is None:
+            commit = self._resolve_remote_rev(repository, rev)
         # Fetch everything from the repository to us. (We don't pass rev here, but fetch
         # everything, because newer versions of git don't accept commits as revs...)
         self.git_interactive('fetch', repository)
@@ -318,12 +400,7 @@ class GitSourceCache(object):
                                       (repository, commit))
 
         # Create a branch so that 'git gc' doesn't collect it
-        retcode, out, err = self.git('branch', 'inuse/%s' % commit, commit)
-        if retcode != 0:
-            # race with another fetch? If so we're good.
-            # This strategy doesn't cover races with hashdist gc
-            if not self._does_branch_exist('inuse/%s' % commit):
-                raise RuntimeError('git branch failed with code %d: %s' % (retcode, err))
+        self._mark_commit_as_in_use(commit)
 
         return 'git:%s' % commit
 
@@ -422,11 +499,10 @@ class ArchiveSourceCache(object):
     def contains(self, type, hash):
         return os.path.exists(self.get_pack_filename(type, hash))
 
-    def fetch(self, url, key):
-        if key.startswith('files:'):
+    def fetch(self, url, type, hash):
+        if type == 'files:':
             raise NotImplementedError("use the put() method to store raw files")
         else:
-            type, hash = key.split(':')
             self.fetch_archive(url, type, hash)
 
     def fetch_archive(self, url, type, expected_hash):

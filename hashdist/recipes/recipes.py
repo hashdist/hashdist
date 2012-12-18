@@ -19,7 +19,7 @@ class FetchSourceCode(BaseSourceFetch):
         self.url = url
 
     def fetch_into(self, source_cache):
-        source_cache.fetch_archive(self.url, self.key)
+        source_cache.fetch(self.url, self.key)
                         
 class PutScript(BaseSourceFetch):
     def __init__(self, files, target='.'):
