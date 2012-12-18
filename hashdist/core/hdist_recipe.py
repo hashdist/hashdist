@@ -7,6 +7,11 @@ import os
 from os.path import join as pjoin
 import sys
 
+from .build_store import BuildSpec
+
+HDIST_CLI_ARTIFACT_NAME = "hdist-cli"
+HDIST_CLI_ARTIFACT_VERSION = "n"
+
 def hdist_cli_build_spec(python=None, package=None):
     """Build-spec to creates a 'bin'-dir containing only a launcher
     for the 'hdist' command.
@@ -26,6 +31,12 @@ def hdist_cli_build_spec(python=None, package=None):
 
     package : str
         Path to Hashdist package to use (default: deduced from ``__file__``)
+
+    Returns
+    -------
+
+    spec : BuildSpec
+    
     """
     if python is None:
         python = os.path.realpath(sys.executable)
@@ -33,8 +44,8 @@ def hdist_cli_build_spec(python=None, package=None):
         package = os.path.realpath(pjoin(os.path.dirname(__file__), '..', '..', 'hashdist'))
 
     spec = {
-        "name": "hdist-cli",
-        "version": "n",
+        "name": HDIST_CLI_ARTIFACT_NAME,
+        "version": HDIST_CLI_ARTIFACT_VERSION,
         "files": [
             {
                 "target": "$ARTIFACT/bin/hdist",
@@ -46,7 +57,8 @@ def hdist_cli_build_spec(python=None, package=None):
                     "import os",
                     "sys.path.insert(0, os.path.join('$ARTIFACT', 'lib'))",
                     "from hashdist.cli.main import main",
-                    "sys.exit(main(sys.argv))"
+                    "sys.exit(main(sys.argv))",
+                    ""
                 ]
             },
             {
@@ -55,7 +67,7 @@ def hdist_cli_build_spec(python=None, package=None):
             }
         ]
     }
-    return spec
+    return BuildSpec(spec)
     
 def ensure_hdist_cli_artifact(build_store, source_cache):
     """
