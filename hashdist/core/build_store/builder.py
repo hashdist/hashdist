@@ -150,6 +150,9 @@ class ArtifactBuilder(object):
         if 'PATH' not in env:
             env['PATH'] = ''
 
+        def subs(x):
+            return Template(x).substitute(env)
+
         log_filename = pjoin(build_dir, 'build.log')
         self.logger.info('Building artifact %s..., follow log with' %
                          shorten_artifact_id(self.artifact_id, ARTIFACT_ID_LEN + 2))
@@ -158,7 +161,10 @@ class ArtifactBuilder(object):
         with file(log_filename, 'w') as log_file:
             logfileno = log_file.fileno()
             for command_lst in self.build_spec.doc.get('commands', ()):
-                log_file.write("hdist: running command %r" % command_lst)
+                # substitute variables
+                command_lst = [subs(x) for x in command_lst]
+                log_file.write("hdist: running command %r\n" % command_lst)
+
                 if log_inline:
                     # HACK; we should really do a 'tee' here
                     logfileno = None
