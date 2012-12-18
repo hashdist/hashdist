@@ -102,7 +102,7 @@ class Unpack(object):
 
     @staticmethod
     def run(ctx, args):
-        store = SourceCache.create_from_config(ctx.config)
+        store = SourceCache.create_from_config(ctx.config, ctx.logger)
         store.unpack(args.key, args.target)
 
 register_subcommand(Unpack)
