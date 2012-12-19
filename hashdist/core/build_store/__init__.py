@@ -83,7 +83,7 @@ An example build spec:
          ],
          "files" : [
              { "target": "build.sh",
-               "contents": [
+               "text": [
                  "set -e",
                  "./configure --prefix=\\"${TARGET}\\"",
                  "make",
@@ -145,14 +145,18 @@ An example build spec:
     the archives contain conflicting files.
 
 **files**:
-    Embed small text files in-line in the build spec. This is really equivalent
-    to uploading the file to the source store, but can provide more immediate
-    documentation. **target** gives the target filename and **contents** is
-    a list of lines (which will be joined by the platform newline character).
-
-    For anything more than a hundred lines or so (small scripts and configuration
-    files), you should upload to the source cache and put a ``files:...`` key
+    Embed small text files in-line in the build spec, potentially expanding
+    variables within them. This is suitable for configuration files, small
+    scripts and so on. For anything more than a hundred lines or so
+    you should upload to the source cache and put a ``files:...`` key
     in *sources* instead.
+
+    * **target**: Target filename. Variable substitution is performed,
+      so it is possible to put ``$TARGET/filename`` here.
+    * **text**: Contents as a list of lines which will be joined with "\n".
+    * **executable**: Whether to set the executable permission bit
+    * **expandvars**: Whether to expand variables in the text itself
+      (defaults to False)
 
     Order does not affect hashing. Files will always be encoded in UTF-8.
 
