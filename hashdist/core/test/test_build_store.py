@@ -314,8 +314,8 @@ def build_mock_packages(builder, source_cache, packages, virtuals={}, name_to_ar
     if name_to_artifact is None:
         name_to_artifact = {} # name -> (artifact_id, path)
     for pkg in packages:
-        script = ['/bin/touch ${TARGET}/deps\n']
-        script += ['echo %(x)s $%(x)s_id $%(x)s >> ${TARGET}/deps' % dict(x=dep.name)
+        script = ['/bin/touch ${ARTIFACT}/deps\n']
+        script += ['echo %(x)s $%(x)s_id $%(x)s >> ${ARTIFACT}/deps' % dict(x=dep.name)
                    for dep in pkg.deps]
         spec = {"name": pkg.name, "version": "na",
                 "dependencies": [{"ref": dep.name, "id": name_to_artifact[dep.name][0]}

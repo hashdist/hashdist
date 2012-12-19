@@ -81,8 +81,7 @@ class ArtifactBuilder(object):
         short_id = shorten_artifact_id(self.artifact_id, BUILD_ID_LEN)
         build_dir = orig_build_dir = pjoin(self.build_store.temp_build_dir, short_id)
         i = 0
-        # Try to make build_dir, if not then increment a -%d suffix until we
-        # fine a free slot
+        # Try to make build_dir, if not then increment a -%d suffix until we        # fine a free slot
         while True:
             try:
                 os.makedirs(build_dir)
@@ -146,11 +145,6 @@ class ArtifactBuilder(object):
 
     def run_build_commands(self, build_dir, artifact_dir, env):
         # Handles log-file, environment, build execution
-        env['TARGET'] = artifact_dir
-        env['BUILD'] = build_dir
-        if 'PATH' not in env:
-            env['PATH'] = ''
-
         env.update(self.build_spec.doc.get('env', {}))
 
         def subs(x):

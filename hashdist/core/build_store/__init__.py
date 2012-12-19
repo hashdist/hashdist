@@ -85,7 +85,7 @@ An example build spec:
              { "target": "build.sh",
                "text": [
                  "set -e",
-                 "./configure --prefix=\\"${TARGET}\\"",
+                 "./configure --prefix=\\"${ARTIFACT}\\"",
                  "make",
                  "make install"
                ]
@@ -152,7 +152,7 @@ An example build spec:
     in *sources* instead.
 
     * **target**: Target filename. Variable substitution is performed,
-      so it is possible to put ``$TARGET/filename`` here.
+      so it is possible to put ``$ARTIFACT/filename`` here.
     * **text**: Contents as a list of lines which will be joined with "\n".
     * **executable**: Whether to set the executable permission bit
     * **expandvars**: Whether to expand variables in the text itself
@@ -178,7 +178,7 @@ documented here.
     Set to the build directory. This is also the starting `cwd` of
     each build command. This directory may be removed after the build.
 
-**TARGET**:
+**ARTIFACT**:
     The location of the final artifact. Usually this is the "install location"
     and should, e.g., be passed as the ``--prefix`` to ``./configure`-style
     scripts.
@@ -207,7 +207,7 @@ documented here.
 
 The build specification is available under ``$BUILD/build.json``, and
 stdout and stderr are redirected to ``$BUILD/build.log``. These two
-files will also be present in ``$TARGET`` after the build.
+files will also be present in ``$ARTIFACT`` after the build.
 
 
 Virtual dependencies
