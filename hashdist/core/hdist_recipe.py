@@ -55,14 +55,14 @@ def hdist_cli_build_spec(python=None, package=None):
                     "#!%s" % python,
                     "import sys",
                     "import os",
-                    "sys.path.insert(0, os.path.join('$ARTIFACT', 'lib'))",
+                    "sys.path.insert(0, os.path.join('$ARTIFACT', 'pypkg'))",
                     "from hashdist.cli.main import main",
                     "sys.exit(main(sys.argv))",
                     ""
                 ]
             },
             {
-                "target": "$ARTIFACT/lib/hashdist",
+                "target": "$ARTIFACT/pypkg/hashdist",
                 "symlink_to": package
             }
         ]

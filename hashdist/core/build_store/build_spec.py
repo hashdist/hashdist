@@ -32,24 +32,33 @@ def canonicalize_build_spec(spec):
         Canonicalized and verified build spec
     """
     def canonicalize_source_item(item):
-        item = dict(item) # copy
-        if 'strip' not in item:
-            item['strip'] = 0
-        if 'target' not in item:
-            item['target'] = "."
+        item = dict(item)
+        item.setdefault('strip', 0)
+        item.setdefault('target', '.')
+        return item
+
+    def canonicalize_dependency(item):
+        item = dict(item)
+        item.setdefault('in_path', True)
+        item.setdefault('in_hdist_compiler_paths', True)
+        if item.setdefault('ref', None) == '':
+            raise ValueError('Empty ref should be None, not ""')
+        item['before'] = sorted(item.get('before', []))
         return item
 
     result = dict(spec) # shallow copy
     assert_safe_name(result['name'])
     assert_safe_name(result['version'])
 
-    if 'sources' in result:
-        sources = [canonicalize_source_item(item) for item in result['sources']]
-        sources.sort(key=lambda item: item['key'])
-        result['sources'] = sources
+    result['dependencies'] = [
+        canonicalize_dependency(item) for item in result.get('dependencies', ())]
+    result['dependencies'].sort(key=lambda item: item['id'])
+        
+    sources = [canonicalize_source_item(item) for item in result.get('sources', ())]
+    sources.sort(key=lambda item: item['key'])
+    result['sources'] = sources
 
-    if 'files' in result:
-        result['files'] = sorted(result['files'], key=lambda item: item['target'])
+    result['files'] = sorted(result.get('files', []), key=lambda item: item['target'])
 
     return result
 

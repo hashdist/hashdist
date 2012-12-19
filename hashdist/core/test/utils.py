@@ -6,6 +6,8 @@ import contextlib
 import subprocess
 import hashlib
 
+from ...hdist_logging import Logger, null_logger, DEBUG
+
 from os.path import join as pjoin
 
 @contextlib.contextmanager
@@ -37,20 +39,13 @@ def working_directory(path):
 #
 # Logger to use during unit-testing
 #
-class NullLogger(object):
-    def _noop(self, *args, **kw):
-        pass
-    warning = error = debug = info = _noop
 
 VERBOSE = bool(int(os.environ.get('VERBOSE', '0')))
 
 if VERBOSE:
-    import logging
-    logging.basicConfig(format='log: %(message)s')
-    logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)
+    logger = Logger(DEBUG, 'tests')
 else:
-    logger = NullLogger()
+    logger = null_logger
 
 #
 # Mock archives

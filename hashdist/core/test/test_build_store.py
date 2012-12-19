@@ -45,6 +45,11 @@ def test_rmtree_up_to():
 def test_canonical_build_spec():
     doc = {
             "name" : "foo", "version": "r0",
+            "dependencies": [
+              {"id": "b"},
+              {"id": "c"},
+              {"id": "a", "before": ["c", "b"]},
+            ],
             "sources" : [
               {"key": "git:c5ccca92c5f136833ad85614feb2aa4f5bd8b7c3"},
               {"key": "tar.bz2:RB1JbykVljxdvL07mN60y9V9BVCruWRky2FpK2QCCow", "target": "sources", "strip": 1},
@@ -56,8 +61,15 @@ def test_canonical_build_spec():
             ]
           }
     got = build_store.build_spec.canonicalize_build_spec(doc)
-    eq_({
-          "dependencies": [],
+    exp = {
+          "dependencies": [
+            {'before': ['b', 'c'], 'id': 'a', 'in_hdist_compiler_paths': True,
+             'in_path': True, 'ref': None},
+            {'before': [], 'id': 'b', 'in_hdist_compiler_paths': True,
+             'in_path': True, 'ref': None}, 
+            {'before': [], 'id': 'c', 'in_hdist_compiler_paths': True,
+             'in_path': True, 'ref': None}, 
+          ],
           "name" : "foo", "version": "r0",
           "sources" : [
             {"key": "files:5fcANXHsmjPpukSffBZF913JEnMwzcCoysn-RZEX7cM", "target" : ".", "strip" : 0},
@@ -68,7 +80,8 @@ def test_canonical_build_spec():
             {"target": "build.sh", "text": []},
             {"target": "zsh-build", "text": []},
           ]
-        }, got)
+        }
+    eq_(exp, got)
 
 def test_execute_files_dsl():
     def assertions(dirname):

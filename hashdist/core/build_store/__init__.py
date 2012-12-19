@@ -71,7 +71,8 @@ An example build spec:
         "dependencies" : [
             {"ref": "bash", "id": "virtual:bash"},
             {"ref": "make", "id": "virtual:gnu-make/3+"},
-            {"ref": "gcc", "id": "zlib/1.2.7/fXHu+8dcqmREfXaz+ixMkh2LQbvIKlHf+rtl5HEfgmU"},
+            {"ref": "gcc", "id": "zlib/1.2.7/fXHu+8dcqmREfXaz+ixMkh2LQbvIKlHf+rtl5HEfgmU",
+              "before": ["virtual:unix"]},
             {"ref": "unix", "id": "virtual:unix"},
             {"ref": "zlib", "id": "gcc/host-4.6.3/q0VSL7JmzH1P17meqITYc4kMbnIjIexrWPdlAlqPn3s"},
          ],
@@ -93,22 +94,6 @@ An example build spec:
          "commands" : [["bash", "build.sh"]],
     }
 
-The build environment
----------------------
-
-The build environment is totally clean except for what is documented here.
-``$PATH`` is reset as discussed in the next section.
-
-The build starts in a temporary directory ``$BUILD`` with *sources*
-and *files* unpacked into it, and should result in something being
-copied/installed to ``$TARGET``. The build specification is available
-under ``$BUILD/build.json``, and output redirected to
-``$BUILD/build.log``; these two files will also be present in
-``$TARGET`` after the build.
-
-
-Build specification fields
---------------------------
 
 **name**:
     See previous section
@@ -117,29 +102,39 @@ Build specification fields
     See previous section
 
 **dependencies**:
-    The dependencies needed for the *build* (after the
-    artifact is built these have no effect).
-
-    * **ref**: A name to use to inject information of this dependency
-      into the build environment. Above, 
-      ``$zlib`` will be the absolute path to the ``zlib`` artifact,
-      ``$zlib_id`` will be the full artifact ID, while
-      ``$zlib_relpath`` will be the relative path from ``$PREFIX`` to the
-      zlib artifact.
+    The dependencies needed for the build. After the
+    artifact is built these have no effect (i.e., they do not
+    affect garbage collection or run-time dependencies).
+    The list specifies an unordered set; `before` can be used to
+    specify order.
 
     * **id**: The artifact ID. If the value is prepended with
       ``"virtual:"``, the ID is a virtual ID, used so that the real
       one does not contribute to the hash. See section on virtual
       dependencies below.
 
-    Each dependency that has a ``bin`` sub-directory will have this inserted
-    in ``$PATH`` in the order the dependencies are listed (and these
-    are the *only* entries in ``$PATH``, ``/bin`` etc. are not present).
+    * **ref**: A name to use to inject information of this dependency
+      into the build environment. Above, 
+      ``$zlib`` will be the absolute path to the ``zlib`` artifact,
+      ``$zlib_id`` will be the full artifact ID, while
+      ``$zlib_relpath`` will be the relative path from ``$PREFIX`` to the
+      zlib artifact. This can be set to `None` in order to not set
+      any environment variables for the artifact.
 
-    **Note**: The order affects the hash (since it affects ``$PATH``).
-    Whenever ordering does not matter, the list should be sorted prior
-    to input by the ``ref`` argument to maintain hash stability.
+    * **before**: List of artifact IDs. Adds a constraint that this
+      dependency is listed before the dependencies listed in all paths.
 
+    * **in_path**: Whether to add the ``bin`` sub-directory of the
+      artifact to the ``$PATH``. Defaults to `True`. (If the artifact
+      lacks a ``bin`` sub-directory it will not be added regardless.)
+
+    * **in_hdist_rpath**: Like `in_path` but affects ``HDIST_RPATH`; defaults
+    to `True`.
+
+    * **in_hdist_compiler_paths**: Like `in_path` but affects
+    ``HDIST_CFLAGS` and ``HDIST_LDFLAGS``; defaults to `True`.
+    
+    
 **sources**:
     Unpacked into the temporary build directory. The optional ``target`` parameter
     gives a directory they should be extracted to (default: ``"."``). The ``strip``
@@ -168,6 +163,47 @@ Build specification fields
     executed in order, this is not a shell script: Each command is
     spawned from the builder process with a pristine environment. For anything
     that is not completely trivial one should use a scripting language.
+
+The build sandbox
+-----------------
+
+The build environment variables are wiped out, and then set as
+documented here.
+
+**BUILD**:
+    Set to the build directory. This is also the starting `cwd` of
+    each build command. This directory may be removed after the build.
+
+**TARGET**:
+    The location of the final artifact. Usually this is the "install location"
+    and should, e.g., be passed as the ``--prefix`` to ``./configure`-style
+    scripts.
+
+**PATH**:
+    Set to point to the ``bin``-sub-directories of dependencies with `in_path`
+    set.
+
+**HDIST_CFLAGS**:
+    Set to point to the ``include``-sub-directories of dependencies with
+    `in_hdist_compiler_path` set. The entries are of the usual form
+    ``-I/path/to/artifact/include -I/next/artifact/include``.
+
+**HDIST_ABS_LDFLAGS**:
+    Set to point to the ``lib*``-sub-directories of dependencies with
+    `in_hdist_compiler_path` set. The entries are both for the linker
+    (``-L/path/to/artifact/lib``) and for setting the `RPATH`
+    (``-Wl,-R,/path/to/artifact/lib``).
+
+**HDIST_REL_LDFLAGS**:
+    Like the above, but the `RPATH` entries are relative, using the ``$ORIGIN``
+    marker (e.g., ``-Wl,-R,$ORIGIN/../../../foo/1.2/AWXE``). This makes
+    the artifact relocateable without any patching, but only works for
+    dynamic libraries installed in a direct sub-directory (like ``lib``).
+
+
+The build specification is available under ``$BUILD/build.json``, and
+stdout and stderr are redirected to ``$BUILD/build.log``. These two
+files will also be present in ``$TARGET`` after the build.
 
 
 Virtual dependencies
