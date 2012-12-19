@@ -14,6 +14,7 @@ import sys
 from textwrap import dedent
 from string import Template
 import contextlib
+from pprint import pformat
 
 from ..source_cache import scatter_files
 from ..sandbox import get_artifact_dependencies_env
@@ -150,8 +151,14 @@ class ArtifactBuilder(object):
         if 'PATH' not in env:
             env['PATH'] = ''
 
+        env.update(self.build_spec.doc.get('env', {}))
+
         def subs(x):
             return Template(x).substitute(env)
+
+        def tee(line, log_file_prefix=''):
+            self.logger.debug(line.rstrip())
+            log_file.write(log_file_prefix + line)
 
         log_filename = pjoin(build_dir, 'build.log')
         
@@ -168,15 +175,32 @@ class ArtifactBuilder(object):
             if not isinstance(script, (list, tuple)):
                 raise TypeError('commands is not a list')
             
-
             for command_lst in script:
                 # substitute variables
                 command_lst = [subs(x) for x in command_lst]
-                log_file.write("hdist: running command %r\n" % command_lst)
+
+                # command-specific environment -- strings containing = before the command
+                cwd = build_dir
+                command_lst = list(command_lst)
+                command_env = dict(env)
+                while '=' in command_lst[0]:
+                    key, value = command_lst[0].split('=')
+                    if key == 'CWD':
+                        cwd = value
+                    else:
+                        command_env[key] = value
+                    del command_lst[0]
+
+                # log the command to run
+                tee('running %r' % command_lst, 'hdist: ')
+                tee('cwd: ' + cwd)
+                tee('environment:')
+                for line in pformat(env).splitlines():
+                    tee('  ' + line)
 
                 try:
                     proc = subprocess.Popen(command_lst,
-                                            cwd=build_dir,
+                                            cwd=cwd,
                                             env=env,
                                             stdin=subprocess.PIPE,
                                             stdout=subprocess.PIPE,
@@ -194,8 +218,7 @@ class ArtifactBuilder(object):
                     line = proc.stdout.readline()
                     if not line:
                         break
-                    self.logger.debug(line.strip())
-                    log_file.write(line)
+                    tee(line)
                 retcode = proc.wait()
                 if retcode != 0:
                     log_file.write("hdist: command FAILED with code %d\n" % retcode)
@@ -203,8 +226,8 @@ class ArtifactBuilder(object):
                                            (retcode, build_dir), build_dir)
 
 
-                log_file.write("hdist: SUCCESS\n")
-                self.logger.info('SUCCESS')
+                log_file.write("hdist: success\n")
+                self.logger.info('success')
         shutil.copy(log_filename, pjoin(artifact_dir, 'build.log'))
 
 def rmtree_up_to(path, parent):
