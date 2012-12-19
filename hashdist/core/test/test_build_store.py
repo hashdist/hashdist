@@ -4,6 +4,7 @@ import functools
 import tempfile
 import shutil
 from textwrap import dedent
+from pprint import pprint
 
 from nose.tools import assert_raises, eq_
 
@@ -54,7 +55,9 @@ def test_canonical_build_spec():
               {"target": "build.sh", "text": []}
             ]
           }
+    got = build_store.build_spec.canonicalize_build_spec(doc)
     eq_({
+          "dependencies": [],
           "name" : "foo", "version": "r0",
           "sources" : [
             {"key": "files:5fcANXHsmjPpukSffBZF913JEnMwzcCoysn-RZEX7cM", "target" : ".", "strip" : 0},
@@ -65,8 +68,7 @@ def test_canonical_build_spec():
             {"target": "build.sh", "text": []},
             {"target": "zsh-build", "text": []},
           ]
-        },
-        build_store.build_spec.canonicalize_build_spec(doc))
+        }, got)
 
 def test_execute_files_dsl():
     def assertions(dirname):
@@ -232,7 +234,7 @@ def test_hash_prefix_collision(tempdir, sc, bldr):
         # changes to the hashing could change this a bit but assertions below will
         # warn in those cases
         hashparts = []
-        for k in range(12):
+        for k in range(15):
             script_key = sc.put({'build.sh': 'echo hello %d; exit 0' % k})
             spec = {"name": "foo", "version": "na",
                     "sources": [{"key": script_key}],

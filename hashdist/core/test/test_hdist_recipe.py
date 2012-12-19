@@ -26,7 +26,7 @@ def test_hdist_cli_artifact(tempdir, sc, bldr):
              }
            }
     virtuals = {'virtual:hdist': hdist_id}
-    artifact_id, path = bldr.ensure_present(spec, sc, virtuals, log_inline=True)
+    artifact_id, path = bldr.ensure_present(spec, sc, virtuals)
     assert os.path.realpath(pjoin(path, 'bin', 'cp')) == '/bin/cp'
 
     
