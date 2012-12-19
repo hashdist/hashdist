@@ -31,6 +31,14 @@ do a rebuild, no explicit code is needed to implement the “uninstall”
 feature. (Also, the "build" step could potentially mean downloading a
 binary package over the net, though that’s out of scope currently.)
 
+Tutorial
+--------
+
+.. toctree::
+   :maxdepth: 1
+
+   tutorial
+
 
 Contents
 --------
