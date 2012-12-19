@@ -451,9 +451,9 @@ class ArchiveSourceCache(object):
         if not use_curl:
             stream = file(url[len('file:'):])
         else:
-            # Make request
+            # Make request.
             sys.stderr.write('Downloading %s...\n' % url)
-            curl = subprocess.Popen(['curl', url], stdout=subprocess.PIPE,
+            curl = subprocess.Popen(['curl', '-L', url], stdout=subprocess.PIPE,
                                     stdin=subprocess.PIPE)
             curl.stdin.close()
             stream = curl.stdout
@@ -553,7 +553,7 @@ class ArchiveSourceCache(object):
                 else:
                     retcode = self._untar_safe(infile, hash, target_dir, tar_cmd)
                 if retcode != 0:
-                    raise subprocess.CalledProcessError(retcode, cmd[0])
+                    raise subprocess.CalledProcessError(retcode, tar_cmd[0])
 
     def open_file(self, type, hash):
         try:
