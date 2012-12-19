@@ -1,6 +1,7 @@
 import sys
 
 from .. import core
+from ..hdist_logging import colorize
 
 class BaseSourceFetch(object):
     def __init__(self, key, target, strip=0):
@@ -66,7 +67,7 @@ class Recipe(object):
                                 (key, type(value)))
 
 
-        self.dependencies = dependencies
+        self.dependencies = list(dependencies.items())
         self.env = env
         self._build_spec = None
 
@@ -85,16 +86,80 @@ class Recipe(object):
         else:
             return self._assemble_build_spec()
 
+    def get_artifact_id(self):
+        if self.is_virtual:
+            return 'virtual:%s' % self.name
+        else:
+            return self.get_real_artifact_id()
+
+    def get_real_artifact_id(self):
+        return self.get_build_spec().artifact_id
+
+    def get_display_name(self):
+        if self.is_virtual:
+            return self.get_artifact_id()
+        else:
+            return core.short_artifact_id(artifact_id, 4) + '..'
+
+    def fetch_sources(self, source_cache):
+        for fetch in self.source_fetches:
+            fetch.fetch_into(source_cache)
+
+    def format_tree(self, build_store=None, use_colors=True):
+        lines = []
+        self._format_tree(lines, {}, 0, build_store, use_colors)
+        return '\n'.join(lines)
+
+    def _format_tree(self, lines, visited, level, build_store, use_colors):
+        indent_str = '  '
+        indent = indent_str * level
+        build_spec = self.get_build_spec()
+        artifact_id = build_spec.artifact_id
+        short_artifact_id = core.shorten_artifact_id(artifact_id, 6) + '..'
+
+        def add_line(left, right):
+            lines.append('%-70s%s' % (left, right))
+
+        if build_store is None:
+            status = ''
+        else:
+            status = (colorize(' [ok]', 'bold-blue', use_colors)
+                      if build_store.is_present(build_spec)
+                      else colorize(' [needs build]', 'bold-red', use_colors))
+        
+        if artifact_id in visited:
+            display_name = visited[artifact_id]
+            desc = '%s%s (see above)' % (indent, display_name)
+        elif self.is_virtual:
+            display_name = self.get_artifact_id()
+            desc = '%s%s (=%s)' % (indent, display_name, short_artifact_id)
+        else:
+            display_name = short_artifact_id
+            desc = '%s%s' % (indent, display_name)
+        add_line(desc, status)
+
+        visited[artifact_id] = display_name
+        
+        # bin all repeated artifacts on their own line
+        repeated = []
+        for dep_name, dep in self.dependencies:
+            if dep.get_real_artifact_id() in visited:
+                repeated.append(dep.get_display_name())
+            else:
+                dep._format_tree(lines, visited, level + 1, build_store, use_colors)
+        if repeated:
+            add_line(indent + indent_str + ','.join(repeated),
+                     colorize(' (see above)', 'yellow', use_colors))
+
+    def __repr__(self):
+        return '<Recipe for %s>' % self.get_artifact_id()
+
     def _assemble_build_spec(self):
         sources = []
         for fetch in self.source_fetches:
             sources.append(fetch.get_spec())
 
-        dep_specs = []
-        for dep_name, dep in self.dependencies.iteritems():
-            dep_id = dep.get_artifact_id()
-            dep_specs.append({"ref": dep_name, "id": dep_id})
-        dep_specs.sort(key=lambda spec: spec['ref'])
+        dep_specs = self.get_dependencies_spec()
 
         commands = self.get_commands()
         files = self.get_files()
@@ -106,50 +171,16 @@ class Recipe(object):
                    parameters=parameters)
         return core.BuildSpec(doc)
 
-    def get_artifact_id(self):
-        if self.is_virtual:
-            return 'virtual:%s' % self.name
-        else:
-            return self.get_build_spec().artifact_id
+    # Subclasses may override the following
 
-    def fetch_sources(self, source_cache):
-        for fetch in self.source_fetches:
-            fetch.fetch_into(source_cache)
-
-    def format_tree(self, build_store=None):
-        lines = []
-        self._format_tree(lines, {}, 0, build_store)
-        return '\n'.join(lines)
-
-    def _format_tree(self, lines, visited, level, build_store):
-        indent = '  ' * level
-        build_spec = self.get_build_spec()
-        artifact_id = build_spec.artifact_id
-        short_artifact_id = core.shorten_artifact_id(artifact_id, 6) + '..'
-
-        if build_store is None:
-            status = ''
-        else:
-            status = ' [OK]' if build_store.is_present(build_spec) else ' [NEEDS BUILD]'
-        
-        if artifact_id in visited:
-            display_name = visited[artifact_id]
-            desc = '%s%s (see above)' % (indent, display_name)
-        elif self.is_virtual:
-            display_name = self.get_artifact_id()
-            desc = '%s%s (=%s)' % (indent, display_name, short_artifact_id)
-        else:
-            display_name = short_artifact_id
-            desc = '%s%s' % (indent, display_name)
-        lines.append('%-70s%s' % (desc, status))
-        visited[artifact_id] = display_name
-        for dep in self.dependencies.values():
-            dep._format_tree(lines, visited, level + 1, build_store)
-
-    def __repr__(self):
-        return '<Recipe for %s>' % self.get_artifact_id()
-
-    # Subclasses should override the following
+    def get_dependencies_spec(self):
+        dep_specs = []
+        for dep_name, dep in self.dependencies:
+            dep_id = dep.get_artifact_id()
+            dep_specs.append({"ref": dep_name, "id": dep_id, "in_path": True,
+                              "in_hdist_compiler_paths": True})
+        dep_specs.sort(key=lambda spec: spec['ref'])
+        return dep_specs
     
     def get_commands(self):
         return []
@@ -191,7 +222,7 @@ def build_recipes(build_store, source_cache, recipes, **kw):
     virtuals = {} # virtual_name -> artifact_id
 
     def _depth_first_build(recipe):
-        for dep_pkg in recipe.dependencies.values():
+        for dep_name, dep_pkg in recipe.dependencies:
             # recurse
             _depth_first_build(dep_pkg)
 
