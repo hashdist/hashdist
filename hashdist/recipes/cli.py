@@ -18,12 +18,23 @@ def stack_script_cli(root_recipe):
     parser.add_argument('--config',
                         default=os.path.expanduser(DEFAULT_CONFIG_FILENAME),
                         help='location of Hashdist config-file (default: %s))' % DEFAULT_CONFIG_FILENAME)
-    parser.add_argument('-k', '--keep', choices=['never', 'always', 'error'], default='error',
-                        help='when to keep build directories')
+    parser.add_argument('-k', '--keep-always', action='store_true',
+                        help='keep build directory even if there is no error')
+    parser.add_argument('-K', '--keep-never', action='store_true',
+                        help='never keep build directory, even if there is an error')
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='verbose mode')
     parser.add_argument('command', nargs='?', choices=['status', 'build'], default='status')
     args = parser.parse_args()
+
+    if args.keep_always and args.keep_never:
+        parser.error('-k and -K are incompatible')
+    elif args.keep_always:
+        args.keep = 'always'
+    elif args.keey_never:
+        args.keep = 'never'
+    else:
+        args.keep = 'error'
 
     logger = Logger(DEBUG if args.verbose else INFO)
         
