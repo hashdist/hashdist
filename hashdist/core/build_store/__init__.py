@@ -71,10 +71,9 @@ An example build spec:
         "dependencies" : [
             {"ref": "bash", "id": "virtual:bash"},
             {"ref": "make", "id": "virtual:gnu-make/3+"},
-            {"ref": "gcc", "id": "zlib/1.2.7/fXHu+8dcqmREfXaz+ixMkh2LQbvIKlHf+rtl5HEfgmU",
-              "before": ["virtual:unix"]},
+            {"ref": "zlib", "id": "zlib/1.2.7/fXHu+8dcqmREfXaz+ixMkh2LQbvIKlHf+rtl5HEfgmU"},
             {"ref": "unix", "id": "virtual:unix"},
-            {"ref": "zlib", "id": "gcc/host-4.6.3/q0VSL7JmzH1P17meqITYc4kMbnIjIexrWPdlAlqPn3s"},
+            {"ref": "gcc", "id": "gcc/host-4.6.3/q0VSL7JmzH1P17meqITYc4kMbnIjIexrWPdlAlqPn3s", "before": ["virtual:unix"]},
          ],
          "sources" : [
              {"key": "git:c5ccca92c5f136833ad85614feb2aa4f5bd8b7c3"},
@@ -114,12 +113,10 @@ An example build spec:
       dependencies below.
 
     * **ref**: A name to use to inject information of this dependency
-      into the build environment. Above, 
-      ``$zlib`` will be the absolute path to the ``zlib`` artifact,
-      ``$zlib_id`` will be the full artifact ID, while
-      ``$zlib_relpath`` will be the relative path from ``$PREFIX`` to the
-      zlib artifact. This can be set to `None` in order to not set
-      any environment variables for the artifact.
+      into the build environment. Above, ``$zlib`` will be the
+      absolute path to the ``zlib`` artifact, and ``$zlib_id`` will be
+      the full artifact ID. This can be set to `None` in order to not
+      set any environment variables for the artifact.
 
     * **before**: List of artifact IDs. Adds a constraint that this
       dependency is listed before the dependencies listed in all paths.
@@ -129,10 +126,10 @@ An example build spec:
       lacks a ``bin`` sub-directory it will not be added regardless.)
 
     * **in_hdist_rpath**: Like `in_path` but affects ``HDIST_RPATH`; defaults
-    to `True`.
+      to `True`.
 
     * **in_hdist_compiler_paths**: Like `in_path` but affects
-    ``HDIST_CFLAGS` and ``HDIST_LDFLAGS``; defaults to `True`.
+      ``HDIST_CFLAGS` and ``HDIST_LDFLAGS``; defaults to `True`.
     
     
 **sources**:
