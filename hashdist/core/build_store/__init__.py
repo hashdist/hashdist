@@ -192,21 +192,17 @@ documented here.
     `in_hdist_compiler_path` set. The entries are of the usual form
     ``-I/path/to/artifact/include -I/next/artifact/include``.
 
-**HDIST_ABS_LDFLAGS**:
+**HDIST_LDFLAGS**:
     Set to point to the ``lib*``-sub-directories of dependencies with
     `in_hdist_compiler_path` set. The entries are both for the linker
     (``-L/path/to/artifact/lib``) and for setting the `RPATH`
     (``-Wl,-R,/path/to/artifact/lib``).
 
-**HDIST_ACREL_LDFLAGS**:
-    Like the above, but the `RPATH` entries are relative, using the ``\$$ORIGIN``
-    marker (e.g., ``-Wl,-R,\$$ORIGIN/../../../foo/1.2/AWXE``). This makes
-    the artifact relocateable without any patching, but only works for
-    dynamic libraries installed in a direct sub-directory (like ``lib``).
-    The escape sequence here works if ``LDFLAGS`` is first emitted
-    to a Makefile and then interpreted by a shell script, as happens
-    with autoconf + libtool.
-    
+    Note that it is almost impossible to inject a relative RPATH; even
+    if one manages to escaoe $ORIGIN properly for the build system,
+    any auto-detection will tend to prepend absolute RPATHs
+    anyway. See experiences in mess.rst. If on wishes '$ORIGIN' in the
+    RPATH then ``patchelf`` should be used.
 
 The build specification is available under ``$BUILD/build.json``, and
 stdout and stderr are redirected to ``$BUILD/build.log``. These two

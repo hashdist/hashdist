@@ -18,13 +18,10 @@ szip = hr.ConfigureMakeInstall('szip', '2.1',
                                configure_flags=['--with-pic'],
                                unix=unix, ccache=ccache, gcc=gcc)
 
-
 hdf5 = hr.ConfigureMakeInstall('hdf5', '1.8.10',
                                'http://www.hdfgroup.org/ftp/HDF5/current/src/hdf5-1.8.10.tar.bz2',
                                'tar.bz2:+m5rN7eXbtrIYHMrh8UDcOO+ujrnhNBfFvKYwDOkWkQ',
-                               configure_flags=[
-                                   '--with-szlib=$szip',
-                                                '--with-pic'],
+                               configure_flags=['--with-szlib', '--with-pic'],
                                zlib=zlib, szip=szip, ccache=ccache, gcc=gcc,
                                unix=unix)
 

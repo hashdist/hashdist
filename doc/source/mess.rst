@@ -1,8 +1,19 @@
 Messy details of package building
 =================================
 
-Relative RPATH -- $ORIGIN
--------------------------
+Relocateable artifacts
+----------------------
+
+$ORIGIN in RPATH
+''''''''''''''''
+
+In the end, this is almost impossible because whenever one uses the
+configure system, e.g., ``--with-szlib`` on HDF, it tends to add the
+absolute RPATH anyway, and any relative paths one manage to put in
+ends up after. The only viable solution seems to be after-the-fact
+patching from absolute to relocateable.
+
+Below some notes if one actually wants to do it:
 
 Passing through the string "$ORIGIN" to the linker can be a real pain
 because of the ``$`` character. This worked on HDF5: ``\$$ORIGIN``.
