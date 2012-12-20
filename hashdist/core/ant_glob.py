@@ -40,10 +40,14 @@ def glob_files(pattern, cwd='.'):
 
     pattern : str or list
         Glob pattern as described above. If a str, will be split by /;
-        if a list, each item is a path component.
+        if a list, each item is a path component. It is only possible to
+        specify a non-relative glob if `pattern` is a string.
     
     """
     if isinstance(pattern, (str, unicode)):
+        if pattern.startswith('/'):
+            pattern = pattern[1:]
+            cwd = '/'
         parts = pattern.split('/')
     else:
         parts = list(pattern)

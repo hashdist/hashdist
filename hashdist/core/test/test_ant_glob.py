@@ -3,6 +3,7 @@ from .utils import temp_working_dir
 from ..ant_glob import glob_files
 
 import os
+from os.path import join as pjoin
 from os import makedirs
 
 def makefiles(lst):
@@ -25,8 +26,10 @@ def test_basic():
             assert sorted(expected) == sorted(glob_files(pattern))
             # check absolute
             abs_expected = [os.path.realpath(e) for e in expected]
-            with temp_working_dir():
+            with temp_working_dir() as not_d:
                 assert sorted(abs_expected) == sorted(glob_files(pattern, d))
+                # check with absolute glob
+                assert sorted(abs_expected) == sorted(glob_files(pjoin(d, pattern), not_d))
         
         yield (check, ['./a0/b0/c0/d0.txt'],
                'a0/b0/c0/d0.txt')
