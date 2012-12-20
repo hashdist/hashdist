@@ -31,11 +31,11 @@ def test_basic():
                 # check with absolute glob
                 assert sorted(abs_expected) == sorted(glob_files(pjoin(d, pattern), not_d))
         
-        yield (check, ['./a0/b0/c0/d0.txt'],
+        yield (check, ['a0/b0/c0/d0.txt'],
                'a0/b0/c0/d0.txt')
-        yield (check, ['./a0/b1/c1/d0.txt', './a0/b0/c0/d0.txt'],
+        yield (check, ['a0/b1/c1/d0.txt', 'a0/b0/c0/d0.txt'],
               'a0/**/d0.txt')
-        yield (check, ['./a0/b.txt', './a0/b1/c1/d0.txt', './a0/b0/c0/d0.txt', './a0/b0/c0/d1.txt'],
+        yield (check, ['a0/b.txt', 'a0/b1/c1/d0.txt', 'a0/b0/c0/d0.txt', 'a0/b0/c0/d1.txt'],
               'a0/**/*.txt')
-        yield (check, ['./a0/b0/c0/d0.txt', './a0/b0/c0/d1.txt'],
+        yield (check, ['a0/b0/c0/d0.txt', 'a0/b0/c0/d1.txt'],
               '**/b0/**/*.txt')
