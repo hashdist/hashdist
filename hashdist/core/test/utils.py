@@ -6,6 +6,8 @@ import contextlib
 import subprocess
 import hashlib
 
+from nose.tools import eq_
+
 from ...hdist_logging import Logger, null_logger, DEBUG
 
 from os.path import join as pjoin
@@ -36,6 +38,8 @@ def working_directory(path):
     finally:
         os.chdir(old)
 
+def eqsorted_(a, b):
+    eq_(sorted(a), sorted(b))
 #
 # Logger to use during unit-testing
 #

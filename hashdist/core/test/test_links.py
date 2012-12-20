@@ -2,12 +2,16 @@ import re
 from shutil import copyfile
 from os import symlink
 from os.path import join as pjoin
+import os
+import shutil
 
-from .utils import temp_working_dir, temp_dir, working_directory
+from nose.tools import assert_raises
+
+from .utils import temp_working_dir, temp_dir, working_directory, eqsorted_
 from .test_ant_glob import makefiles
 
 from .. import links
-from ..links import silent_makedirs
+from ..links import silent_makedirs, silent_unlink
 from pprint import pprint
 
 def test_dry_run_simple():
@@ -30,20 +34,14 @@ def test_dry_run_simple():
 
 
         # absolute `select`, relative `target`
-        for rule in rules:
-            # remove $D from all targets
-            if 'target' in rule:
-                if rule['target'] == '$D':
-                    rule['target'] = ''
-                else:
-                    rule['target'] = rule['target'][3:]
+        env['D'] = 'subdir'
         with working_directory('/'):
             actions = links.dry_run_links_dsl(rules, env)
-        assert actions == [(silent_makedirs, 'bin'),
-                           (symlink, '/bin/cp', 'bin/cp'),
-                           (symlink, '/usr/bin/gcc', 'bin/gcc'),
-                           (silent_makedirs, 'foo'),
-                           (copyfile, '/usr/bin/gcc', 'foo/gcc')]
+        assert actions == [(silent_makedirs, 'subdir/bin'),
+                           (symlink, '/bin/cp', 'subdir/bin/cp'),
+                           (symlink, '/usr/bin/gcc', 'subdir/bin/gcc'),
+                           (silent_makedirs, 'subdir/foo'),
+                           (copyfile, '/usr/bin/gcc', 'subdir/foo/gcc')]
         
         # relative `select`, relative target
         for rule in rules:
@@ -56,36 +54,64 @@ def test_dry_run_simple():
                 rule['prefix'] = rule['prefix'][1:]
         with working_directory('/'):
             actions = links.dry_run_links_dsl(rules, env)
-        assert actions == [(silent_makedirs, 'bin'),
-                           (symlink, 'bin/cp', 'bin/cp'),
-                           (symlink, 'usr/bin/gcc', 'bin/gcc'),
-                           (silent_makedirs, 'foo'),
-                           (copyfile, 'usr/bin/gcc', 'foo/gcc')
+        assert actions == [(silent_makedirs, 'subdir/bin'),
+                           (symlink, 'bin/cp', 'subdir/bin/cp'),
+                           (symlink, 'usr/bin/gcc', 'subdir/bin/gcc'),
+                           (silent_makedirs, 'subdir/foo'),
+                           (copyfile, 'usr/bin/gcc', 'subdir/foo/gcc')
                            ]
 
+        # force
+        for rule in rules:
+            rule['force'] = True
+        with working_directory('/'):
+            actions = links.dry_run_links_dsl(rules, env)
+        assert actions == [(silent_makedirs, 'subdir/bin'),
+                           (silent_unlink, 'subdir/bin/cp'),
+                           (symlink, 'bin/cp', 'subdir/bin/cp'),
+                           (silent_unlink, 'subdir/bin/gcc'),
+                           (symlink, 'usr/bin/gcc', 'subdir/bin/gcc'),
+                           (silent_makedirs, 'subdir/foo'),
+                           (silent_unlink, 'subdir/foo/gcc'),
+                           (copyfile, 'usr/bin/gcc', 'subdir/foo/gcc')
+                           ]
+
+def findfiles(path):
+    r = []
+    for dirname, subdirs, filenames in os.walk(path):
+        for filename in filenames:
+            r.append(pjoin(dirname, filename))
+    return r
             
-def test_dry_run_glob():
+def test_run_glob():
     rules = [dict(action='symlink', select='**/*$SUFFIX', target='foo', prefix='')]
     env = dict(SUFFIX='.txt')
     with temp_working_dir() as d:
         makefiles('a0/b0/c0/d0.txt a0/b0/c0/d1.txt a0/b1/c1/d0.txt a0/b.txt'.split())
 
-        actions = links.dry_run_links_dsl(rules, env)
-        assert actions == [(silent_makedirs, 'foo/a0/b0/c0'),
-                           (symlink, 'a0/b0/c0/d1.txt', 'foo/a0/b0/c0/d1.txt'),
-                           (silent_makedirs, 'foo/a0'),
-                           (symlink, 'a0/b.txt', 'foo/a0/b.txt'),
-                           (symlink, 'a0/b0/c0/d0.txt', 'foo/a0/b0/c0/d0.txt'),
-                           (silent_makedirs, 'foo/a0/b1/c1'),
-                           (symlink, 'a0/b1/c1/d0.txt', 'foo/a0/b1/c1/d0.txt')]
+        links.execute_links_dsl(rules, env)
+        eqsorted_(['foo/a0/b.txt', 'foo/a0/b1/c1/d0.txt', 'foo/a0/b0/c0/d0.txt', 'foo/a0/b0/c0/d1.txt'],
+                  findfiles('foo'))
+        shutil.rmtree('foo')
 
         rules[0]['prefix'] = 'a0'
-        actions = links.dry_run_links_dsl(rules, env)
-        assert actions == [(silent_makedirs, 'foo/b0/c0'),
-                           (symlink, 'a0/b0/c0/d1.txt', 'foo/b0/c0/d1.txt'),
-                           (silent_makedirs, 'foo'),
-                           (symlink, 'a0/b.txt', 'foo/b.txt'),
-                           (symlink, 'a0/b0/c0/d0.txt', 'foo/b0/c0/d0.txt'),
-                           (silent_makedirs, 'foo/b1/c1'),
-                           (symlink, 'a0/b1/c1/d0.txt', 'foo/b1/c1/d0.txt')]
-          
+        links.execute_links_dsl(rules, env)
+
+        eqsorted_(['foo/b.txt', 'foo/b0/c0/d0.txt', 'foo/b0/c0/d1.txt', 'foo/b1/c1/d0.txt'],
+                  findfiles('foo'))
+
+def test_force():
+    rules = [dict(action='symlink', select='**/*.txt', target='foo', prefix='')]
+    env = {}
+    with temp_working_dir() as d:
+        makefiles('a0/b0/c0/d0.txt a0/b0/c0/d1.txt a0/b1/c1/d0.txt a0/b.txt'.split())
+
+        links.execute_links_dsl(rules, env)
+        with assert_raises(OSError):
+            links.execute_links_dsl(rules, env)
+        rules[0]['force'] = True
+        links.execute_links_dsl(rules, env)
+        # should also work if target *doesn't* exist...
+        shutil.rmtree('foo')
+        links.execute_links_dsl(rules, env)
+        

@@ -6,7 +6,8 @@
 uses it to create (a potentially large number of) links.
 
 The following rules creates links to everything in "/usr/bin", except
-for "/usr/bin/gcc-4.6" which is copied::
+for "/usr/bin/gcc-4.6" which is copied (though it could be achieved
+more easily with the `force` flag)::
 
   [
     {
@@ -53,6 +54,8 @@ Rules are applied in order.
   Target filename (`source` is used) or directory (`select` is used).
   Variable substitution is performed.
 
+**force**:
+  If present and `True`, overwrite target.
 
 """
 
@@ -75,13 +78,23 @@ def silent_makedirs(path):
         if e.errno != errno.EEXIST:
             raise
 
+def silent_unlink(path):
+    """like os.unlink but does not raise error if the file does not exist"""
+    try:
+        os.unlink(path)
+    except OSError, e:
+        if e.errno != errno.ENOENT:
+            raise
+
 _ACTIONS = {'symlink': os.symlink, 'copy': shutil.copyfile}
 
-def _put_actions(makedirs_cache, action_name, source, dest, actions):
+def _put_actions(makedirs_cache, action_name, force, source, dest, actions):
     path, basename = os.path.split(dest)
     if path != '' and path not in makedirs_cache:
         actions.append((silent_makedirs, path))
         makedirs_cache.add(path)
+    if force:
+        actions.append((silent_unlink, dest))
     try:
         actions.append((_ACTIONS[action_name], source, dest))
     except KeyError:
@@ -111,7 +124,8 @@ def _glob_actions(rule, excluded, makedirs_cache, env, actions):
                 raise ValueError('%s does not start with %s' % (p, prefix))
             remainder = p[len(prefix):]
             target = pjoin(target_prefix, remainder)
-            _put_actions(makedirs_cache, action_name, p, target, actions)
+            _put_actions(makedirs_cache, action_name, rule.get('force', False),
+                         p, target, actions)
 
 def _single_action(rule, excluded, makedirs_cache, env, actions):
     source = expandtemplate(rule['source'], env)
@@ -121,7 +135,8 @@ def _single_action(rule, excluded, makedirs_cache, env, actions):
         excluded.add(source)
     else:
         target = expandtemplate(rule['target'], env)
-        _put_actions(makedirs_cache, rule['action'], source, target, actions)
+        _put_actions(makedirs_cache, rule['action'], rule.get('force', False),
+                     source, target, actions)
 
 def dry_run_links_dsl(rules, env={}):
     """Turns a DSL for creating links/copying files into a list of actions to be taken.
