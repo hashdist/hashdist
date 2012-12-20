@@ -21,7 +21,7 @@ def test_symlinks():
             {
               "section1" : {
                 "section2" : [
-                   {"action": "symlink", "target": "$FOO", "select" : "/bin/ls"},
+                   {"action": "symlink", "target": "$FOO", "source" : "/bin/ls"},
                    {"action": "symlink", "target": "bar", "select" : "/bin/ls", "prefix": "/"}
                 ]
               }

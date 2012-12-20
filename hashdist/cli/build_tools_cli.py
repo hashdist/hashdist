@@ -2,8 +2,6 @@ import os
 from os.path import join as pjoin
 import json
 
-from ..fileutils import silent_makedirs
-
 from .main import register_subcommand
 
 def fetch_parameters_from_json(filename, key):
@@ -15,17 +13,23 @@ def fetch_parameters_from_json(filename, key):
 
 class CreateLinks(object):
     """
-    Sets up a set of symlinks to the host system. The following
-    ``build.json`` would set up links to "ls" and "cp" from the host system::
+    Sets up a set of symlinks to the host system. Works by specifying
+    rules in a JSON document, potentially part of another document.
+    The following symlinks from ``$ARTIFACT/bin`` to everything in
+    ``/bin`` except ``cp``::
 
         {
           ...
-          "commands": [["hdist", "create-links"]],
+          "commands": [["hdist", "create-links", "--key=parameters/links", "build.json"]],
           "parameters" : {
             "links" : [
               {
-                "action": "symlink",
+                "action": "exclude",
                 "select": "/bin/cp",
+              },
+              {
+                "action": "symlink",
+                "select": "/bin/*",
                 "prefix": "/",
                 "target": "$ARTIFACT"
               }
@@ -33,19 +37,17 @@ class CreateLinks(object):
           }
         }
 
-    Variables are expanded from the OS environment.
-    
-    Note: It is a good idea to sort the link target list to make the
-    hash more stable.
+    See :mod:`hashdist.core.links` for more information on the rules
+    one can use.
     """
 
     command = 'create-links'
 
     @staticmethod
     def setup(ap):
-        ap.add_argument('--key', default="parameters/links",
-                        help='key in json file to read (default: "parameters/links")')
-        ap.add_argument('input', help='parameter json file')
+        ap.add_argument('--key', default="",
+                        help='read a sub-key from json file')
+        ap.add_argument('input', help='json parameter file')
 
     @staticmethod
     def run(ctx, args):
