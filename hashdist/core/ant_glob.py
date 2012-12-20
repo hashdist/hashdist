@@ -43,7 +43,7 @@ def glob_files(pattern, cwd=''):
         if a list, each item is a path component. It is only possible to
         specify a non-relative glob if `pattern` is a string.
 
-    cwd : str or None
+    cwd : str
         Directory to start in. Pass an empty string or '.' for current directory;
         the former will emit 'rel/path/to/file' while the latter './rel/path/to/file'.
         (This added complexity is present in order to be able to reliably match

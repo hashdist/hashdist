@@ -1,8 +1,68 @@
+"""
+:mod:`hashdist.core.links` --- Link creation tool
+==================================================
+
+:func:`execute_links_dsl` takes a set of rules in a mini-language and
+uses it to create (a potentially large number of) links.
+
+The following rules creates links to everything in "/usr/bin", except
+for "/usr/bin/gcc-4.6" which is copied::
+
+  [
+    {
+      "action": "copy",
+      "source": "/usr/bin/gcc-4.6",
+      "target": "$ARTIFACT/bin/gcc-4.6"
+    },
+    {
+      "action": "exclude",
+      "select": "/usr/bin/gcc-4.6",
+    },
+    {
+      "action": "symlink",
+      "select": "/usr/bin/*",
+      "prefix": "/usr",
+      "target": "$ARTIFACT"
+    }
+    
+  ]
+
+Rules are applied in order.
+
+**action**:
+  One of "symlink", "copy", "exclude". Other types may be added
+  later.
+
+**select**, **prefix**:
+  `select` contains glob of files to
+  link/copy/exclude. This is in ant-glob format (see
+  :mod:`hashdist.core.ant_glob`). If `select` is given and `action` is
+  not `exclude`, one must also supply a `prefix` (possibly empty
+  string) which will be stripped from each matching path, before
+  recreating the same hierarchy beneath `target`.
+
+  Variable substitution is performed both in `select` and `prefix`.
+  `select` and `prefix` should either both be absolute paths or
+  both be relative paths
+
+**source**:
+  Provide an exact filename instead of a glob. In this case `target`
+  should refer to the exact filename of the resulting link/copy.
+
+**target**:
+  Target filename (`source` is used) or directory (`select` is used).
+  Variable substitution is performed.
+
+
+"""
+
 import os
 from os.path import join as pjoin
 import shutil
 import errno
 from string import Template
+
+from .ant_glob import glob_files
 
 def expandtemplate(s, env):
     return Template(s).substitute(env)
@@ -14,6 +74,54 @@ def silent_makedirs(path):
     except OSError, e:
         if e.errno != errno.EEXIST:
             raise
+
+_ACTIONS = {'symlink': os.symlink, 'copy': shutil.copyfile}
+
+def _put_actions(makedirs_cache, action_name, source, dest, actions):
+    path, basename = os.path.split(dest)
+    if path != '' and path not in makedirs_cache:
+        actions.append((silent_makedirs, path))
+        makedirs_cache.add(path)
+    try:
+        actions.append((_ACTIONS[action_name], source, dest))
+    except KeyError:
+        raise ValueError('Unknown action: %s' % action_name)
+
+    
+def _glob_actions(rule, excluded, makedirs_cache, env, actions):
+    select = expandtemplate(rule['select'], env)
+    selected = set(glob_files(select, ''))
+    selected.difference_update(excluded)
+    if len(selected) == 0:
+        return
+
+    action_name = rule['action']
+    if action_name == 'exclude':
+        excluded.update(selected)
+    else:
+        if 'prefix' not in rule:
+            raise ValueError('When using select one must also supply prefix')
+        target_prefix = expandtemplate(rule['target'], env)
+        prefix = expandtemplate(rule['prefix'], env)
+        if prefix != '' and not prefix.endswith(os.path.sep):
+            prefix += os.path.sep
+
+        for p in selected:
+            if not p.startswith(prefix):
+                raise ValueError('%s does not start with %s' % (p, prefix))
+            remainder = p[len(prefix):]
+            target = pjoin(target_prefix, remainder)
+            _put_actions(makedirs_cache, action_name, p, target, actions)
+
+def _single_action(rule, excluded, makedirs_cache, env, actions):
+    source = expandtemplate(rule['source'], env)
+    if source in excluded:
+        return
+    if rule['action'] == 'exclude':
+        excluded.add(source)
+    else:
+        target = expandtemplate(rule['target'], env)
+        _put_actions(makedirs_cache, rule['action'], source, target, actions)
 
 def dry_run_links_dsl(rules, env={}):
     """Turns a DSL for creating links/copying files into a list of actions to be taken.
@@ -32,7 +140,6 @@ def dry_run_links_dsl(rules, env={}):
     env : dict
         Environment to use for variable substitution
 
-
     Returns
     -------
 
@@ -42,46 +149,14 @@ def dry_run_links_dsl(rules, env={}):
         `shutil.copyfile`.
     """
     assert os.path.sep == '/'
-    
     actions = []
     excluded = set()
     makedirs_cache = set()
     for rule in rules:
-        select = expandtemplate(rule['select'], env)
-
-        if select in excluded:
-            continue
-
-        action_name = rule['action']
-        if action_name == 'exclude':
-            excluded.add(select)
+        if 'select' in rule:
+            _glob_actions(rule, excluded, makedirs_cache, env, actions)
         else:
-            target = expandtemplate(rule['target'], env)
-            prefix = rule.get('prefix', None)
-
-            if prefix is not None:
-                prefix = expandtemplate(prefix, env)
-                if prefix != '' and not prefix.endswith(os.path.sep):
-                    prefix += os.path.sep
-                if not select.startswith(prefix):
-                    raise ValueError('%s does not start with %s' % (select, prefix))
-                remainder = select[len(prefix):]
-                target = pjoin(target, remainder)
-
-            path, basename = os.path.split(target)
-            if path != '' and path not in makedirs_cache:
-                actions.append((silent_makedirs, path))
-                makedirs_cache.add(path)
-
-            if action_name == 'symlink':
-                action = (os.symlink, select, target)
-            elif action_name == 'copy':
-                action = (shutil.copyfile, select, target)
-            else:
-                raise ValueError('Unknown action: %s' % action_name)
-
-            actions.append(action)
-        
+            _single_action(rule, excluded, makedirs_cache, env, actions)
     
     return actions
 
@@ -89,30 +164,9 @@ def dry_run_links_dsl(rules, env={}):
 def execute_links_dsl(rules, env={}):
     """Executes the links DSL for linking/copying files
     
-    The input is a set of rules which will be applied in order. Example
-    of rule::
-
-        {"action": "symlink",
-         "select": "/bin/cp",
-         "prefix": "/",
-         "target": "$ARTIFACT"}
-
-    `action` can be either "symlink", "copy", "exclude". `select` is the object
-    to link to (the plan is to add `glob` too).
-
-    If `prefix` is present, then the prefix will be stripped and
-    the rest will be appended to `target`, e.g., in the example above,
-    the symlink ``$ARTIFACT/bin/cp`` will be created. If `prefix` is not
-    present, target is used directly (so if `prefix` is remove above,
-    ``$ARTIFACT`` is expected to not exist and will be created as a symlink
-    to ``/bin/cp``). An empty `prefix` may make sense  (if `select` is relative)
-    and is distinct from a `None` prefix.
-
-    .. note::
+    The input is a set of rules which will be applied in order. The
+    rules are documented above.
     
-        `select` and `prefix` should either both be absolute paths or
-        both be relative paths
-
     Parameters
     ----------
 
