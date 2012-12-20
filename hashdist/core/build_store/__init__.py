@@ -150,7 +150,7 @@ An example build spec:
 
     * **target**: Target filename. Variable substitution is performed,
       so it is possible to put ``$ARTIFACT/filename`` here.
-    * **text**: Contents as a list of lines which will be joined with "\n".
+    * **text**: Contents as a list of lines which will be joined with "\\n".
     * **executable**: Whether to set the executable permission bit
     * **expandvars**: Whether to expand variables in the text itself
       (defaults to False)
