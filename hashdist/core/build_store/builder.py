@@ -199,7 +199,7 @@ class ArtifactBuilder(object):
                 try:
                     proc = subprocess.Popen(command_lst,
                                             cwd=cwd,
-                                            env=env,
+                                            env=command_env,
                                             stdin=subprocess.PIPE,
                                             stdout=subprocess.PIPE,
                                             stderr=subprocess.STDOUT)
