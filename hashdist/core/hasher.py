@@ -15,12 +15,12 @@ def argsort(seq):
 
 class DocumentSerializer(object):
     """
-    Stable one-non-Python-specific serialization of nested
+    Stable non-Python-specific serialization of nested
     objects/documents. The primary usecase is for hashing (see
-    :class:`Hasher`), and specifically hashing of JSON documents,
-    thus no de-serialization is written. However, by
-    hashing-through-serialization we ensure that we don't weaken the
-    hash function.
+    :class:`Hasher`), and specifically hashing of JSON documents, thus
+    no de-serialization is implemented. The idea is simply that by
+    hashing a proper serialization format we ensure that we don't
+    weaken the hash function.
 
     The API used is that of ``hashlib`` (i.e. an update method).
 
@@ -56,12 +56,9 @@ class DocumentSerializer(object):
        One could instead sort the keys by their hash (getting rid of
        comparison), but that would make the hash-stream (and thus the
        unit tests) much more complicated, and the idea is this should
-       be reproducable in other languages. However that is a
+       be reproducible in other languages. However that is a
        possibility for further extension, as long as string keys are
        treated as today.
-
-    Format
-    ------
 
     In order to prevent somebody from constructing colliding documents,
     each object is hashed with an envelope specifying the type and the
@@ -70,8 +67,8 @@ class DocumentSerializer(object):
 
     In general, see unit tests for format examples/details.
 
-    Constructor parameters
-    ----------------------
+    Parameters
+    ----------
 
     wrapped : object
         `wrapped.update` is called with strings or buffers to emit the
