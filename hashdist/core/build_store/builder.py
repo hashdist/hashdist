@@ -49,11 +49,14 @@ class ArtifactBuilder(object):
         return artifact_dir
 
     def build_to(self, artifact_dir, source_cache, keep_build):
+        if keep_build not in ('never', 'always', 'error'):
+            raise ValueError("keep_build not in ('never', 'always', 'error')")
         env = get_artifact_dependencies_env(self.build_store, self.virtuals,
                                             self.build_spec.doc.get('dependencies', ()))
 
         # Always clean up when these fail regardless of keep_build_policy
         build_dir = self.make_build_dir()
+        self.logger.info('Unpacking sources to %s' % build_dir)
         try:
             env['ARTIFACT'] = artifact_dir
             env['BUILD'] = build_dir
@@ -68,10 +71,10 @@ class ArtifactBuilder(object):
         # Conditionally clean up when this fails
         try:
             self.run_build_commands(build_dir, artifact_dir, env)
-        except BuildFailedError, e:
+        except:
             if keep_build == 'never':
                 self.remove_build_dir(build_dir)
-            raise e
+            raise
         # Success
         if keep_build != 'always':
             self.remove_build_dir(build_dir)
@@ -95,6 +98,7 @@ class ArtifactBuilder(object):
         return build_dir
 
     def remove_build_dir(self, build_dir):
+        self.logger.info('Removing %s' % build_dir)
         rmtree_up_to(build_dir, self.build_store.temp_build_dir)
 
     def make_artifact_dir(self):
@@ -234,7 +238,7 @@ def rmtree_up_to(path, parent):
         return
     if not path.startswith(parent):
         raise ValueError('must have path.startswith(parent)')
-    shutil.rmtree(path)
+    shutil.rmtree(path, ignore_errors=True)
     while path != parent:
         path, child = os.path.split(path)
         if path == parent:
