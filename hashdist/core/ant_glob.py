@@ -68,7 +68,7 @@ def glob_files(pattern, cwd='.'):
         raise NotImplementedError('mixing ** and other strings in same path component not supported')
     else:
         part = re.escape(part)
-        part = part.replace('\\*', '.*')
+        part = part.replace('\\*', '.*') + '$'
         part_re = re.compile(part)
         if is_last:
             for name in os.listdir(cwd):
