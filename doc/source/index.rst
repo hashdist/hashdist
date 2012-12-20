@@ -31,34 +31,39 @@ do a rebuild, no explicit code is needed to implement the “uninstall”
 feature. (Also, the "build" step could potentially mean downloading a
 binary package over the net, though that’s out of scope currently.)
 
-Tutorial
---------
+User's guide
+------------
 
 .. toctree::
    :maxdepth: 1
 
    tutorial
-
-
-Contents
---------
-
-.. toctree::
-   :maxdepth: 1
-
    faq
+   installing
+   mess
 
 Reference
-'''''''''
+---------
+
+Important concepts
+''''''''''''''''''
 
 .. toctree::
    :maxdepth: 1
 
    core/source_cache
    core/build_store
+
+Support code
+''''''''''''
+
+.. toctree::
+   :maxdepth: 1
+
    core/hasher
-   installing
-   mess
+   core/links
+   core/ant_glob
+
 
 Terminology
 -----------
