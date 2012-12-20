@@ -34,6 +34,12 @@ def get_artifact_dependencies_env(build_store, virtuals, dependencies):
         Environment variables to set containing variables for the dependency
         artifacts
     """
+    # do a topological sort of dependencies
+    problem = [(dep['id'], dep['before']) for dep in dependencies]
+    sorted_ids = stable_topological_sort(problem)
+    order = dict((id, i) for i, id in enumerate(sorted_ids))
+    dependencies = sorted(dependencies, key=lambda dep: order[dep['id']])
+    
     # just need something that has the right depth relative to the cache_path to
     # use for os.path.relpath
     prototype_lib_dir = pjoin(build_store.artifact_store_dir,
@@ -49,8 +55,6 @@ def get_artifact_dependencies_env(build_store, virtuals, dependencies):
     HDIST_REL_LDFLAGS = []
     
     for dep in dependencies:
-        if dep['before']:
-            raise NotImplementedError('todo: implement topological sort')
         dep_ref = dep['ref']
         dep_id = dep['id']
 
@@ -101,5 +105,59 @@ def get_artifact_dependencies_env(build_store, virtuals, dependencies):
     return env
     
 
-#def execute_commands(commands, artifact_dependencies, env, cwd, log_to):
+def stable_topological_sort(problem):
+    """Topologically sort items with dependencies
+
+    The concrete algorithm is to first identify all roots, then
+    do a DFS. Children are visited in the order they appear in
+    the input. This ensures that there is a predictable output
+    for every input. If no constraints are given the output order
+    is the same as the input order.
+
+    The items to sort must be hashable and unique.
+
+    Parameters
+    ----------
+    
+    problem : list of (obj, before_set)
+        `obj` are the items to be topologically sorted, while `before_lst`
+        is an iterable of constraints; `obj` is required to come before the
+        objects listed in `before_set` in the output.
+
+    Returns
+    -------
+
+    solution : list
+        The input `obj` in a possibly different order
+    """
+    # record order to use for sorting `before`
+    order = {}
+    for i, (obj, before) in enumerate(problem):
+        if obj in order:
+            raise ValueError('%r appears twice in input' % obj)
+        order[obj] = i
+
+    # turn into dict-based graph, and find the roots
+    graph = {}
+    roots = set(order.keys())
+    for obj, before in problem:
+        graph[obj] = sorted(before, key=order.__getitem__)
+        roots.difference_update(before)
+
+    result = []
+
+    def dfs(node):
+        if node not in result:
+            result.append(node)
+            for child in graph[node]:
+                dfs(child)
+
+    for obj in sorted(roots, key=order.__getitem__):
+        dfs(obj)
+
+    # cycles will have been left entirely out at this point
+    if len(result) != len(problem):
+        raise ValueError('provided constraints forms a graph with cycles')
+
+    return result
     

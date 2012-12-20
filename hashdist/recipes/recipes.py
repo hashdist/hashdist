@@ -42,23 +42,27 @@ class Recipe(object):
     Parameters
     ----------
 
+    before : list
+        Lists recipes that must appear after this recipe in PATH and
+        other variables.
     
     """
 
     
     def __init__(self, name, version, source_fetches=(), dependencies=None,
-                 env=None, is_virtual=False, **kw):
+                 env=None, is_virtual=False, before=(), **kw):
         self.name = name
         self.version = version
         self.source_fetches = source_fetches
         self.is_virtual = is_virtual
+        self.before = before
 
         dependencies = dict(dependencies) if dependencies is not None else {}
         env = dict(env) if env is not None else {}
 
         # parse kw to mean dependency if Recipe, or env entry otherwise
         for key, value in kw.iteritems():
-            if isinstance(value, (Recipe, Virtual)):
+            if isinstance(value, Recipe):
                 dependencies[key] = value
             elif isinstance(value, (str, int, float)):
                 env[key] = value
@@ -67,7 +71,7 @@ class Recipe(object):
                                 (key, type(value)))
 
 
-        self.dependencies = list(dependencies.items())
+        self.dependencies = dependencies
         self.env = env
         self._build_spec = None
 
@@ -99,7 +103,7 @@ class Recipe(object):
         if self.is_virtual:
             return self.get_artifact_id()
         else:
-            return core.short_artifact_id(artifact_id, 4) + '..'
+            return core.shorten_artifact_id(self.get_artifact_id(), 4) + '..'
 
     def fetch_sources(self, source_cache):
         for fetch in self.source_fetches:
@@ -142,7 +146,7 @@ class Recipe(object):
         
         # bin all repeated artifacts on their own line
         repeated = []
-        for dep_name, dep in self.dependencies:
+        for dep_name, dep in sorted(self.dependencies.items()):
             if dep.get_real_artifact_id() in visited:
                 repeated.append(dep.get_display_name())
             else:
@@ -175,11 +179,15 @@ class Recipe(object):
 
     def get_dependencies_spec(self):
         dep_specs = []
-        for dep_name, dep in self.dependencies:
+        dependencies_ids = [dep.get_artifact_id() for dep in self.dependencies.values()]
+        for dep_name, dep in self.dependencies.iteritems():
+            dep = self.dependencies[dep_name]
             dep_id = dep.get_artifact_id()
+            before_ids = [b.get_artifact_id() for b in dep.before]
+            before_ids = [x for x in before_ids if x in dependencies_ids] # filter to those present
             dep_specs.append({"ref": dep_name, "id": dep_id, "in_path": True,
-                              "in_hdist_compiler_paths": True})
-        dep_specs.sort(key=lambda spec: spec['ref'])
+                              "in_hdist_compiler_paths": True,
+                              "before": before_ids})
         return dep_specs
     
     def get_commands(self):
@@ -194,17 +202,13 @@ class Recipe(object):
     def get_env(self):
         return {}
 
-
-class Virtual(object):
-    def __init__(self, virtual_name, wrapped_recipe):
-        self.virtual_name = 'virtual:' + virtual_name
-        self.wrapped_recipe = wrapped_recipe
-
-    def get_artifact_id(self):
-        return self.virtual_name
-
-    def __repr__(self):
-        return '<%s -> %s>' % (self.virtual_name, self.wrapped_recipe.get_artifact_id())
+def find_dependency_in_spec(spec, ref):
+    """Utility to return the dict corresponding to the given ref
+    in a dependency build spec document fragment
+    """
+    for item in spec:
+        if item['ref'] == ref:
+            return item
 
 class HdistTool(Recipe):
     def __init__(self):
@@ -222,7 +226,7 @@ def build_recipes(build_store, source_cache, recipes, **kw):
     virtuals = {} # virtual_name -> artifact_id
 
     def _depth_first_build(recipe):
-        for dep_name, dep_pkg in recipe.dependencies:
+        for dep_name, dep_pkg in recipe.dependencies.iteritems():
             # recurse
             _depth_first_build(dep_pkg)
 
