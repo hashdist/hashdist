@@ -1,5 +1,42 @@
+import sys
+import os
+from os.path import join as pjoin, exists as pexists
+from textwrap import dedent
+
 from .main import register_subcommand
 from ..core import BuildStore, SourceCache
+
+@register_subcommand
+class InitHome(object):
+    """
+    Initializes the current user's home directory for Hashdist by
+    creating ~/.hdistconfig configuration file and ~/.hdist directory.
+    """
+    
+    @staticmethod
+    def setup(ap):
+        pass
+
+    @staticmethod
+    def run(ctx, args):
+        config_file = os.path.expanduser('~/.hdistconfig')
+        store_dir = os.path.expanduser('~/.hdist')
+        for x in [config_file, store_dir]:
+            if pexists(x):
+                sys.stderr.write('%s already exists, aborting\n' % x)
+                return 2
+
+        for x in ['opt', 'bld', 'src']:
+            os.makedirs(pjoin(store_dir, x))
+        with file(config_file, 'w') as f:
+            f.write(dedent("""\
+            [sourcecache]
+            path = ~/.hdist/src
+
+            [builder]
+            builds-path = ~/.hdist/bld
+            artifacts-path = ~/.hdist/opt
+            """))
 
 @register_subcommand
 class CleanBuilds(object):
