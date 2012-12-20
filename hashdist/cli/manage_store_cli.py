@@ -39,14 +39,14 @@ class InitHome(object):
             """))
 
 @register_subcommand
-class CleanBuilds(object):
+class ClearBuilds(object):
     """
     Resets the build store to scratch, deleting all software ever built in this
     Hashdist setup. Must be used with the --force argument.
 
     Example::
 
-        $ hdist cleanbuilds --force
+        $ hdist clearbuilds --force
 
     """
 
@@ -63,13 +63,13 @@ class CleanBuilds(object):
         build_store.delete_all()
 
 @register_subcommand
-class CleanSources(object):
+class ClearSources(object):
     """
     Empties the source cache. Must be used with the --force argument.
 
     Example::
 
-        $ hdist cleansource --force
+        $ hdist clearsource --force
 
     """
 
