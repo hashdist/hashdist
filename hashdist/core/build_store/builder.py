@@ -190,11 +190,11 @@ class ArtifactBuilder(object):
                     del command_lst[0]
 
                 # log the command to run
-                tee('running %r' % command_lst, 'hdist: ')
-                tee('cwd: ' + cwd)
-                tee('environment:')
+                tee('running %r' % command_lst, 'hdist: \n')
+                tee('cwd: ' + cwd + '\n')
+                tee('environment:\n')
                 for line in pformat(env).splitlines():
-                    tee('  ' + line)
+                    tee('  ' + line + '\n')
 
                 try:
                     proc = subprocess.Popen(command_lst,
