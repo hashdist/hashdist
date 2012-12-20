@@ -198,12 +198,15 @@ documented here.
     (``-L/path/to/artifact/lib``) and for setting the `RPATH`
     (``-Wl,-R,/path/to/artifact/lib``).
 
-**HDIST_REL_LDFLAGS**:
-    Like the above, but the `RPATH` entries are relative, using the ``$ORIGIN``
-    marker (e.g., ``-Wl,-R,$ORIGIN/../../../foo/1.2/AWXE``). This makes
+**HDIST_ACREL_LDFLAGS**:
+    Like the above, but the `RPATH` entries are relative, using the ``\$$ORIGIN``
+    marker (e.g., ``-Wl,-R,\$$ORIGIN/../../../foo/1.2/AWXE``). This makes
     the artifact relocateable without any patching, but only works for
     dynamic libraries installed in a direct sub-directory (like ``lib``).
-
+    The escape sequence here works if ``LDFLAGS`` is first emitted
+    to a Makefile and then interpreted by a shell script, as happens
+    with autoconf + libtool.
+    
 
 The build specification is available under ``$BUILD/build.json``, and
 stdout and stderr are redirected to ``$BUILD/build.log``. These two

@@ -52,7 +52,7 @@ def get_artifact_dependencies_env(build_store, virtuals, dependencies):
     PATH = []
     HDIST_CFLAGS = []
     HDIST_ABS_LDFLAGS = []
-    HDIST_REL_LDFLAGS = []
+    HDIST_ACREL_LDFLAGS = []
     
     for dep in dependencies:
         dep_ref = dep['ref']
@@ -88,8 +88,8 @@ def get_artifact_dependencies_env(build_store, virtuals, dependencies):
                 HDIST_ABS_LDFLAGS.append('-Wl,-R,' + libdirs[0])
 
                 relpath = os.path.relpath(libdirs[0], prototype_lib_dir)
-                HDIST_REL_LDFLAGS.append('-L' + libdirs[0])
-                HDIST_REL_LDFLAGS.append('-Wl,-R,$ORIGIN/' + relpath)
+                HDIST_ACREL_LDFLAGS.append('-L' + libdirs[0])
+                HDIST_ACREL_LDFLAGS.append(r'-Wl,-R,\$$ORIGIN/' + relpath)
             elif len(libdirs) > 1:
                 raise InvalidBuildSpecError('in_hdist_compiler_paths set for artifact %s with '
                                             'more than one library dir (%r)' % (dep_id, libdirs))
@@ -101,7 +101,7 @@ def get_artifact_dependencies_env(build_store, virtuals, dependencies):
     env['PATH'] = os.path.pathsep.join(PATH)
     env['HDIST_CFLAGS'] = ' '.join(HDIST_CFLAGS)
     env['HDIST_ABS_LDFLAGS'] = ' '.join(HDIST_ABS_LDFLAGS)
-    env['HDIST_REL_LDFLAGS'] = ' '.join(HDIST_REL_LDFLAGS)
+    env['HDIST_ACREL_LDFLAGS'] = ' '.join(HDIST_ACREL_LDFLAGS)
     return env
     
 

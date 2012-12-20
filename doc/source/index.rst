@@ -58,6 +58,7 @@ Reference
    core/build_store
    core/hasher
    installing
+   mess
 
 Terminology
 -----------

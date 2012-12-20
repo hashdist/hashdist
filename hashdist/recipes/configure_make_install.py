@@ -13,8 +13,16 @@ class ConfigureMakeInstall(Recipe):
         Recipe.__init__(self, name, version, source_fetches, **kw)
         self.configure_flags = configure_flags
 
+    def get_env(self):
+        return {'CCACHE_PATH': '/home/dagss/.hdist/opt/gcc-stack/host/o982/bin'}
+
     def get_commands(self):
-        return [['./configure', '--prefix=${TARGET}'] + self.configure_flags,
-                ['make'],
-                ['make', 'install']]
+        return [
+            ['which', 'gcc'],
+            ['gcc', '--version'],
+            ['LDFLAGS=$HDIST_ACREL_LDFLAGS', 'CFLAGS=$HDIST_CFLAGS', './configure', '--prefix=${ARTIFACT}'] +
+            self.configure_flags,
+            ['make'],
+            ['make', 'install']
+            ]
 
