@@ -125,7 +125,7 @@ An example build spec:
       artifact to the ``$PATH``. Defaults to `True`. (If the artifact
       lacks a ``bin`` sub-directory it will not be added regardless.)
 
-    * **in_hdist_rpath**: Like `in_path` but affects ``HDIST_RPATH`; defaults
+    * **in_hdist_rpath**: Like `in_path` but affects ``HDIST_RPATH``; defaults
       to `True`.
 
     * **in_hdist_compiler_paths**: Like `in_path` but affects
@@ -177,7 +177,7 @@ documented here.
 
 **ARTIFACT**:
     The location of the final artifact. Usually this is the "install location"
-    and should, e.g., be passed as the ``--prefix`` to ``./configure`-style
+    and should, e.g., be passed as the ``--prefix`` to ``./configure``-style
     scripts.
 
 **PATH**:
@@ -215,13 +215,9 @@ is normally ready to trust that the build wouldn't have been different
 if a newer version of the ``cp`` tool was used instead.
 
 Virtual dependencies, such as ``virtual:unix`` in the example above,
-are present in order. If a bug in ``cp`` is indeed discovered,
-
-Embedding version information in the virtual artifact names provide
-the possibility of recovering from mis-builds caused by bugs in the
-tools provided. If a serious bug is indeed discovered in ``cp``, one
-can start to use the name ``virtual:unix/r2`` instead, thus triggering
-rebuilds of artifacts built with the old version.
+are used so that the hash depends on a user-defined string rather
+than the artifact contents. If a bug in ``cp`` is indeed discovered,
+one can change the user-defined string (e.g, ``virtual:unix/r2``).
 
 This feature should not be over-used. For instance, GCC should almost
 certainly not be a virtual dependency.
@@ -265,8 +261,19 @@ bits per byte. However, the downloaded builds presumably will contain
 the full IDs, and so on can check if there is a conflict and give an
 explicit error.
 
+
 Reference
----------
+=========
+
+.. automodule:: hashdist.core.build_store.build_store
+    :members:
+
+.. automodule:: hashdist.core.build_store.build_spec
+    :members:
+
+.. automodule:: hashdist.core.build_store.builder
+    :members:
+
 
 """
 
