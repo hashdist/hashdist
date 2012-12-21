@@ -3,3 +3,4 @@
 *.pyo
 
 doc/build
+/target
