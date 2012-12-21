@@ -5,6 +5,7 @@ CLI for a user-defined software stack script
 import sys
 import argparse
 import os
+import tempfile
 
 from ..hdist_logging import Logger, DEBUG, INFO
 
@@ -25,6 +26,7 @@ def stack_script_cli(root_recipe):
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='verbose mode')
     parser.add_argument('command', nargs='?', choices=['status', 'build'], default='status')
+    parser.add_argument('target', nargs='?', help='name of symlink to create to results')
     args = parser.parse_args()
 
     if args.keep_always and args.keep_never:
@@ -36,6 +38,11 @@ def stack_script_cli(root_recipe):
     else:
         args.keep = 'error'
 
+    if args.command == 'status' and args.target:
+        parser.error('`target` argument only applicable to `build` command')
+
+    if args.target and os.path.exists(args.target) and not os.path.islink(args.target):
+        parser.error('"%s" exists and is not a symlink')
     logger = Logger(DEBUG if args.verbose else INFO)
         
     config = InifileConfiguration.create(args.config)
@@ -52,8 +59,18 @@ def stack_script_cli(root_recipe):
         build_recipes(build_store, source_cache, [root_recipe], keep_build=args.keep)
 
     artifact_dir = build_store.resolve(root_recipe.get_artifact_id())
-
-    if artifact_dir:
-        sys.stderr.write('Root artifact: %s\n' % artifact_dir)
+    if args.target:
+        # create-&-rename in order to force-create symlink
+        templink = args.target + '-temp-%d' % os.getpid()
+        os.symlink(artifact_dir, templink)
+        try:
+            os.rename(templink, args.target)
+        except:
+            os.unlink(templink)
+            raise
+        logger.info('Created "%s" -> "%s"' % (args.target, artifact_dir))
+    else:
+        logger.info('Results in "%s"' % artifact_dir)
+        
 
     
