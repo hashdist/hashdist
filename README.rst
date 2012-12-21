@@ -25,14 +25,19 @@ Hashdist
 
 
 
-License
--------
+Copyright and license
+---------------------
 
-Hashdist is licensed under the BSD 3-clause license, see LICENSE.txt.
+Copyright (c) 2012, Dag Sverre Seljebotn and Ondrej Certik. All rights
+reserved.
+
+Hashdist is licensed under the BSD 3-clause license. See LICENSE.txt
+for full details.
 
 Since Hashdist is used as the installation tool, some very small
 dependencies are simply ripped out of the original projects and
-bundled under ``hashdist/deps``.
+bundled under ``hashdist/deps``. The copyright of these belong to the
+respective authors.
 
  * hashdist/deps/sh:
      * version: commit abb0ba6

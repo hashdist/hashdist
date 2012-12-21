@@ -12,7 +12,7 @@ The licenses for each component are copied verbatim below.
 Hashdist
 --------
 
-Copyright (c) 2012, Dag Sverre Seljebotn
+Copyright (c) 2012, Dag Sverre Seljebotn and Ondrej Certik
 All rights reserved.
 
 Licensed under BSD 3-clause:
