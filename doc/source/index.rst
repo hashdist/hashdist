@@ -17,7 +17,7 @@ that you want in a set of configuration files, then do a full rebuild
 are cached under an associated hash reflecting the entire build
 environment, so that a "full rebuild" is often very fast. Thus,
 "uninstall" is simply removing the package from the configuration and
-do a rebuild, no explicit code is needed to implement the “uninstall”
+do a rebuild, no explicit code is needed to implement the "uninstall"
 feature. (Also, the "build" step could potentially mean downloading a
 binary package over the net, though that’s out of scope currently.)
 

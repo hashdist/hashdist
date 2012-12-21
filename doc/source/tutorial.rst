@@ -5,11 +5,28 @@ The goal of the 0.1 release is to gather input that can steer further
 development. Please speak up on the mailing list:
 https://groups.google.com/forum/?fromgroups#!forum/hashdist
 
-Also, there's a :ref:`FAQ`.
-
 .. contents::
 
+The goals of Hashdist
+---------------------
 
+Current solutions for software distribution fall short for some
+user-bases.  One such example is scientific software, in particular on
+HPC clusters.  Another example is Python packaging for developers who
+need to live on bleeding edge across multiple platforms.
+
+The idea of Hashdist is to solve the problem of software distribution
+through a declarative approach: You always specify a full distribution
+that you want in a set of configuration files, then do a full rebuild
+(from source) in order for changes to be reflected. However, builds
+are cached under an associated hash reflecting the entire build
+environment, so that a "full rebuild" is often very fast. Thus,
+"uninstall" is simply removing the package from the configuration and
+do a rebuild, no explicit code is needed to implement the "uninstall"
+feature. (Also, the "build" step could potentially mean downloading a
+binary package over the net, though that’s out of scope currently.)
+
+See the :ref:`FAQ` for further details on goals.
 
 Getting Hashdist
 ----------------
