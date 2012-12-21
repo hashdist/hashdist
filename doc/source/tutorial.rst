@@ -23,13 +23,13 @@ Once downloaded, execute::
 
     $ hdist inithome
 
-This will set up ``~/.hdistconfig``, which by default stores everything
-under ``~/.hdist`` which is also created::
+This will set up ``~/.hdistconfig``, which by default points to
+``~/.hdist`` which is also created::
 
     $ ls ~/.hdist
     bld  opt  src
 
-In ``bld`` temporary builds are created, ``src`` will cache downloaded
+``bld`` contains temporary builds, ``src`` will cache downloaded
 source code, while ``opt`` contains software that has been built.
 
 Core vs. front-end
@@ -47,7 +47,8 @@ many possible ways to expose the core functionality.
 An analogy may be that ``hashdist.core`` is like the GNU Make program,
 while ``hashdist.recipes`` are utility snippets one can use in
 Makefiles. In the 0.1 release, the core is 3500 LOC while the recipes
-part is less than 400 LOC.
+part is less than 400 LOC. The core is also much better documented
+and tested presently.
 
 Example: Building HDF5 from sources
 -----------------------------------
@@ -69,9 +70,9 @@ globally unique ID for the sources.  Fetched sources are stored under
 ``~/.hdist/src``, indexed by the key.
 
 In general tarballs are faster to unpack, but if one is tracking a
-project in development then it is wasteful to download a full tarball
-for every new build, so git is also supported (hopefully more VCSes
-in time).
+project in development, perhaps on ones own filesystem, it is
+wasteful to download a full tarball for every new build, so git is
+also supported (hopefully more VCSes in time).
 
 Pre-fetching the sources is not necesarry if one already knows
 the key, so we skip the download of HDF5 itself at this point, and move to
@@ -206,12 +207,15 @@ is emitted in the current directory for our convenience::
    If the hashes don't look exactly like the above, it would be
    because this tutorial is out-dated. The hashes should be the same
    between different systems. The 4-character hashes are abbreviated
-   versions of the full ID (and become longer on collisions); there
-   are symlinks from the full ID to the abbreviated ones.
+   versions of the full ID (and become longer on collisions).
 
    While the "version" string is used in a plain fashion here, it is
    encouraged in more complicated setting to put more information in
    it, such as ``zlib/1.2.6-amd64-icc-avx/CesW``.
+
+   Finally, in this example the GCC version does not affect the hash,
+   which is a big mistake. See the section on "Using software from the
+   host system" below for the full plan.
 
 Using the software
 ------------------
@@ -282,11 +286,11 @@ Then rerun (or read the section below on `ccache` to save some time)::
     [zlib]   tail -f /home/dagss/.hdist/bld/zlib/1.2.7/whcr/build.log
     ...
 
-And if and only if the build succeeds, the `target` link is atomically
+If and only if the build succeeds, the ``target`` link is atomically
 updated.
 
 The existing build results (a.k.a. *artifacts*) from the previous
-build are left in place. The trailing hashes ensures that even if
+run are left in place. The trailing hashes ensures that even if
 there is not a version bump, but just a slightly changed ``CFLAGS``,
 the artifacts can happily coexist on disk.
 
@@ -337,7 +341,7 @@ packages can be built on top of Hashdist.
 **II) Improving the engine:** Additional features will also be
 needed in the core engine. The most important ones are
 garbage collection (remove unused build results after some time)
-and improved sandboxing (the current sandboxing is discussed below).
+and improved sandboxing (discussed below).
 Distribution of resulting builds as binary packages is also
 worthy of consideration, though probably out of scope for current
 funding.
@@ -367,10 +371,20 @@ in the path, and will bind to exactly the `gcc` that is provided
 Using software from host system
 '''''''''''''''''''''''''''''''
 
-Using ``gcc = hr.NonhashedGCCStack()`` as the compiler is highly
-questionable; which GCC is used does not enter
-the hash and so there is no way to trigger a rebuild with
-a newer version of GCC. 
+Some dependencies for the build does not need to enter the hash.  We
+are willing to trust that the ``cp`` tool is stable enough that one
+does not want different artifacts compiled with different versions of
+``cp``. Therefore we use ``hr.NonhashedUnix()`` to get the basic Unix
+tools from the host without having them enter the hash. For more
+information see the documentation of "virtual artifacts" in
+:mod:`hashdist.core.build_store`. (There is still a way out and change
+the hashes if a catastrophic bug is in fact discovered in ``cp``; it
+is just manually curated rather than automatic.)
+
+However, using ``gcc = hr.NonhashedGCCStack()`` as the compiler is
+highly questionable, since the GCC version that is used is very
+important, and one wants to be able to trigger different builds with
+different versions of GCC.
 
 One solution is to set up a full build of gcc, including download of
 sources etc. However, this is often not what one wants; what one wants
@@ -383,14 +397,14 @@ version 0.2 one will be able to do::
 
 or::
 
-    icc = hr.EnvironmentModules('intel', 'modules:GfOiMlTioNUZXElKQKJDqcyvPSAoewy0qBplPBCFhbI')
+    icc = hr.EnvironmentModules('intel/11.0', 'modules:GfOiMlTioNUZXElKQKJDqcyvPSAoewy0qBplPBCFhbI')
 
 and then proceed to pass these as arguments to packages built by
 Hashdist.  In the former case, a Debian package provides checksums
 that can be used to fetch the digest very quickly. In the latter case
-some hashing of files would be needed.  We expect this to be the
-preferred method since it is so explicit and in fact easy to
-implement.
+some hashing of files on the filesystem would be needed.  We expect
+this to be the preferred method since it is so explicit and in fact
+easy to implement.
 
 However, if this doesn't work for some users,
 one can always do something to the effect of
@@ -399,7 +413,8 @@ one can always do something to the effect of
     gcc = hr.HostSoftware(['/usr/bin/gcc', '/usr/bin/as', ...],
                           'host:qatIOWcGNM7Aw+3QM32YqB7X35W-SJyl4f1Tyu+9U20')
 
-where the listed files are hashed (by contents or name+date).
+where the listed files are hashed (by contents or name+date) and brought
+into the build environment.
 
 But wait, I don't want all those rebuilds!
 ''''''''''''''''''''''''''''''''''''''''''
@@ -424,7 +439,8 @@ Thus one creates a "paper trail" ("hash trail"?) of exactly what has
 happened: First HDF5 and Python was compiled, then the system GCC was
 upgraded, then PyTables was compiled.  Of course, if one tries to pass
 ``gcc=gcc_4_6_2`` instead to PyTables one will get an error (unless
-PyTables was in fact built at a time when the older GCC was installed).
+the same PyTables source code was in fact built at a time when the
+older GCC was installed, and hasn't been garbage collected since).
 
 User-facing frontends to Hashdist can simply take "metadata
 snapshots" of the host system every time a new package is installed, so
@@ -478,20 +494,90 @@ arbitrary actions that should happen on install. Here is
 So it is already the case that you can make a Python build which, when
 its artifact is linked up to a profile, uses virtualenv to do the job
 instead of (only) creating symlinks. Thus one can get a dedicated ``lib/python2.7``
-in each profile, and avoids needing to drag along a ``$PYTHONPATH`` etc.
+in each profile symlinking to the wanted set of Python packages,
+avoiding the need to set ``$PYTHONPATH``.
 
-For the purposes of Hashdist we may change this scheme a bit,
-because keeping hundreds of copies of Python around, ~8 MB each,
-can be prohibitive (and if profile creation is not dirt cheap then
-much of the point disappears). What we can do instead is to compile a 10-line C
-program which hard-codes the path to the real Python
-and passes it to ``exec``, thus fooling the Python binary into thinking
-its real location is the 1KB launcher program.
+We may change this scheme a bit, because keeping hundreds of copies of
+Python around, ~8 MB each, can be prohibitive (and if profile creation
+is not dirt cheap then much of the point disappears). What we can do
+instead is to compile a 10-line C program which hard-codes the path to
+the real Python and passes it to ``exec``, thus fooling the Python
+binary into thinking its real location is the 1KB launcher program.
 
 The build sandbox
 '''''''''''''''''
 
-TODO
+Even if we, unlike Nix/Nixpkgs, do not insist on 100% reproducible
+environments down to `libc` and Linux kernel, it is still important
+that PyTables doesn't link against the host system's HDF5 library
+*unless explicitly requested* (mainly because it becomes impossible
+to automatically trigger a rebuild of PyTables with a newer system HDF5
+library).
+
+The **current** sandbox merely sets up the environment variables from scratch,
+in particular ``PATH``. The following is from ``~/.hdist/hdf5/.../build.log.gz``::
+
+  {'ARTIFACT': '/home/dagss/.hdist/opt/hdf5/1.8.10/W+IA',
+   'BUILD': '/home/dagss/.hdist/bld/hdf5/1.8.10/W+IA',
+   'HDIST_CFLAGS': '-I/home/dagss/.hdist/opt/szip/2.1/BT1Q/include -I/home/dagss/.hdist/opt/zlib/1.2.7/whcr/include',
+   'HDIST_LDFLAGS': '-L/home/dagss/.hdist/opt/szip/2.1/BT1Q/lib -Wl,-R,/home/dagss/.hdist/opt/szip/2.1/BT1Q/lib -L/home/dagss/.hdist/opt/zlib/1.2.7/whcr/lib -Wl,-R,/home/dagss/.hdist/opt/zlib/1.2.7/whcr/lib',
+   'HDIST_VIRTUALS': 'virtual:gcc-stack/host=gcc-stack/host/CT2DnIT3D7UfuftXhqmbAFjMHhlTztIPq2MyVdiw-kg;virtual:hdist-cli/r0=hdist-cli/r0/eJbh7T9+3ewnn7+Q+XAGTxQAYv9fJKqZbmAi9+ZPDrU;virtual:unix/host=unix/host/R5KLiZOFsP9ApHyQR0kTDPY3Alj0PA7IjU1nXGweU9Y',
+   'PATH': '/home/dagss/.hdist/opt/gcc-stack/host/CT2D/bin:/home/dagss/.hdist/opt/unix/host/R5KL/bin',
+   'gcc': '/home/dagss/.hdist/opt/gcc-stack/host/CT2D',
+   'gcc_id': 'gcc-stack/host/CT2DnIT3D7UfuftXhqmbAFjMHhlTztIPq2MyVdiw-kg',
+   'szip': '/home/dagss/.hdist/opt/szip/2.1/BT1Q',
+   'szip_id': 'szip/2.1/BT1Q4++E8+Ag3pbJ0DIK6uGuaAPGLJkrT39ZFAJ7rUw',
+   'unix': '/home/dagss/.hdist/opt/unix/host/R5KL',
+   'unix_id': 'unix/host/R5KLiZOFsP9ApHyQR0kTDPY3Alj0PA7IjU1nXGweU9Y',
+   'zlib': '/home/dagss/.hdist/opt/zlib/1.2.7/whcr',
+   'zlib_id': 'zlib/1.2.7/whcrogNznCYtbkBucGztK+HLZgaumucwZZKk5HrTW+A'}
+
+This is the *full* set of environment variables during the build.  Pay
+particular attention to the ``PATH`` variable; by having the
+`gcc-stack` and `unix` artifacts symlink to a subset of what is
+available in `/bin/` and `/usr/bin` we ensure that, e.g., one gets an
+error if a Fortran compiler is used  (presumably inadvertedly, since
+no Fortran compiler has been passed in to the build).
+
+The way library linking is controlled is by setting compiler flags.
+This does requires cooperation of each individual build system; however
+it is usually straightforward enough. For autoconf projects one can
+simply set ``LDFLAGS`` and ``CFLAGS``.
+
+.. note::
+
+   The current RPATH (see the ``-Wl,-R,...`` flags above) is absolute,
+   making it impossible to move the artifact store. Few if any build
+   systems supports relative RPATHs smoothly, however it would be possible
+   to use the ``patchelf`` tool after the build to make binaries
+   relocateable. (There are other issues with relocateability though,
+   such as the full path being hardcoded into ``*.pyc`` and ``*.pyo``;
+   they must be fixed on a case by case basis.)
+
+The **future** sandbox will likely take some additional measures.
+One possibility is chroot, but that is heavy-handed and often
+requires administrative privileges, so we want to avoid that. Instead,
+we want to make use of ``LD_PRELOAD`` to override functions
+in ``libc``. This has much of the same effect, the process is
+jailed (unless it sends its own signals directly to the kernel).
+We can use this to whitelist what files on the host system
+is available, in particular under ``/usr/lib`` and ``/usr/include``.
+
+What should happen if a process accesses a non-whitelisted file?
+
+ * **Option A**: This happens if the build was incorrectly
+   set up (not enough ``--without-foo`` options passed to
+   ``./configure``, or ``LDFLAGS`` not propagated to every linker
+   command).  Therefore one should raise an error and let the
+   developer fix the build rules. This makes the jail an optional
+   development tool.
+
+ * **Option B**: Have the jail lie and say that the file is not
+   present. This will make things simpler for a lot of build systems
+   as auto-detection of libraries can be left on, however it does
+   mean that the jail must always be present for a correct build.
+
+We will likely implement both modes and let the user decide.
 
 Further reading
 ---------------
@@ -500,3 +586,7 @@ To get the whole picture it is recommended to also read
 through :mod:`hashdist.core.build_store` and look at some of the
 ``build.json`` files (which can be found in the root of each
 produced artifact).
+
+The "recipes" system is undocumented, but ``hashdist/recipes/ccache.py``
+and ``hashdist/recipes/configure_make_install.py`` are good starting
+points.
