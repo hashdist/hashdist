@@ -208,6 +208,8 @@ def run_script_in_sandbox(logger, script, env, cwd):
                 
         # log the command to run
         logger.info('running %r' % command_lst)
+        logger.debug('cwd: ' + cwd)
+        logger.debug('environment:')
         for line in pformat(env).splitlines():
             logger.debug('  ' + line)
 
@@ -227,8 +229,6 @@ def logged_check_call(logger, command_lst, env, cwd):
     Similar to subprocess.check_call, but redirects all output to a Logger instance.
     Also raises BuildFailedError on failures.
     """
-    logger.debug('cwd: ' + cwd)
-    logger.debug('environment:')
     try:
         proc = subprocess.Popen(command_lst,
                                 cwd=cwd,
