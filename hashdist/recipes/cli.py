@@ -58,6 +58,11 @@ def stack_script_cli(root_recipe):
         build_recipes(build_store, source_cache, [root_recipe], keep_build=args.keep)
 
     artifact_dir = build_store.resolve(root_recipe.get_artifact_id())
+    if not artifact_dir:
+        if args.target:
+            logger.warning('Not updating symlink "%s" since build is not up to date' % args.target)
+        return
+
     if args.target:
         # create-&-rename in order to force-create symlink
         templink = args.target + '-temp-%d' % os.getpid()

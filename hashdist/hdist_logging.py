@@ -119,8 +119,10 @@ class Logger(object):
             msg = msg % args
         heading = self.heading
         lname = get_level_name(level)
-        if lname:
+        if lname and heading:
             heading += ' ' + lname
+        elif lname:
+            heading = lname
         heading = '[%s] ' % heading if heading else ''
         heading = colorize(heading, get_log_color(level))
         for stream, is_raw in self.streams:

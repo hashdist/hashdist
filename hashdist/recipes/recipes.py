@@ -103,7 +103,7 @@ class Recipe(object):
         if self.is_virtual:
             return self.get_artifact_id()
         else:
-            return core.shorten_artifact_id(self.get_artifact_id(), 4) + '..'
+            return core.shorten_artifact_id(self.get_artifact_id()) + '..'
 
     def fetch_sources(self, source_cache):
         for fetch in self.source_fetches:
@@ -119,7 +119,7 @@ class Recipe(object):
         indent = indent_str * level
         build_spec = self.get_build_spec()
         artifact_id = build_spec.artifact_id
-        short_artifact_id = core.shorten_artifact_id(artifact_id, 6) + '..'
+        short_artifact_id = core.shorten_artifact_id(artifact_id) + '..'
 
         def add_line(left, right):
             lines.append('%-70s%s' % (left, right))
