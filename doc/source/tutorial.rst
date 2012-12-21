@@ -1,9 +1,15 @@
 Hashdist 0.1 tutorial
 ========================
 
+Status
+------
+
 The goal of the 0.1 release is to gather input that can steer further
 development. Please speak up on the mailing list:
 https://groups.google.com/forum/?fromgroups#!forum/hashdist
+
+Currently Hashdist only works on Linux.
+
 
 .. contents::
 
