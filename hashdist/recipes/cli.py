@@ -31,7 +31,7 @@ def stack_script_cli(root_recipe):
         parser.error('-k and -K are incompatible')
     elif args.keep_always:
         args.keep = 'always'
-    elif args.keey_never:
+    elif args.keep_never:
         args.keep = 'never'
     else:
         args.keep = 'error'
