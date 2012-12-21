@@ -8,29 +8,24 @@ gcc = hr.NonhashedGCCStack()
 ccache = hr.CCache(gcc=gcc, unix=unix)
 
 zlib = hr.ConfigureMakeInstall('zlib', '1.2.7',
-                               'git://github.com/erdc-cm/zlib.git',
-                               'git:f7d921d70f092380e224502bf92e256936ddce8a',
-                               unix=unix, ccache=ccache, gcc=gcc)
+                               'http://downloads.sourceforge.net/project/libpng/zlib/1.2.7/zlib-1.2.7.tar.gz',
+                               'tar.gz:+pychjjvuMuO9eTdVFPkVXUeHFMLFZXu1Gbhvpt+JsU',
+                               unix=unix, gcc=gcc)
 
 szip = hr.ConfigureMakeInstall('szip', '2.1',
-                               'http://www.hdfgroup.org/ftp/lib-external/szip/2.1/src/szip-2.1.tar.gz',
-                               'tar.gz:qBbZXVZi6CeWJavb6n0OYhV9fR8CgCCxB1UAv0g+1e8',
+                               'git://github.com/erdc-cm/szip.git',
+                               'git:87863577a4656d5414b0d598c91fed1dd227f74a',
                                configure_flags=['--with-pic'],
-                               unix=unix, ccache=ccache, gcc=gcc)
+                               unix=unix, gcc=gcc)
 
 hdf5 = hr.ConfigureMakeInstall('hdf5', '1.8.10',
                                'http://www.hdfgroup.org/ftp/HDF5/current/src/hdf5-1.8.10.tar.bz2',
                                'tar.bz2:+m5rN7eXbtrIYHMrh8UDcOO+ujrnhNBfFvKYwDOkWkQ',
                                configure_flags=['--with-szlib', '--with-pic'],
-                               zlib=zlib, szip=szip, ccache=ccache, gcc=gcc,
-                               unix=unix)
+                               zlib=zlib, szip=szip, unix=unix, gcc=gcc)
 
 profile = hr.Profile([hdf5, szip, zlib])
 
 hr.cli.stack_script_cli(profile)
 
 
-#python = hr.ConfigureMakeInstall('python', '2.7.3',
-#                                 'http://python.org/ftp/python/2.7.3/Python-2.7.3.tar.bz2',
-#                                 'tar.bz2:cmRX4RyxU63D9Ciq8ZAfxWGjdMMOXn2mdCwHQqM4Zjw',
-#                                 unix=unix, make=make, gcc=gcc, zlib=zlib)
