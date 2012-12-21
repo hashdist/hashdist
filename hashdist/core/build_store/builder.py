@@ -15,11 +15,12 @@ from textwrap import dedent
 from string import Template
 import contextlib
 from pprint import pformat
+import gzip
 
 from ..source_cache import scatter_files
 from ..sandbox import get_artifact_dependencies_env
 from .build_spec import shorten_artifact_id
-from ..common import InvalidBuildSpecError
+from ..common import InvalidBuildSpecError, json_formatting_options
 from ...hdist_logging import DEBUG
 
 BUILD_ID_LEN = 4
@@ -61,7 +62,7 @@ class ArtifactBuilder(object):
             env['ARTIFACT'] = artifact_dir
             env['BUILD'] = build_dir
 
-            self.serialize_build_spec(artifact_dir, build_dir)
+            self.serialize_build_spec(build_dir)
             self.unpack_sources(build_dir, source_cache)
             self.unpack_files(build_dir, env)
         except:
@@ -71,6 +72,7 @@ class ArtifactBuilder(object):
         # Conditionally clean up when this fails
         try:
             self.run_build_commands(build_dir, artifact_dir, env)
+            self.serialize_build_spec(artifact_dir)
         except:
             if keep_build == 'never':
                 self.remove_build_dir(build_dir)
@@ -125,10 +127,18 @@ class ArtifactBuilder(object):
         os.symlink(os.path.split(short_id)[-1], artifact_link)
         return artifact_dir, artifact_link
  
-    def serialize_build_spec(self, build_dir, artifact_dir):
-        for d in [build_dir, artifact_dir]:
-            with file(pjoin(d, 'build.json'), 'w') as f:
-                json.dump(self.build_spec.doc, f, separators=(', ', ' : '), indent=4, sort_keys=True)
+    def serialize_build_spec(self, d):
+        with file(pjoin(d, 'build.json'), 'w') as f:
+            json.dump(self.build_spec.doc, f, **json_formatting_options)
+
+    def store_log_file(self, build_dir, artifact_dir):
+        chunk_size = 16 * 1024
+        with file(pjoin(build_dir, 'build.log'), 'rb') as src:
+            with gzip.open(pjoin(artifact_dir, 'build.log.gz'), 'wb') as dst:
+                while True:
+                    chunk = src.read(chunk_size)
+                    if not chunk: break
+                    dst.write(chunk)
 
     def unpack_sources(self, build_dir, source_cache):
         # sources
@@ -226,7 +236,7 @@ class ArtifactBuilder(object):
 
                 log_file.write("hdist: success\n")
                 self.logger.info('success')
-        shutil.copy(log_filename, pjoin(artifact_dir, 'build.log'))
+        self.store_log_file(build_dir, artifact_dir)
 
 def rmtree_up_to(path, parent):
     """Executes shutil.rmtree(path), and then removes any empty parent directories

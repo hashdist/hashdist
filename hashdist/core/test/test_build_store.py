@@ -5,6 +5,7 @@ import tempfile
 import shutil
 from textwrap import dedent
 from pprint import pprint
+import gzip
 
 from nose.tools import assert_raises, eq_
 
@@ -179,7 +180,7 @@ def test_basic(tempdir, sc, bldr):
     assert not bldr.is_present(spec)
     name, path = bldr.ensure_present(spec, sc)
     assert bldr.is_present(spec)
-    assert ['build.json', 'build.log', 'hello'] == sorted(os.listdir(path))
+    assert ['build.json', 'build.log.gz', 'hello'] == sorted(os.listdir(path))
     #assert os.listdir(pjoin(path, 'subdir')) == ['build.sh']
     with file(pjoin(path, 'hello')) as f:
         got = sorted(f.readlines())
@@ -191,7 +192,7 @@ def test_basic(tempdir, sc, bldr):
         ./subdir
         ./subdir/build.sh
         ''')
-    with file(pjoin(path, 'build.log')) as f:
+    with gzip.open(pjoin(path, 'build.log.gz')) as f:
         s =  f.read()
         assert 'hi stdout path=[]' in s
         assert 'hi stderr' in s
