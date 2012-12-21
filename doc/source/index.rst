@@ -1,16 +1,6 @@
 Welcome to the Hashdist documentation
 =====================================
 
-.. warning::
-
-   Hashdist is still vapour-ware! This documentation just reflects
-   how we want things to be.
-
-.. warning::
-
-   This documentation is currently meant for power-users and developers.
-
-
 
 Core idea of Hashdist
 ---------------------
@@ -20,16 +10,26 @@ user-bases.  One such example is scientific software, in particular on
 HPC clusters.  Another example is Python packaging for developers who
 need to live on bleeding edge across multiple platforms.
 
-The idea is to solve the problem of software distribution through a
-declarative approach: You always specify a full distribution that you
-want in a set of configuration files, then do a full rebuild (from
-source) in order for changes to be reflected. However, builds are
-cached under an associated hash reflecting the entire build
+The idea of Hashdist is to solve the problem of software distribution
+through a declarative approach: You always specify a full distribution
+that you want in a set of configuration files, then do a full rebuild
+(from source) in order for changes to be reflected. However, builds
+are cached under an associated hash reflecting the entire build
 environment, so that a "full rebuild" is often very fast. Thus,
 "uninstall" is simply removing the package from the configuration and
 do a rebuild, no explicit code is needed to implement the “uninstall”
 feature. (Also, the "build" step could potentially mean downloading a
 binary package over the net, though that’s out of scope currently.)
+
+.. note::
+
+   With respect to the plethora of scientific Python distributions,
+   Hashdist does not hope to replace these, but rather to provide
+   core technology that all of them can use.
+
+   See the FAQ for more details on ambitions and relations with
+   existing projects.
+
 
 User's guide
 ------------
@@ -39,11 +39,9 @@ User's guide
 
    tutorial
    faq
-   installing
-   mess
 
-Reference
----------
+Power-users' reference
+----------------------
 
 Important concepts
 ''''''''''''''''''
@@ -53,6 +51,7 @@ Important concepts
 
    core/source_cache
    core/build_store
+   core/profile
 
 Support code
 ''''''''''''
@@ -63,6 +62,16 @@ Support code
    core/hasher
    core/links
    core/ant_glob
+
+Other
+'''''
+
+.. toctree::
+   :maxdepth: 1
+
+   installing
+   mess
+
 
 
 Terminology

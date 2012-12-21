@@ -275,7 +275,7 @@ explicit error.
 
 
 Reference
-=========
+---------
 
 .. automodule:: hashdist.core.build_store.build_store
     :members:

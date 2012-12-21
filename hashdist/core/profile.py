@@ -16,12 +16,14 @@ into the artifact, but it need not be.
 Example::
 
     {
+      "install": {
         "dependencies": [],
         "env": {}
         "commands": [["hdist", "make-symlinks", "profile.json"]],
         "parameters": {
             <...free-form JSON data...>
         }
+      }
     }
 
 
