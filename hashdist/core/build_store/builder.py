@@ -13,22 +13,17 @@ import errno
 import sys
 from textwrap import dedent
 from string import Template
-import contextlib
 from pprint import pformat
 import gzip
 
 from ..source_cache import scatter_files
-from ..sandbox import get_artifact_dependencies_env
+from .. import sandbox
 from .build_spec import shorten_artifact_id
-from ..common import (InvalidBuildSpecError, json_formatting_options, SHORT_BUILD_ID_LEN,
-                      SHORT_ARTIFACT_ID_LEN)
+from ..common import (InvalidBuildSpecError, BuildFailedError,
+                      json_formatting_options, SHORT_BUILD_ID_LEN,
+                      SHORT_ARTIFACT_ID_LEN, working_directory)
 
 from ...hdist_logging import DEBUG
-
-class BuildFailedError(Exception):
-    def __init__(self, msg, build_dir):
-        Exception.__init__(self, msg)
-        self.build_dir = build_dir
 
 class ArtifactBuilder(object):
     def __init__(self, build_store, build_spec, virtuals):
@@ -51,8 +46,8 @@ class ArtifactBuilder(object):
     def build_to(self, artifact_dir, source_cache, keep_build):
         if keep_build not in ('never', 'always', 'error'):
             raise ValueError("keep_build not in ('never', 'always', 'error')")
-        env = get_artifact_dependencies_env(self.build_store, self.virtuals,
-                                            self.build_spec.doc.get('dependencies', ()))
+        env = sandbox.get_artifact_dependencies_env(self.build_store, self.virtuals,
+                                                    self.build_spec.doc.get('dependencies', ()))
 
         # Always clean up when these fail regardless of keep_build_policy
         build_dir = self.make_build_dir()
@@ -130,15 +125,6 @@ class ArtifactBuilder(object):
         with file(pjoin(d, 'build.json'), 'w') as f:
             json.dump(self.build_spec.doc, f, **json_formatting_options)
 
-    def store_log_file(self, build_dir, artifact_dir):
-        chunk_size = 16 * 1024
-        with file(pjoin(build_dir, 'build.log'), 'rb') as src:
-            with gzip.open(pjoin(artifact_dir, 'build.log.gz'), 'wb') as dst:
-                while True:
-                    chunk = src.read(chunk_size)
-                    if not chunk: break
-                    dst.write(chunk)
-
     def unpack_sources(self, build_dir, source_cache):
         # sources
         for source_item in self.build_spec.doc.get('sources', []):
@@ -157,92 +143,24 @@ class ArtifactBuilder(object):
             execute_files_dsl(self.build_spec.doc.get('files', ()), env)
 
     def run_build_commands(self, build_dir, artifact_dir, env):
-        # Handles log-file, environment, build execution
+        artifact_display_name = shorten_artifact_id(self.artifact_id, SHORT_ARTIFACT_ID_LEN) + '..'
         env.update(self.build_spec.doc.get('env', {}))
 
-        def subs(x):
-            return Template(x).substitute(env)
-
-        def tee(line, log_file_prefix=''):
-            self.logger.debug(line.rstrip())
-            log_file.write(log_file_prefix + line)
-
+        logger = self.logger
         log_filename = pjoin(build_dir, 'build.log')
-        
-        artifact_display_name = shorten_artifact_id(self.artifact_id, SHORT_ARTIFACT_ID_LEN) + '..'
-        if self.logger.level > DEBUG:
-            self.logger.info('Building %s, follow log with:' % artifact_display_name)
-            self.logger.info('  tail -f %s' % log_filename)
-        else:
-            self.logger.info('Building %s' % artifact_display_name)
-        
         with file(log_filename, 'w') as log_file:
-            logfileno = log_file.fileno()
-            script = self.build_spec.doc.get('commands', ())
-            if not isinstance(script, (list, tuple)):
-                raise TypeError('commands is not a list')
-            
-            for command_lst in script:
-                # substitute variables
-                command_lst = [subs(x) for x in command_lst]
-
-                # command-specific environment -- strings containing = before the command
-                cwd = build_dir
-                command_lst = list(command_lst)
-                command_env = dict(env)
-                while '=' in command_lst[0]:
-                    key, value = command_lst[0].split('=')
-                    if key == 'CWD':
-                        cwd = value
-                    else:
-                        command_env[key] = value
-                    del command_lst[0]
-
-                # log the command to run
-                tee('running %r' % command_lst, 'hdist: \n')
-                tee('cwd: ' + cwd + '\n')
-                tee('environment:\n')
-                for line in pformat(env).splitlines():
-                    tee('  ' + line + '\n')
-
-                if command_lst[0] == 'hdist':
-                    # special bootstrap case the 'hdist' command and run it in the same
-                    # process; note that hashdist.core.hdist_recipe can be used to make
-                    # 'hdist' available to sub-shells
-                    from ...cli import main as cli_main
-                    with working_directory(cwd):
-                        cli_main(command_lst, command_env, self.logger)
-                else:
-                    try:
-                        proc = subprocess.Popen(command_lst,
-                                                cwd=cwd,
-                                                env=command_env,
-                                                stdin=subprocess.PIPE,
-                                                stdout=subprocess.PIPE,
-                                                stderr=subprocess.STDOUT)
-                    except OSError, e:
-                        if e.errno == errno.ENOENT:
-                            log_file.write('hdist: command "%s" not found in PATH\n' % command_lst[0])
-                            raise BuildFailedError('command "%s" not found in PATH (cwd: "%s")' %
-                                                   (command_lst[0], build_dir), build_dir)
-                        else:
-                            raise
-
-                    proc.stdin.close()
-                    while True:
-                        line = proc.stdout.readline()
-                        if not line:
-                            break
-                        tee(line)
-                    retcode = proc.wait()
-                    if retcode != 0:
-                        log_file.write("hdist: command FAILED with code %d\n" % retcode)
-                        raise BuildFailedError('Build command failed with code %d (cwd: "%s")' %
-                                               (retcode, build_dir), build_dir)
-
-                log_file.write("hdist: success\n")
-                self.logger.info('success')
-        self.store_log_file(build_dir, artifact_dir)
+            if logger.level > DEBUG:
+                logger.info('Building %s, follow log with:' % artifact_display_name)
+                logger.info('  tail -f %s' % log_filename)
+            else:
+                logger.info('Building %s' % artifact_display_name)
+            logger.push_stream(log_file, raw=True)
+            try:
+                script = self.build_spec.doc.get('commands', ())
+                sandbox.run_script_in_sandbox(logger, script, env=env, cwd=build_dir)
+            finally:
+                logger.pop_stream()
+        compress(pjoin(build_dir, 'build.log'), pjoin(artifact_dir, 'build.log.gz'))
 
 def rmtree_up_to(path, parent):
     """Executes shutil.rmtree(path), and then removes any empty parent directories
@@ -266,7 +184,14 @@ def rmtree_up_to(path, parent):
                 raise
             break
 
-
+def compress(source_filename, dest_filename):
+    chunk_size = 16 * 1024
+    with file(source_filename, 'rb') as src:
+        with gzip.open(dest_filename, 'wb') as dst:
+            while True:
+                chunk = src.read(chunk_size)
+                if not chunk: break
+                dst.write(chunk)
 
 
 def execute_files_dsl(files, env):
@@ -316,11 +241,3 @@ def execute_files_dsl(files, env):
             else:
                 json.dump(file_spec['object'], f, **json_formatting_options)
 
-@contextlib.contextmanager
-def working_directory(path):
-    old = os.getcwd()
-    try:
-        os.chdir(path)
-        yield
-    finally:
-        os.chdir(old)

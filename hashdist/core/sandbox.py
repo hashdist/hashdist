@@ -6,8 +6,14 @@ import os
 from os.path import join as pjoin
 import subprocess
 from glob import glob
+from string import Template
+from pprint import pformat
+import errno
 
-from .common import InvalidBuildSpecError
+from .common import InvalidBuildSpecError, BuildFailedError, working_directory
+
+def substitute(x, env):
+    return Template(x).substitute(env)
 
 def get_artifact_dependencies_env(build_store, virtuals, dependencies):
     """
@@ -155,3 +161,99 @@ def stable_topological_sort(problem):
 
     return result
     
+def run_script_in_sandbox(logger, script, env, cwd):
+    """
+    Executes a command description given a JSON-like description.
+    `doc` should describe the commands to be executed as described
+    in :mod:`hashdist.core.build_store`; the relevant keys
+    are *dependencies*, *commands*, *env*.
+
+    The "hdist" command is treated as a special-case and run in the
+    same process, which a) facilitates bootstrapping, and b) makes
+    logging nicer. However, the "hdist" command will not be available
+    to shell scripts launched etc. without further measures
+    (:mod:`hashdist.core.hdist_recipe` will help with setting up
+    the `hdist` command in PATH properly).
+
+    Parameters
+    ----------
+    logger : Logger
+
+    script : list
+        List of commands ("commands" key in build spec)
+
+    env : dict
+        Environment variables to use
+
+    cwd : str
+        cwd to use
+
+    """
+    if not isinstance(script, (list, tuple)):
+        raise TypeError('commands is not a list')
+    for command_lst in script:
+        # substitute variables
+        command_lst = [substitute(x, env) for x in command_lst]
+        # command-specific environment -- strings containing = before the command
+        command_lst = list(command_lst)
+        command_env = dict(env)
+        command_cwd = cwd
+        while '=' in command_lst[0]:
+            key, value = command_lst[0].split('=')
+            if key == 'CWD':
+                command_cwd = value
+            else:
+                command_env[key] = value
+            del command_lst[0]
+                
+        # log the command to run
+        logger.info('running %r' % command_lst)
+        for line in pformat(env).splitlines():
+            logger.debug('  ' + line)
+
+        if command_lst[0] == 'hdist':
+            # special case the 'hdist' command and run it in the same
+            # process; note that hashdist.core.hdist_recipe can be used to make
+            # 'hdist' available to sub-shells
+            from ..cli import main as cli_main
+            with working_directory(cwd):
+                cli_main(command_lst, command_env, logger)
+        else:
+            logged_check_call(logger, command_lst, command_cwd, command_env)
+        logger.info('success')
+    
+def logged_check_call(logger, command_lst, cwd, env):
+    """
+    Similar to subprocess.check_call, but redirects all output to a Logger instance.
+    Also raises BuildFailedError on failures.
+    """
+    logger.debug('cwd: ' + cwd)
+    logger.debug('environment:')
+    try:
+        proc = subprocess.Popen(command_lst,
+                                cwd=cwd,
+                                env=env,
+                                stdin=subprocess.PIPE,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT)
+    except OSError, e:
+        if e.errno == errno.ENOENT:
+            logger.error('command "%s" not found in PATH' % command_lst[0])
+            raise BuildFailedError('command "%s" not found in PATH (cwd: "%s")' %
+                                   (command_lst[0], cwd), cwd)
+        else:
+            raise
+    proc.stdin.close()
+    while True:
+        line = proc.stdout.readline()
+        if not line:
+            break
+        if line[-1] == '\n':
+            line = line[:-1]
+        logger.debug(line)
+    retcode = proc.wait()
+    if retcode != 0:
+        logger.error("command failed with code %d, cwd=%s" %\
+                     (retcode,  cwd))
+        raise BuildFailedError('Build command failed with code %d (cwd: "%s")' %
+                               (retcode, cwd), cwd)

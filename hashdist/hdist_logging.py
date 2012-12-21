@@ -8,6 +8,8 @@ import os
 import sys
 from logging import DEBUG, INFO, WARNING, ERROR, CRITICAL
 
+NOLOGGING = 10**6
+
 # Color handling for terminals (taken from waf)
 COLORS = {
         'bold'  :'\x1b[01;1m',
@@ -76,32 +78,56 @@ def get_level_name(level):
         return None
 
 class Logger(object):
-    def __init__(self, level=INFO, names=(), stream=None):
-        if stream is None:
-            stream = sys.stderr
+    """
+    Parameters
+    ----------
+
+    level : int
+        For pretty-printing, ignore all log messages below this level.
+        Has no effect for raw streams.
+
+    names : str or list
+        Header to put at the left of each formatted log message
+
+    streams : list of (stream, is_raw)
+        Streams to emit log messages too. If `is_raw` is set, the
+        logged messages are printed to the stream without any formatting,
+        the only thing that changes is adding a newline "\n" for each
+        call.
+    """
+    def __init__(self, level=INFO, names=(), streams=None):
+        if streams is None:
+            streams = [(sys.stderr, False)]
         if isinstance(names, str):
             names = tuple(names.split(':'))
-        self.stream = stream
         self.names = names
         self.heading = ':'.join(names) if names else ''
         self.level = level
+        self.streams = streams
 
     def get_sub_logger(self, name):
-        return Logger(self.level, self.names + (name,), self.stream)
+        return Logger(self.level, self.names + (name,), self.streams)
+
+    def push_stream(self, stream, raw=False):
+        self.streams.append((stream, raw))
+
+    def pop_stream(self):
+        self.streams.pop()
 
     def log(self, level, msg, *args):
-        if level < self.level:
-            return
         if args:
             msg = msg % args
-
         heading = self.heading
         lname = get_level_name(level)
         if lname:
             heading += ' ' + lname
         heading = '[%s] ' % heading if heading else ''
         heading = colorize(heading, get_log_color(level))
-        self.stream.write('%s%s\n' % (heading, msg))
+        for stream, is_raw in self.streams:
+            if is_raw:
+                stream.write(msg + "\n")
+            elif level >= self.level:
+                stream.write('%s%s\n' % (heading, msg))
 
     def debug(self, msg, *args):
         self.log(DEBUG, msg, *args)
@@ -118,14 +144,5 @@ class Logger(object):
     def critical(self, msg, *args):
         self.log(CRITICAL, msg, *args)
 
-class _NullLogger(object):
-    level = 0
-    
-    def get_sub_logger(self, *args, **kw):
-        return self
-    
-    def _noop(self, *args, **kw):
-        pass
-    warning = error = debug = info = log = _noop
-
-null_logger = _NullLogger()
+# using null_logger one will still be able to attach raw streams
+null_logger = Logger(NOLOGGING)
