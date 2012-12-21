@@ -21,14 +21,10 @@ do a rebuild, no explicit code is needed to implement the “uninstall”
 feature. (Also, the "build" step could potentially mean downloading a
 binary package over the net, though that’s out of scope currently.)
 
-.. note::
-
-   With respect to the plethora of scientific Python distributions,
-   Hashdist does not hope to replace these, but rather to provide
-   core technology that all of them can use.
-
-   See the FAQ for more details on ambitions and relations with
-   existing projects.
+With respect to the plethora of scientific Python distributions,
+Hashdist does not hope to replace these, but rather to provide core
+technology that one or more of them can use.  See the :ref:`FAQ` for more
+details.
 
 
 User's guide

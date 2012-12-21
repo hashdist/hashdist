@@ -5,7 +5,10 @@ The goal of the 0.1 release is to gather input that can steer further
 development. Please speak up on the mailing list:
 https://groups.google.com/forum/?fromgroups#!forum/hashdist
 
+Also, there's a :ref:`FAQ`.
+
 .. contents::
+
 
 
 Getting Hashdist
