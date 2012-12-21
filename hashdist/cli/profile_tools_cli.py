@@ -1,4 +1,5 @@
 from .main import register_subcommand
+from .utils import fetch_parameters_from_json
 
 @register_subcommand
 class CreateProfile(object):
@@ -20,9 +21,9 @@ class CreateProfile(object):
 
         {
           ...
-          "commands": [["hdist", "create-profile", "--key=parameters/profile_artifacts", "build.json", "$ARTIFACT"]],
+          "commands": [["hdist", "create-profile", "--key=parameters/profile", "build.json", "$ARTIFACT"]],
           "parameters" : {
-            "profile_artifacts" : [
+            "profile" : [
               {"id": "zlib/1.2.7/fXHu+8dcqmREfXaz+ixMkh2LQbvIKlHf+rtl5HEfgmU"},
               {"id": "hdf/1.8.10/2ae+FVZnpvbvDYpCkSz4wz3nvp-CNxyD5VGi+e5nKQY",
                "before": ["zlib/1.2.7/fXHu+8dcqmREfXaz+ixMkh2LQbvIKlHf+rtl5HEfgmU"]}
@@ -34,12 +35,16 @@ class CreateProfile(object):
     Note that if artifact A comes "before" artifact B, then B will be installed
     first, and then A, so that A can overwrite the files set up by B (and
     so have the same behaviour as if A was *before* B in PATH).
+
+    Virtual artifacts may be needed in the sub-commands of each
+    artifact installation; these are read from the HDIST_VIRTUALS
+    environment variable.
     '''
     command = 'create-profile'
 
     @staticmethod
     def setup(ap):
-        ap.add_argument('--key', default="",
+        ap.add_argument('--key', default="/",
                         help='read a sub-key from json file')
         ap.add_argument('input', help='json parameter file')
         ap.add_argument('target', help='location of resulting profile directory')
@@ -47,6 +52,8 @@ class CreateProfile(object):
     @staticmethod
     def run(ctx, args):
         from ..core import make_profile, BuildStore
+        from ..core.build_store import unpack_virtuals_envvar
+        virtuals = unpack_virtuals_envvar(ctx.env.get('HDIST_VIRTUALS', ''))
         build_store = BuildStore.create_from_config(ctx.config, ctx.logger)
         doc = fetch_parameters_from_json(args.input, args.key)
-        make_profile(build_store, doc, args.target_dir)
+        make_profile(ctx.logger, build_store, doc, args.target, virtuals)

@@ -39,8 +39,7 @@ class CreateLinks(object):
 
     @staticmethod
     def setup(ap):
-        ap.add_argument('--key', default="",
-                        help='read a sub-key from json file')
+        ap.add_argument('--key', default="/", help='read a sub-key from json file')
         ap.add_argument('input', help='json parameter file')
 
     @staticmethod
@@ -48,6 +47,6 @@ class CreateLinks(object):
         from ..core.links import execute_links_dsl
         
         doc = fetch_parameters_from_json(args.input, args.key)
-        execute_links_dsl(doc, ctx.env)
+        execute_links_dsl(doc, ctx.env, logger=ctx.logger)
 
 register_subcommand(CreateLinks)

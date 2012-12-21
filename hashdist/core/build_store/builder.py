@@ -48,6 +48,7 @@ class ArtifactBuilder(object):
             raise ValueError("keep_build not in ('never', 'always', 'error')")
         env = sandbox.get_artifact_dependencies_env(self.build_store, self.virtuals,
                                                     self.build_spec.doc.get('dependencies', ()))
+        env['HDIST_VIRTUALS'] = pack_virtuals_envvar(self.virtuals)
 
         # Always clean up when these fail regardless of keep_build_policy
         build_dir = self.make_build_dir()
@@ -124,6 +125,7 @@ class ArtifactBuilder(object):
     def serialize_build_spec(self, d):
         with file(pjoin(d, 'build.json'), 'w') as f:
             json.dump(self.build_spec.doc, f, **json_formatting_options)
+            f.write('\n')
 
     def unpack_sources(self, build_dir, source_cache):
         # sources
@@ -193,6 +195,11 @@ def compress(source_filename, dest_filename):
                 if not chunk: break
                 dst.write(chunk)
 
+def pack_virtuals_envvar(virtuals):
+    return ';'.join('%s=%s' % tup for tup in sorted(virtuals.items()))
+
+def unpack_virtuals_envvar(x):
+    return dict(tuple(tup.split('=')) for tup in x.split(';'))
 
 def execute_files_dsl(files, env):
     """

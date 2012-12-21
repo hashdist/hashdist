@@ -13,7 +13,7 @@ from nose.tools import assert_raises, eq_
 from .utils import logger, temp_dir, temp_working_dir
 from . import utils
 
-from .. import source_cache, build_store, InvalidBuildSpecError
+from .. import source_cache, build_store, InvalidBuildSpecError, BuildFailedError
 
 
 #
@@ -194,7 +194,7 @@ def test_basic(tempdir, sc, bldr):
         ./subdir/build.sh
         ''')
     with gzip.open(pjoin(path, 'build.log.gz')) as f:
-        s =  f.read()
+        s = f.read()
         assert 'hi stdout path=[]' in s
         assert 'hi stderr' in s
 
@@ -208,14 +208,14 @@ def test_failing_build_and_multiple_commands(tempdir, sc, bldr):
            }
     try:
         bldr.ensure_present(spec, sc, keep_build='error')
-    except build_store.BuildFailedError, e_first:
+    except BuildFailedError, e_first:
         assert os.path.exists(pjoin(e_first.build_dir, 'foo'))
     else:
         assert False
 
     try:
         bldr.ensure_present(spec, sc, keep_build='never')
-    except build_store.BuildFailedError, e_second:
+    except BuildFailedError, e_second:
         assert e_first.build_dir != e_second.build_dir
         assert not os.path.exists(pjoin(e_second.build_dir))
     else:

@@ -65,7 +65,10 @@ import shutil
 import errno
 from string import Template
 
+from ..hdist_logging import null_logger
+
 from .ant_glob import glob_files
+
 
 def expandtemplate(s, env):
     return Template(s).substitute(env)
@@ -176,7 +179,7 @@ def dry_run_links_dsl(rules, env={}):
     return actions
 
 
-def execute_links_dsl(rules, env={}):
+def execute_links_dsl(rules, env={}, logger=null_logger):
     """Executes the links DSL for linking/copying files
     
     The input is a set of rules which will be applied in order. The
@@ -190,12 +193,17 @@ def execute_links_dsl(rules, env={}):
 
     env : dict
         Environment to use for variable substitution.
+
+    logger : Logger
     """
     for action in dry_run_links_dsl(rules, env):
+        action_desc = "%s%r" % (action[0].__name__, action[1:])
         try:
             action[0](*action[1:])
+            logger.debug(action_desc)
         except OSError, e:
             # improve error message to include operation attempted
-            raise OSError(e.errno, str(e) + " in %s%r" %
-                          (action[0].__name__, action[1:]))
+            msg = str(e) + " in " + action_desc
+            logger.error(msg)
+            raise OSError(e.errno, msg)
 

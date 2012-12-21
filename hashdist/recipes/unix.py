@@ -17,7 +17,7 @@ class NonhashedHostPrograms(Recipe):
         return {"links": rules}
 
     def get_commands(self):
-        return [["hdist", "create-links", "build.json"]]
+        return [["hdist", "create-links", "--key=parameters/links", "build.json"]]
 
 unix_programs_bin = (
     "cat cp chmod chown cpio date dd df echo egrep false"

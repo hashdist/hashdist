@@ -20,4 +20,22 @@ class ConfigureMakeInstall(Recipe):
             ['make'],
             ['make', 'install']
             ]
+    
+    def get_files(self):
+        artifact_json = {
+          "install": {
+            "commands": [
+              ["hdist", "create-links", "--key=install/parameters/links", "artifact.json"]
+            ],
+            "parameters": {
+              "links": [
+                {"action": "symlink", "select": "$ARTIFACT/*/**/*", "prefix": "$ARTIFACT",
+                 "target": "$PROFILE"}
+              ]
+            }
+          }
+        }
 
+        return [
+            {"target": "$ARTIFACT/artifact.json", "object": artifact_json}
+        ]

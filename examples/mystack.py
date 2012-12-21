@@ -25,8 +25,9 @@ hdf5 = hr.ConfigureMakeInstall('hdf5', '1.8.10',
                                zlib=zlib, szip=szip, ccache=ccache, gcc=gcc,
                                unix=unix)
 
-hr.cli.stack_script_cli(hdf5)
+profile = hr.Profile([hdf5, szip, zlib])
 
+hr.cli.stack_script_cli(profile)
 
 
 #python = hr.ConfigureMakeInstall('python', '2.7.3',

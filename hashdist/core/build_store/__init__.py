@@ -208,6 +208,11 @@ documented here.
     anyway. See experiences in mess.rst. If on wishes '$ORIGIN' in the
     RPATH then ``patchelf`` should be used.
 
+**HDIST_VIRTUALS**:
+    The mapping of virtual artifacts to concrete artifact IDs that has
+    been used. Format by example:
+    ``virtual:unix=unix/r0/KALiap2<...>;virtual:hdist=hdist/r0/sLt4Zc<...>``
+
 The build specification is available under ``$BUILD/build.json``, and
 stdout and stderr are redirected to ``$BUILD/build.log``. These two
 files will also be present in ``$ARTIFACT`` after the build.
@@ -285,6 +290,6 @@ Reference
 """
 
 # package exports
-from .builder import BuildFailedError
+from .builder import pack_virtuals_envvar, unpack_virtuals_envvar
 from .build_spec import BuildSpec, as_build_spec, get_artifact_id, shorten_artifact_id
 from .build_store import BuildStore

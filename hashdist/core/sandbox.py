@@ -219,10 +219,10 @@ def run_script_in_sandbox(logger, script, env, cwd):
             with working_directory(cwd):
                 cli_main(command_lst, command_env, logger)
         else:
-            logged_check_call(logger, command_lst, command_cwd, command_env)
+            logged_check_call(logger, command_lst, command_env, command_cwd)
         logger.info('success')
     
-def logged_check_call(logger, command_lst, cwd, env):
+def logged_check_call(logger, command_lst, env, cwd):
     """
     Similar to subprocess.check_call, but redirects all output to a Logger instance.
     Also raises BuildFailedError on failures.
