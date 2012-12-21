@@ -32,7 +32,8 @@ Status
 The goal of Hashdist v0.1 is to gather input that can steer further
 development.
 
-Hashdist currently only works with Linux and Python 2.7 (2.6 may work).
+Hashdist is only tested on Linux and Python 2.7. Python 2.6 may work.
+Mac OS X status is unknown, Windows will definitely not work.
 
 User's guide
 ------------

@@ -8,7 +8,8 @@ The goal of the 0.1 release is to gather input that can steer further
 development. Please speak up on the mailing list:
 https://groups.google.com/forum/?fromgroups#!forum/hashdist
 
-Currently Hashdist only works on Linux.
+Hashdist is only tested on Linux and Python 2.7. Python 2.6 may work.
+Mac OS X status is unknown, Windows will definitely not work.
 
 
 .. contents::
@@ -43,7 +44,7 @@ Getting Hashdist
 
 There is currently no installer; this tutorial will assume
 that the directory is put in ``PYTHONPATH`` and the ``bin``-subdirectory
-in ``PATH``. Hashdist is developed using Python 2.7 (Python 2.6 may work).
+in ``PATH``.
 
 Once downloaded, execute::
 
