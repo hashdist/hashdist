@@ -26,6 +26,13 @@ Hashdist does not hope to replace these, but rather to provide core
 technology that one or more of them can use.  See the :ref:`FAQ` for more
 details.
 
+Status
+------
+
+The goal of Hashdist v0.1 is to gather input that can steer further
+development.
+
+Hashdist currently only works with Linux and Python 2.7 (2.6 may work).
 
 User's guide
 ------------
