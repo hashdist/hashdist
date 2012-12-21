@@ -6,6 +6,7 @@ import shutil
 from textwrap import dedent
 from pprint import pprint
 import gzip
+import json
 
 from nose.tools import assert_raises, eq_
 
@@ -86,12 +87,12 @@ def test_canonical_build_spec():
 
 def test_execute_files_dsl():
     def assertions(dirname):
-        assert os.path.realpath(pjoin(dirname, 'lib')) == '/usr/lib'
-
         with file(pjoin(dirname, 'bin', 'hdist')) as f:
             x = f.read().strip()
             assert x == ("sys.path.insert(0, sys.path.join('%s', 'lib'))" % dirname)
         assert os.stat(pjoin(dirname, 'bin', 'hdist')).st_mode & 0100
+        with file(pjoin(dirname, 'doc.json')) as f:
+            assert json.load(f) == {"foo": "bar"}
 
     with temp_working_dir() as d:
         doc = [
@@ -104,8 +105,8 @@ def test_execute_files_dsl():
                 ]
             },
             {
-                "target": "$ARTIFACT/lib",
-                "symlink_to": "/usr/lib"
+                "target": "$ARTIFACT/doc.json",
+                "object": {"foo": "bar"}
             }
         ]
         # relative paths
@@ -140,15 +141,15 @@ def test_execute_files_dsl():
 #
 # Tests requiring fixture
 #
-def fixture(ARTIFACT_ID_LEN=None):
+def fixture(SHORT_ARTIFACT_ID_LEN=None):
     def decorator(func):
         @functools.wraps(func)
         def decorated():
-            old_aid_len = build_store.builder.ARTIFACT_ID_LEN
+            old_aid_len = build_store.builder.SHORT_ARTIFACT_ID_LEN
             tempdir = tempfile.mkdtemp()
             try:
-                if ARTIFACT_ID_LEN is not None:
-                    build_store.builder.ARTIFACT_ID_LEN = ARTIFACT_ID_LEN
+                if SHORT_ARTIFACT_ID_LEN is not None:
+                    build_store.builder.SHORT_ARTIFACT_ID_LEN = SHORT_ARTIFACT_ID_LEN
                 os.makedirs(pjoin(tempdir, 'src'))
                 os.makedirs(pjoin(tempdir, 'opt'))
                 os.makedirs(pjoin(tempdir, 'bld'))
@@ -156,7 +157,7 @@ def fixture(ARTIFACT_ID_LEN=None):
                 bldr = build_store.BuildStore(pjoin(tempdir, 'bld'), pjoin(tempdir, 'opt'), logger)
                 return func(tempdir, sc, bldr)
             finally:
-                build_store.builder.ARTIFACT_ID_LEN = old_aid_len
+                build_store.builder.SHORT_ARTIFACT_ID_LEN = old_aid_len
                 shutil.rmtree(tempdir)
         return decorated
     return decorator
@@ -239,7 +240,7 @@ def test_fail_to_find_dependency(tempdir, sc, bldr):
         with assert_raises(InvalidBuildSpecError):
             bldr.ensure_present(spec, sc)
 
-@fixture(ARTIFACT_ID_LEN=1)
+@fixture(SHORT_ARTIFACT_ID_LEN=1)
 def test_hash_prefix_collision(tempdir, sc, bldr):
     lines = []
     # do all build 

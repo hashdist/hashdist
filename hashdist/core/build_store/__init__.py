@@ -146,12 +146,19 @@ An example build spec:
     variables within them. This is suitable for configuration files, small
     scripts and so on. For anything more than a hundred lines or so
     you should upload to the source cache and put a ``files:...`` key
-    in *sources* instead.
+    in *sources* instead. Note that a JSON-like object can be provided
+    instead of text.
 
     * **target**: Target filename. Variable substitution is performed,
       so it is possible to put ``$ARTIFACT/filename`` here.
+      
     * **text**: Contents as a list of lines which will be joined with "\\n".
+
+    * **object**: As an alternative to *text*, one can provide an object
+      which will be serialized to the file as JSON.
+
     * **executable**: Whether to set the executable permission bit
+
     * **expandvars**: Whether to expand variables in the text itself
       (defaults to False)
 

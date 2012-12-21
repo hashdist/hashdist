@@ -10,7 +10,7 @@ import sys
 from .build_store import BuildSpec
 
 HDIST_CLI_ARTIFACT_NAME = "hdist-cli"
-HDIST_CLI_ARTIFACT_VERSION = "n"
+HDIST_CLI_ARTIFACT_VERSION = "r0"
 
 def hdist_cli_build_spec(python=None, package=None):
     """Build-spec to creates a 'bin'-dir containing only a launcher
@@ -60,11 +60,19 @@ def hdist_cli_build_spec(python=None, package=None):
                     "sys.exit(main(sys.argv))",
                     ""
                 ]
-            },
-            {
-                "target": "$ARTIFACT/pypkg/hashdist",
-                "symlink_to": package
             }
+        ],
+        "parameters": {
+            "links": [
+                {
+                  "action": "symlink",
+                  "source": package,
+                  "target": "$ARTIFACT/pypkg/hashdist"
+                }
+            ]
+        },
+        "commands": [
+            ["hdist", "create-links", "--key=parameters/links", "build.json"]
         ]
     }
     return BuildSpec(spec)

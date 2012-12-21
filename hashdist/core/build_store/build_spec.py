@@ -2,7 +2,7 @@ import re
 
 from ..hasher import Hasher
 
-
+from ..common import SHORT_ARTIFACT_ID_LEN
 
 class BuildSpec(object):
     def __init__(self, build_spec):
@@ -87,7 +87,7 @@ def get_artifact_id(build_spec, is_canonical=False):
     
     return '%s/%s/%s' % (name, version, digest)
 
-def shorten_artifact_id(artifact_id, length):
+def shorten_artifact_id(artifact_id, length=SHORT_ARTIFACT_ID_LEN):
     """Shortens the hash part of the artifact_id to the desired length
     """
     return artifact_id[:artifact_id.rindex('/') + length + 1]

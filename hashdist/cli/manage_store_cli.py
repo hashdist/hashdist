@@ -4,7 +4,6 @@ from os.path import join as pjoin, exists as pexists
 from textwrap import dedent
 
 from .main import register_subcommand
-from ..core import BuildStore, SourceCache
 
 @register_subcommand
 class InitHome(object):
@@ -56,6 +55,7 @@ class ClearBuilds(object):
 
     @staticmethod
     def run(ctx, args):
+        from ..core import BuildStore
         if not args.force:
             ctx.logger.error('Did not use --force flag')
             return 1
@@ -79,6 +79,7 @@ class ClearSources(object):
 
     @staticmethod
     def run(ctx, args):
+        from ..core import SourceCache
         if not args.force:
             ctx.logger.error('Did not use --force flag')
             return 1

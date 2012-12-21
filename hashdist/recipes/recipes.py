@@ -92,7 +92,7 @@ class Recipe(object):
 
     def get_artifact_id(self):
         if self.is_virtual:
-            return 'virtual:%s' % self.name
+            return 'virtual:%s/%s' % (self.name, self.version)
         else:
             return self.get_real_artifact_id()
 
@@ -219,6 +219,7 @@ class HdistTool(Recipe):
         return core.hdist_cli_build_spec()
 
 hdist_tool = HdistTool()
+HDIST_TOOL_VIRTUAL = 'virtual:%s/%s' % (core.HDIST_CLI_ARTIFACT_NAME, core.HDIST_CLI_ARTIFACT_VERSION)
 
 
 def build_recipes(build_store, source_cache, recipes, **kw):

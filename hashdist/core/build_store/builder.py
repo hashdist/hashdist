@@ -20,11 +20,10 @@ import gzip
 from ..source_cache import scatter_files
 from ..sandbox import get_artifact_dependencies_env
 from .build_spec import shorten_artifact_id
-from ..common import InvalidBuildSpecError, json_formatting_options
-from ...hdist_logging import DEBUG
+from ..common import (InvalidBuildSpecError, json_formatting_options, SHORT_BUILD_ID_LEN,
+                      SHORT_ARTIFACT_ID_LEN)
 
-BUILD_ID_LEN = 4
-ARTIFACT_ID_LEN = 4
+from ...hdist_logging import DEBUG
 
 class BuildFailedError(Exception):
     def __init__(self, msg, build_dir):
@@ -83,7 +82,7 @@ class ArtifactBuilder(object):
         return artifact_dir
 
     def make_build_dir(self):
-        short_id = shorten_artifact_id(self.artifact_id, BUILD_ID_LEN)
+        short_id = shorten_artifact_id(self.artifact_id, SHORT_BUILD_ID_LEN)
         build_dir = orig_build_dir = pjoin(self.build_store.temp_build_dir, short_id)
         i = 0
         # Try to make build_dir, if not then increment a -%d suffix until we        # fine a free slot
@@ -109,7 +108,7 @@ class ArtifactBuilder(object):
         store = self.build_store.artifact_store_dir
         extra = 0
         while True:
-            short_id = shorten_artifact_id(self.artifact_id, ARTIFACT_ID_LEN + extra)
+            short_id = shorten_artifact_id(self.artifact_id, SHORT_ARTIFACT_ID_LEN + extra)
             artifact_dir = pjoin(store, short_id)
             try:
                 os.makedirs(artifact_dir)
@@ -170,7 +169,7 @@ class ArtifactBuilder(object):
 
         log_filename = pjoin(build_dir, 'build.log')
         
-        artifact_display_name = shorten_artifact_id(self.artifact_id, ARTIFACT_ID_LEN) + '..'
+        artifact_display_name = shorten_artifact_id(self.artifact_id, SHORT_ARTIFACT_ID_LEN) + '..'
         if self.logger.level > DEBUG:
             self.logger.info('Building %s, follow log with:' % artifact_display_name)
             self.logger.info('  tail -f %s' % log_filename)
@@ -206,33 +205,40 @@ class ArtifactBuilder(object):
                 for line in pformat(env).splitlines():
                     tee('  ' + line + '\n')
 
-                try:
-                    proc = subprocess.Popen(command_lst,
-                                            cwd=cwd,
-                                            env=command_env,
-                                            stdin=subprocess.PIPE,
-                                            stdout=subprocess.PIPE,
-                                            stderr=subprocess.STDOUT)
-                except OSError, e:
-                    if e.errno == errno.ENOENT:
-                        log_file.write('hdist: command "%s" not found in PATH\n' % command_lst[0])
-                        raise BuildFailedError('command "%s" not found in PATH (cwd: "%s")' %
-                                               (command_lst[0], build_dir), build_dir)
-                    else:
-                        raise
+                if command_lst[0] == 'hdist':
+                    # special bootstrap case the 'hdist' command and run it in the same
+                    # process; note that hashdist.core.hdist_recipe can be used to make
+                    # 'hdist' available to sub-shells
+                    from ...cli import main as cli_main
+                    with working_directory(cwd):
+                        cli_main(command_lst, command_env, self.logger)
+                else:
+                    try:
+                        proc = subprocess.Popen(command_lst,
+                                                cwd=cwd,
+                                                env=command_env,
+                                                stdin=subprocess.PIPE,
+                                                stdout=subprocess.PIPE,
+                                                stderr=subprocess.STDOUT)
+                    except OSError, e:
+                        if e.errno == errno.ENOENT:
+                            log_file.write('hdist: command "%s" not found in PATH\n' % command_lst[0])
+                            raise BuildFailedError('command "%s" not found in PATH (cwd: "%s")' %
+                                                   (command_lst[0], build_dir), build_dir)
+                        else:
+                            raise
 
-                proc.stdin.close()
-                while True:
-                    line = proc.stdout.readline()
-                    if not line:
-                        break
-                    tee(line)
-                retcode = proc.wait()
-                if retcode != 0:
-                    log_file.write("hdist: command FAILED with code %d\n" % retcode)
-                    raise BuildFailedError('Build command failed with code %d (cwd: "%s")' %
-                                           (retcode, build_dir), build_dir)
-
+                    proc.stdin.close()
+                    while True:
+                        line = proc.stdout.readline()
+                        if not line:
+                            break
+                        tee(line)
+                    retcode = proc.wait()
+                    if retcode != 0:
+                        log_file.write("hdist: command FAILED with code %d\n" % retcode)
+                        raise BuildFailedError('Build command failed with code %d (cwd: "%s")' %
+                                               (retcode, build_dir), build_dir)
 
                 log_file.write("hdist: success\n")
                 self.logger.info('success')
@@ -287,29 +293,28 @@ def execute_files_dsl(files, env):
         dirname, basename = os.path.split(target)
         if dirname != '' and not os.path.exists(dirname):
             os.makedirs(dirname)
-        
-        if 'text' in file_spec:
-            text = os.linesep.join(file_spec['text'])
-            if file_spec.get('expandvars', False):
-                text = subs(text)
-            
-            if file_spec.get('executable', False):
-                mode = 0700
-            else:
-                mode = 0600
 
-            # IIUC in Python 3.3+ one can do this with the 'x' file mode, but need to do it
-            # ourselves currently
-            fd = os.open(pjoin(dirname, basename), os.O_EXCL | os.O_CREAT | os.O_WRONLY, mode)
-            with os.fdopen(fd, 'w') as f:
-                f.write(text)
+        if sum(['text' in file_spec, 'object' in file_spec]) != 1:
+            print file_spec
+            raise ValueError('objects in files section must contain either "text" or "object"')
+        if 'object' in file_spec and 'expandvars' in file_spec:
+            raise NotImplementedError('"expandvars" only supported for "text" currently')
 
-        elif 'symlink_to' in file_spec:
-            os.symlink(file_spec['symlink_to'], target)
-
+        # IIUC in Python 3.3+ one can do this with the 'x' file mode, but need to do it
+        # ourselves currently
+        if file_spec.get('executable', False):
+            mode = 0700
         else:
-            raise ValueError('neither "text" nor "symlink_to" property found')
-
+            mode = 0600
+        fd = os.open(pjoin(dirname, basename), os.O_EXCL | os.O_CREAT | os.O_WRONLY, mode)
+        with os.fdopen(fd, 'w') as f:
+            if 'text' in file_spec:
+                text = os.linesep.join(file_spec['text'])
+                if file_spec.get('expandvars', False):
+                    text = subs(text)
+                f.write(text)
+            else:
+                json.dump(file_spec['object'], f, **json_formatting_options)
 
 @contextlib.contextmanager
 def working_directory(path):

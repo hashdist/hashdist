@@ -9,9 +9,14 @@ import argparse
 import sys
 import textwrap
 import os
-import logging
+
         
 from ..core import InifileConfiguration, DEFAULT_CONFIG_FILENAME
+from ..hdist_logging import Logger, DEBUG, INFO
+
+#
+# sub-command registration
+#
 
 _subcommands = {}
 
@@ -31,38 +36,14 @@ def register_subcommand(cls, command=None):
         name = getattr(cls, 'command', cls.__name__.lower())
     _subcommands[name] = cls
 
-
-class Help(object):
-    """
-    Displays help about sub-commands
-    """
-    @staticmethod
-    def setup(ap):
-        ap.add_argument('command', help='The command to print help for', nargs='?')
-
-    @staticmethod
-    def run(ctx, args):
-        if args.command is None:
-            ctx.subcommand_parsers['help'].print_help()
-        else:
-            try:
-                subcmd_parser = ctx.subcommand_parsers[args.command]
-            except KeyError:
-                ctx.error('Unknown sub-command: %s' % args.command)
-            subcmd_parser.print_help()
-
-register_subcommand(Help)
-
 class HashdistCommandContext(object):
-    def __init__(self, argparser, subcommand_parsers, out_stream, config):
+    def __init__(self, argparser, subcommand_parsers, out_stream, config, env, logger):
         self.argparser = argparser
         self.subcommand_parsers = subcommand_parsers
         self.out_stream = out_stream
         self.config = config
-
-        logging.basicConfig(format='%(message)s')
-        self.logger = logging.getLogger()
-        self.logger.setLevel(logging.DEBUG)
+        self.env = env
+        self.logger = logger
 
     def error(self, msg):
         self.argparser.error(msg)
@@ -80,7 +61,7 @@ def _parse_docstring(doc):
     description = description.replace('::\n', ':\n').replace('``', '"')
     return help, description
 
-def main(unparsed_argv):
+def main(unparsed_argv, env, logger=None):
     """The main ``hdist`` command-line entry point
     """
 
@@ -114,14 +95,43 @@ def main(unparsed_argv):
         parser.print_help()
     else:
         args = parser.parse_args(unparsed_argv[1:])
+
+        if logger is None:
+            logger = Logger(DEBUG)
         config = InifileConfiguration.create(args.config_file)
-        ctx = HashdistCommandContext(parser, subcmd_parsers, sys.stdout, config)
+        ctx = HashdistCommandContext(parser, subcmd_parsers, sys.stdout, config, env, logger)
+
         retcode = args.subcommand_handler(ctx, args)
         if retcode is None:
             retcode = 0
 
     return retcode
 
+#
+# help command
+#
+
+class Help(object):
+    """
+    Displays help about sub-commands
+    """
+    @staticmethod
+    def setup(ap):
+        ap.add_argument('command', help='The command to print help for', nargs='?')
+
+    @staticmethod
+    def run(ctx, args):
+        if args.command is None:
+            ctx.subcommand_parsers['help'].print_help()
+        else:
+            try:
+                subcmd_parser = ctx.subcommand_parsers[args.command]
+            except KeyError:
+                ctx.error('Unknown sub-command: %s' % args.command)
+            subcmd_parser.print_help()
+
+register_subcommand(Help)
+
+
 if __name__ == '__main__':
-    sys.exit(main(sys.argv))
-    
+    sys.exit(main(sys.argv, os.environ))

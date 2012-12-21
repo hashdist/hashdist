@@ -3,13 +3,7 @@ from os.path import join as pjoin
 import json
 
 from .main import register_subcommand
-
-def fetch_parameters_from_json(filename, key):
-    with file(filename) as f:
-        doc = json.load(f)
-    for step in key.split('/'):
-        doc = doc[step]
-    return doc
+from .utils import fetch_parameters_from_json
 
 class CreateLinks(object):
     """
@@ -54,6 +48,6 @@ class CreateLinks(object):
         from ..core.links import execute_links_dsl
         
         doc = fetch_parameters_from_json(args.input, args.key)
-        execute_links_dsl(doc, os.environ)
+        execute_links_dsl(doc, ctx.env)
 
 register_subcommand(CreateLinks)
