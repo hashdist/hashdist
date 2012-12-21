@@ -25,8 +25,10 @@ def stack_script_cli(root_recipe):
                         help='never keep build directory, even if there is an error')
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='verbose mode')
-    parser.add_argument('command', nargs='?', choices=['status', 'build'], default='status')
-    parser.add_argument('target', nargs='?', help='name of symlink to create to results')
+    parser.add_argument('-s', '--status', action='store_true',
+                        help='do not run build, only show status')
+    parser.add_argument('target', nargs='?',
+                        help='name of symlink that should be created to results')
     args = parser.parse_args()
 
     if args.keep_always and args.keep_never:
@@ -37,9 +39,6 @@ def stack_script_cli(root_recipe):
         args.keep = 'never'
     else:
         args.keep = 'error'
-
-    if args.command == 'status' and args.target:
-        parser.error('`target` argument only applicable to `build` command')
 
     if args.target and os.path.exists(args.target) and not os.path.islink(args.target):
         parser.error('"%s" exists and is not a symlink')
@@ -55,7 +54,7 @@ def stack_script_cli(root_recipe):
     else:
         sys.stderr.write('Build needed\n')
 
-    if args.command == 'build':
+    if not args.status:
         build_recipes(build_store, source_cache, [root_recipe], keep_build=args.keep)
 
     artifact_dir = build_store.resolve(root_recipe.get_artifact_id())
