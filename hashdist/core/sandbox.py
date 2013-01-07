@@ -9,6 +9,7 @@ from glob import glob
 from string import Template
 from pprint import pformat
 import errno
+from ..hdist_logging import WARNING, INFO, DEBUG
 
 from .common import InvalidBuildSpecError, BuildFailedError, working_directory
 
@@ -218,8 +219,15 @@ def run_script_in_sandbox(logger, script, env, cwd):
             # process; note that hashdist.core.hdist_recipe can be used to make
             # 'hdist' available to sub-shells
             from ..cli import main as cli_main
-            with working_directory(cwd):
-                cli_main(command_lst, command_env, logger)
+            # do not emit INFO-messages from sub-command unless level is DEBUG
+            old_level = logger.level
+            if logger.level > DEBUG:
+                logger.level = WARNING
+            try:
+                with working_directory(cwd):
+                    cli_main(command_lst, command_env, logger)
+            finally:
+                logger.level = old_level
         else:
             logged_check_call(logger, command_lst, command_env, command_cwd)
         logger.info('success')
