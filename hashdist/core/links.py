@@ -65,6 +65,7 @@ import shutil
 import errno
 from string import Template
 
+from .fileutils import silent_makedirs, silent_unlink
 from ..hdist_logging import null_logger
 
 from .ant_glob import glob_files
@@ -72,22 +73,6 @@ from .ant_glob import glob_files
 
 def expandtemplate(s, env):
     return Template(s).substitute(env)
-
-def silent_makedirs(path):
-    """like os.makedirs, but does not raise error in the event that the directory already exists"""
-    try:
-        os.makedirs(path)
-    except OSError, e:
-        if e.errno != errno.EEXIST:
-            raise
-
-def silent_unlink(path):
-    """like os.unlink but does not raise error if the file does not exist"""
-    try:
-        os.unlink(path)
-    except OSError, e:
-        if e.errno != errno.ENOENT:
-            raise
 
 _ACTIONS = {'symlink': os.symlink, 'copy': shutil.copyfile}
 
