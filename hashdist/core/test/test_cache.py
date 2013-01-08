@@ -35,6 +35,12 @@ def test_basic(cache, tmpdir):
     assert cache.get('nonexisting', 'bar', 'default') == 'default'
 
 @fixture()
+def test_prevent_disk(cache, tempdir):
+    cache.put('foo', 'bar', 1, on_disk=False)
+    assert DiskCache(tempdir).get('foo', 'bar', None) == None
+    assert cache.get('foo', 'bar', None) == 1
+    
+@fixture()
 def test_memory_caching(cache, tempdir):
     # We can retreive even if we remove the backing file, as long as cache is
     # not destructed...

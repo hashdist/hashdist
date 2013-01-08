@@ -75,7 +75,7 @@ class DiskCache(object):
         shutil.rmtree(pjoin(self.cache_path, domain), ignore_errors=True)
             
 
-    def put(self, domain, key, value):
+    def put(self, domain, key, value, on_disk=True):
         """Puts a value to the store
 
         This should be atomic and race-safe, provided that everybody who
@@ -101,6 +101,10 @@ class DiskCache(object):
 
         value : object
             Pickleable object.
+
+        on_disk : bool
+            If `False`, the value will only be stored in the memory cache
+            and never pickled/unpickled.
         """
         domain = self._as_domain(domain)
         obj_filename = self._get_obj_filename(domain, key)
@@ -111,18 +115,19 @@ class DiskCache(object):
             # to disk
             return
         self._get_memory_cache(domain)[obj_filename] = value
-        
-        # dump to temporary file + atomic rename
-        obj_dir = os.path.dirname(obj_filename)
-        silent_makedirs(obj_dir)
-        fd, temp_filename = tempfile.mkstemp(dir=obj_dir)
-        try:
-            with os.fdopen(fd, 'w') as f:
-                pickle.dump(value, f, protocol=2)
-            os.rename(temp_filename, obj_filename)
-        except:
-            os.unlink(temp_filename)
-            raise
+
+        if on_disk:
+            # dump to temporary file + atomic rename
+            obj_dir = os.path.dirname(obj_filename)
+            silent_makedirs(obj_dir)
+            fd, temp_filename = tempfile.mkstemp(dir=obj_dir)
+            try:
+                with os.fdopen(fd, 'w') as f:
+                    pickle.dump(value, f, protocol=2)
+                os.rename(temp_filename, obj_filename)
+            except:
+                os.unlink(temp_filename)
+                raise
 
     def get(self, domain, key, default=_RAISE):
         """Looks up value from store
