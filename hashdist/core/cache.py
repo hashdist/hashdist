@@ -72,7 +72,8 @@ class DiskCache(object):
         """Invalidates all entries in the given domain.
         """
         self._get_memory_cache(domain).clear()
-        shutil.rmtree(pjoin(self.cache_path, domain))
+        shutil.rmtree(pjoin(self.cache_path, domain), ignore_errors=True)
+            
 
     def put(self, domain, key, value):
         """Puts a value to the store

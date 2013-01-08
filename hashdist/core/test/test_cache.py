@@ -46,6 +46,7 @@ def test_memory_caching(cache, tempdir):
 
 @fixture()
 def test_invalidate(cache, tempdir):
+    cache.invalidate('a') # should not raise exception
     cache.put('a', 'foo', 1)
     cache.put('b', 'foo', 2)
     cache.invalidate('a')
