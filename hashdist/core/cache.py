@@ -14,15 +14,33 @@ import os
 import tempfile
 import cPickle as pickle
 import errno
+from functools import wraps
+import re
+import shutil
 
 from .hasher import Hasher
 from .fileutils import silent_makedirs
 
 _RAISE = object()
 
+DOMAIN_RE = re.compile(r'^[a-zA-Z0-9-+_.]+$')
+
 class DiskCache(object):
     """
-    Key/value store to cache th
+    Key/value cache. The cache has two layers; one in-memory cache for
+    this object, and one on disk.
+
+    Each value is cached by (domain, key); all the keys in one
+    key domain can be invalidated together. The domain also helps
+    making sure there's not key collisions between different uses.
+
+    .. warning::
+    
+        If two caches access the same path, domain invalidations from
+        one cache will not propagate to contents in the memory cache
+        of the other. This class is really only meant for very simple
+        caching...
+    
     """
     def __init__(self, cache_path):
         self.cache_path = cache_path
@@ -30,20 +48,31 @@ class DiskCache(object):
     
     @staticmethod
     def create_from_config(config, logger):
-        """Creates a Cache from the settings in the configuration
+        """Creates a DiskCache from the settings in the configuration
         """
-        return Cache(config.get_path('general', 'cache'))
+        return DiskCache(config.get_path('general', 'cache'))
 
     def _as_domain(self, domain):
         if not isinstance(domain, str):
             domain = '%s.%s' % (domain.__module__, domain.__name__)
+        if not DOMAIN_RE.match(domain):
+            raise ValueError('invalid domain, does not match %s' % DOMAIN_RE.pattern)
         return domain
     
     def _get_obj_filename(self, domain, key):
         h = Hasher()
-        h.update((domain, key))
+        h.update(key)
         digest = h.format_digest()
-        return pjoin(self.cache_path, digest[:2], digest[2:])
+        return pjoin(self.cache_path, domain, digest[:2], digest[2:])
+
+    def _get_memory_cache(self, domain):
+        return self.memory_cache.setdefault(domain, {})
+
+    def invalidate(self, domain):
+        """Invalidates all entries in the given domain.
+        """
+        self._get_memory_cache(domain).clear()
+        shutil.rmtree(pjoin(self.cache_path, domain))
 
     def put(self, domain, key, value):
         """Puts a value to the store
@@ -62,9 +91,9 @@ class DiskCache(object):
 
         domain : type or str
             Should be a type or a string that is combined with the key
-            to perform the lookup; this is present to enforce that
-            keyspaces don't collide. If a type is passed, then its
+            to perform the lookup. If a type is passed, then its
             fully qualified name is taken as the domain string.
+            The domain must match `DOMAIN_RE`.
 
         key : object
             Object that is hashable with :cls:`Hasher`.
@@ -80,7 +109,7 @@ class DiskCache(object):
             # already stored from this same cache object; don't bother with writing
             # to disk
             return
-        self.memory_cache[obj_filename] = value
+        self._get_memory_cache(domain)[obj_filename] = value
         
         # dump to temporary file + atomic rename
         obj_dir = os.path.dirname(obj_filename)
@@ -105,6 +134,7 @@ class DiskCache(object):
             to perform the lookup; this is present to enforce that
             keyspaces don't collide. If a type is passed, then its
             fully qualified name is taken as the domain string.
+            The domain must match `DOMAIN_RE`.
 
         key : object
             Object that is hashable with :cls:`Hasher`.
@@ -116,7 +146,7 @@ class DiskCache(object):
         domain = self._as_domain(domain)
         obj_filename = self._get_obj_filename(domain, key)
         try:
-            x = self.memory_cache[obj_filename]
+            x = self._get_memory_cache(domain)[obj_filename]
         except KeyError:
             try:
                 f = file(obj_filename)
@@ -129,7 +159,7 @@ class DiskCache(object):
                     raise KeyError('Cannot find object in key-domain "%s" that hashes to %s' %
                                    (domain, obj_filename))
             with f:
-                x = self.memory_cache[obj_filename] = pickle.load(f)
+                x = self._get_memory_cache(domain)[obj_filename] = pickle.load(f)
         return x
 
 class NullCache(object):
@@ -141,3 +171,19 @@ class NullCache(object):
             raise KeyError('keys are never found in the NullCache')
         else:
             return default
+
+null_cache = NullCache()
+
+def cached_method(domain):
+    def decorator(func):
+        @wraps(func)
+        def replacement(self, *args):
+            key = (func.__name__,) + tuple(args)
+            try:
+                x = self.cache.get(domain, key)
+            except KeyError:
+                x = func(self, *args)
+                self.cache.put(domain, key, x)
+            return x
+        return replacement
+    return decorator

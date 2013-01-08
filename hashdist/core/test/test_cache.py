@@ -40,9 +40,17 @@ def test_memory_caching(cache, tempdir):
     # not destructed...
     cache.put('foo', 'bar', 1)
     assert len(cache.memory_cache) == 1
-    os.unlink(glob.glob(pjoin(tempdir, '*', '*'))[0])
+    os.unlink(glob.glob(pjoin(tempdir, '*', '*', '*'))[0])
     assert cache.get('foo', 'bar') == 1
     assert DiskCache(tempdir).get('foo', 'bar', -1) == -1
+
+@fixture()
+def test_invalidate(cache, tempdir):
+    cache.put('a', 'foo', 1)
+    cache.put('b', 'foo', 2)
+    cache.invalidate('a')
+    assert cache.get('a', 'foo', None) == None
+    assert cache.get('b', 'foo', None) == 2
     
 @fixture()
 def test_unpickleable(cache, tmpdir):
@@ -53,7 +61,7 @@ def test_unpickleable(cache, tmpdir):
     try:
         cache.put('foo', 'bar', Unpickleable())
     except Exception:
-        lst = glob.glob(os.path.join(tmpdir, '*'))
+        lst = glob.glob(os.path.join(tmpdir, '*', '*'))
         assert len(lst) == 1
         assert len(os.listdir(lst[0])) == 0
     else:
