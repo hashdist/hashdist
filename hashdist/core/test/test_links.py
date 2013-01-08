@@ -15,8 +15,8 @@ from ..links import silent_makedirs, silent_unlink
 from pprint import pprint
 
 def test_dry_run_simple():
-    rules = [dict(action='symlink', select='/bin/cp', prefix='/', target='$D'),
-             dict(action='symlink', select='/usr/bin/gcc', prefix='/usr', target='$D'),
+    rules = [dict(action='symlink', select=['/bin/cp', '/bin/ls'], prefix='/', target='$D'),
+             dict(action='symlink', select=['/usr/bin/gcc'], prefix='/usr', target='$D'),
              dict(action='copy', source='/usr/bin/gcc', target='$D/foo/gcc'),
              dict(action='exclude', source='/usr/bin/gcc'),
              dict(action='symlink', source='/usr/bin/gcc', target='$D/gcc2'),
@@ -28,6 +28,7 @@ def test_dry_run_simple():
         actions = links.dry_run_links_dsl(rules, env)
         assert actions == [(silent_makedirs, pjoin(d, 'bin')),
                            (symlink, '/bin/cp', pjoin(d, 'bin/cp')),
+                           (symlink, '/bin/ls', pjoin(d, 'bin/ls')),
                            (symlink, '/usr/bin/gcc', pjoin(d, 'bin/gcc')),
                            (silent_makedirs, pjoin(d, 'foo')),
                            (copyfile, '/usr/bin/gcc', pjoin(d, 'foo', 'gcc'))]
@@ -39,6 +40,7 @@ def test_dry_run_simple():
             actions = links.dry_run_links_dsl(rules, env)
         assert actions == [(silent_makedirs, 'subdir/bin'),
                            (symlink, '/bin/cp', 'subdir/bin/cp'),
+                           (symlink, '/bin/ls', 'subdir/bin/ls'),
                            (symlink, '/usr/bin/gcc', 'subdir/bin/gcc'),
                            (silent_makedirs, 'subdir/foo'),
                            (copyfile, '/usr/bin/gcc', 'subdir/foo/gcc')]
@@ -47,7 +49,7 @@ def test_dry_run_simple():
         for rule in rules:
             # remove / from all selects
             if 'select' in rule:
-                rule['select'] = rule['select'][1:]
+                rule['select'] = [x[1:] for x in rule['select']]
             else:
                 rule['source'] = rule['source'][1:]
             if 'prefix' in rule:
@@ -56,6 +58,7 @@ def test_dry_run_simple():
             actions = links.dry_run_links_dsl(rules, env)
         assert actions == [(silent_makedirs, 'subdir/bin'),
                            (symlink, 'bin/cp', 'subdir/bin/cp'),
+                           (symlink, 'bin/ls', 'subdir/bin/ls'),
                            (symlink, 'usr/bin/gcc', 'subdir/bin/gcc'),
                            (silent_makedirs, 'subdir/foo'),
                            (copyfile, 'usr/bin/gcc', 'subdir/foo/gcc')
@@ -69,6 +72,8 @@ def test_dry_run_simple():
         assert actions == [(silent_makedirs, 'subdir/bin'),
                            (silent_unlink, 'subdir/bin/cp'),
                            (symlink, 'bin/cp', 'subdir/bin/cp'),
+                           (silent_unlink, 'subdir/bin/ls'),
+                           (symlink, 'bin/ls', 'subdir/bin/ls'),
                            (silent_unlink, 'subdir/bin/gcc'),
                            (symlink, 'usr/bin/gcc', 'subdir/bin/gcc'),
                            (silent_makedirs, 'subdir/foo'),

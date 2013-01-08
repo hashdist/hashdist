@@ -17,7 +17,7 @@ more easily with the `force` flag)::
     },
     {
       "action": "exclude",
-      "select": "/usr/bin/gcc-4.6",
+      "select": ["/usr/bin/gcc-4.6", "/something/else/too/**"]
     },
     {
       "action": "symlink",
@@ -90,11 +90,18 @@ def _put_actions(makedirs_cache, action_name, force, source, dest, actions):
 
     
 def _glob_actions(rule, excluded, makedirs_cache, env, actions):
-    select = expandtemplate(rule['select'], env)
-    selected = set(glob_files(select, ''))
+    select = rule['select']
+    if not isinstance(select, (list, tuple)):
+        select = [select]
+    selected = set()
+    for pattern in select:
+        pattern = expandtemplate(pattern, env)
+        selected.update(glob_files(pattern, ''))
     selected.difference_update(excluded)
     if len(selected) == 0:
         return
+    selected = list(selected)
+    selected.sort() # easier on the unit tests...
 
     action_name = rule['action']
     if action_name == 'exclude':
