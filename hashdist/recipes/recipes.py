@@ -85,10 +85,9 @@ class Recipe(object):
         """
         # the build spec is cached; this is important when fetching dependency
         # artifact IDs
-        if self._build_spec is not None:
-            return self._build_spec
-        else:
-            return self._assemble_build_spec()
+        if self._build_spec is None:
+            self._build_spec = self._assemble_build_spec()
+        return self._build_spec
 
     def get_artifact_id(self):
         if self.is_virtual:
