@@ -109,7 +109,7 @@ def test_stable_archive_hash():
     fixed_tarball = pjoin(os.path.dirname(__file__), 'archive.tar.gz')
     with temp_source_cache() as sc:
         key = sc.fetch_archive('file:' + fixed_tarball)
-        assert key == 'tar.gz:41DpTztCprN77QJnelrGlLtV+VzJN7JuGzoHfs3Gv2s'
+        assert key == 'tar.gz:4niostz3iktlg67najtxuwwgss5vl6k4'
         assert key != mock_archive_hash
 
 def test_git():
@@ -213,7 +213,7 @@ def test_hdist_pack():
     stream = StringIO()
     key = hdist_pack(files, stream)
     pack = stream.getvalue()
-    assert key == 'files:jSynkRp09Ff-7MN03TeTmQtABAFWMIE7o+SYLTI6oXg'
+    assert key == 'files:ruwkpei2ot2fp77myn2n2n4ttefuabab'
     assert hdist_pack(files[::-1]) == key
     unpacked_files = hdist_unpack(StringIO(pack), key)
     assert sorted(files) == sorted(unpacked_files)

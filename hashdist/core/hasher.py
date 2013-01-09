@@ -159,7 +159,7 @@ def format_digest(hasher):
     This is one of the cases where it is prudent to just repeat the
     implementation in the docstring::
 
-        base64.b64encode(hasher.digest(), altchars='+-').replace('=', '')
+        base64.b32encode(hasher.digest()[:20]).lower()
 
     Parameters
     ----------
@@ -167,7 +167,7 @@ def format_digest(hasher):
         An object with a `digest` method (a :class:`Hasher` or
         an object from the :mod:`hashlib` module)
     """
-    return base64.b64encode(hasher.digest(), altchars='+-').replace('=', '')
+    return base64.b32encode(hasher.digest()[:20]).lower()
 
 
 class HashingWriteStream(object):
