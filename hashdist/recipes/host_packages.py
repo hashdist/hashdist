@@ -13,7 +13,7 @@ _INTERESTING_FILE_RE = re.compile(r'^/usr/(lib.*|include|bin)/.*$')
 
 class HostPackage(Recipe):
     def __init__(self, name):
-        Recipe.__init__(self, name, 'host')
+        Recipe.__init__(self, name, 'host', in_profile=False)
 
     def __new__(cls, *args):
         key = tuple(args)

@@ -77,7 +77,7 @@ def stack_script_cli(root_recipe):
             raise
         logger.info('Created "%s" -> "%s"' % (args.target, artifact_dir))
     else:
-        logger.info('Results in "%s"' % artifact_dir)
+        logger.info('Results in %s' % artifact_dir)
         
 
     

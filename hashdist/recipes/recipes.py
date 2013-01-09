@@ -43,11 +43,14 @@ class Recipe(object):
 
     
     def __init__(self, name, version, source_fetches=(), dependencies=None,
-                 env=None, is_virtual=False, **kw):
+                 env=None, is_virtual=False, in_profile=True, **kw):
         self.name = name
         self.version = version
         self.source_fetches = source_fetches
         self.is_virtual = is_virtual
+        if is_virtual:
+            in_profile = False
+        self.in_profile = in_profile
 
         dependencies = dict(dependencies) if dependencies is not None else {}
         env = dict(env) if env is not None else {}
