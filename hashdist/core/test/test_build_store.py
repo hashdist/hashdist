@@ -14,35 +14,16 @@ from .utils import logger, temp_dir, temp_working_dir
 from . import utils
 
 from .. import source_cache, build_store, InvalidBuildSpecError, BuildFailedError
+from ..common import SHORT_ARTIFACT_ID_LEN
 
 
 #
 # Simple tests
 #
 def test_shorten_artifact_id():
-    assert 'foo/1.2/012' == build_store.build_spec.shorten_artifact_id('foo/1.2/01234567890', 3)
+    assert ('4ni' == build_store.shorten_artifact_id('ba:4niostz3iktlg67najtxuwwgss5vl6k4', 3))
     with assert_raises(ValueError):
-        build_store.build_spec.shorten_artifact_id('foo-1.2-01234567890', 3)
-
-def test_rmtree_up_to():
-    with temp_dir() as d:
-        # Incomplete removal
-        os.makedirs(pjoin(d, 'a', 'x', 'A', '2'))
-        os.makedirs(pjoin(d, 'a', 'x', 'B', '2'))
-        build_store.builder.rmtree_up_to(pjoin(d, 'a', 'x', 'A', '2'), d)
-        assert ['B'] == os.listdir(pjoin(d, 'a', 'x'))
-
-        # Invalid parent parameter
-        with assert_raises(ValueError):
-            build_store.builder.rmtree_up_to(pjoin(d, 'a', 'x', 'B'), '/nonexisting')
-
-        # Complete removal -- do not actually remove the parent
-        build_store.builder.rmtree_up_to(pjoin(d, 'a', 'x', 'B', '2'), d)
-        assert os.path.exists(d)
-
-        # Parent is exclusive
-        build_store.builder.rmtree_up_to(d, d)
-        assert os.path.exists(d)
+        build_store.shorten_artifact_id('foo-1.2-01234567890', 3)
 
 def test_canonical_build_spec():
     doc = {
@@ -84,6 +65,12 @@ def test_canonical_build_spec():
           ]
         }
     eq_(exp, got)
+
+def test_strip_comments():
+    doc = {"dependencies": [{"id": "a", "desc": "foo"}]}
+    got = build_store.build_spec.strip_comments(doc)
+    eq_({"dependencies": [{"id": "a"}]}, got)
+    eq_(got, build_store.build_spec.strip_comments(got))
 
 def test_execute_files_dsl():
     def assertions(dirname):
@@ -141,23 +128,22 @@ def test_execute_files_dsl():
 #
 # Tests requiring fixture
 #
-def fixture(SHORT_ARTIFACT_ID_LEN=None):
+def fixture(short_hash_len=SHORT_ARTIFACT_ID_LEN, dir_pattern='{name}/{shorthash}'):
     def decorator(func):
         @functools.wraps(func)
         def decorated():
-            old_aid_len = build_store.builder.SHORT_ARTIFACT_ID_LEN
             tempdir = tempfile.mkdtemp()
             try:
-                if SHORT_ARTIFACT_ID_LEN is not None:
-                    build_store.builder.SHORT_ARTIFACT_ID_LEN = SHORT_ARTIFACT_ID_LEN
                 os.makedirs(pjoin(tempdir, 'src'))
                 os.makedirs(pjoin(tempdir, 'opt'))
                 os.makedirs(pjoin(tempdir, 'bld'))
+                os.makedirs(pjoin(tempdir, 'db'))
                 sc = source_cache.SourceCache(pjoin(tempdir, 'src'))
-                bldr = build_store.BuildStore(pjoin(tempdir, 'bld'), pjoin(tempdir, 'opt'), logger)
+                bldr = build_store.BuildStore(pjoin(tempdir, 'bld'), pjoin(tempdir, 'db'),
+                                              pjoin(tempdir, 'opt'), dir_pattern, logger,
+                                              short_hash_len=short_hash_len)
                 return func(tempdir, sc, bldr)
             finally:
-                build_store.builder.SHORT_ARTIFACT_ID_LEN = old_aid_len
                 shutil.rmtree(tempdir)
         return decorated
     return decorator
@@ -236,11 +222,11 @@ def test_source_target_tries_to_escape(tempdir, sc, bldr):
 def test_fail_to_find_dependency(tempdir, sc, bldr):
     for target in ["..", "/etc"]:
         spec = {"name": "foo", "version": "na",
-                "dependencies": [{"ref": "bar", "id": "bogushash"}]}
+                "dependencies": [{"ref": "bar", "id": "ba:01234567890123456789012345678901"}]}
         with assert_raises(InvalidBuildSpecError):
             bldr.ensure_present(spec, sc)
 
-@fixture(SHORT_ARTIFACT_ID_LEN=1)
+@fixture(short_hash_len=1)
 def test_hash_prefix_collision(tempdir, sc, bldr):
     lines = []
     # do all build 

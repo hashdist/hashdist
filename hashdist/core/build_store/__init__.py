@@ -291,5 +291,5 @@ Reference
 
 # package exports
 from .builder import pack_virtuals_envvar, unpack_virtuals_envvar
-from .build_spec import BuildSpec, as_build_spec, get_artifact_id, shorten_artifact_id
+from .build_spec import BuildSpec, as_build_spec, shorten_artifact_id
 from .build_store import BuildStore

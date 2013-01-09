@@ -18,10 +18,10 @@ import gzip
 
 from ..source_cache import scatter_files
 from .. import sandbox
-from .build_spec import shorten_artifact_id
 from ..common import (InvalidBuildSpecError, BuildFailedError,
-                      json_formatting_options, SHORT_BUILD_ID_LEN,
-                      SHORT_ARTIFACT_ID_LEN, working_directory)
+                      json_formatting_options, SHORT_ARTIFACT_ID_LEN,
+                      working_directory)
+from ..fileutils import rmtree_up_to
 
 from ...hdist_logging import DEBUG
 
@@ -34,13 +34,13 @@ class ArtifactBuilder(object):
         self.virtuals = virtuals
 
     def build(self, source_cache, keep_build):
-        artifact_dir, artifact_link = self.make_artifact_dir()
+        artifact_dir = self.build_store.make_artifact_dir(self.build_spec)
         try:
             self.build_to(artifact_dir, source_cache, keep_build)
         except:
             shutil.rmtree(artifact_dir)
-            os.unlink(artifact_link)
             raise
+        artifact_dir = self.build_store.register_artifact(self.build_spec, artifact_dir)
         return artifact_dir
 
     def build_to(self, artifact_dir, source_cache, keep_build):
@@ -50,78 +50,29 @@ class ArtifactBuilder(object):
                                                     self.build_spec.doc.get('dependencies', ()))
         env['HDIST_VIRTUALS'] = pack_virtuals_envvar(self.virtuals)
 
-        # Always clean up when these fail regardless of keep_build_policy
-        build_dir = self.make_build_dir()
+        build_dir = self.build_store.make_build_dir(self.build_spec)
         self.logger.info('Unpacking sources to %s' % build_dir)
+        
+        should_keep = False # failures in init are bugs in hashdist itself, no need to keep dir
         try:
             env['ARTIFACT'] = artifact_dir
             env['BUILD'] = build_dir
-
             self.serialize_build_spec(build_dir)
             self.unpack_sources(build_dir, source_cache)
             self.unpack_files(build_dir, env)
-        except:
-            self.remove_build_dir(build_dir)
-            raise
 
-        # Conditionally clean up when this fails
-        try:
-            self.run_build_commands(build_dir, artifact_dir, env)
-            self.serialize_build_spec(artifact_dir)
-        except:
-            if keep_build == 'never':
-                self.remove_build_dir(build_dir)
-            raise
-        # Success
-        if keep_build != 'always':
-            self.remove_build_dir(build_dir)
+            should_keep = (keep_build == 'always')
+            try:
+                self.run_build_commands(build_dir, artifact_dir, env)
+                self.serialize_build_spec(artifact_dir)
+            except:
+                should_keep = (keep_build in ('always', 'error'))
+                raise
+        finally:
+            if not should_keep:
+                self.build_store.remove_build_dir(build_dir)
         return artifact_dir
 
-    def make_build_dir(self):
-        short_id = shorten_artifact_id(self.artifact_id, SHORT_BUILD_ID_LEN)
-        build_dir = orig_build_dir = pjoin(self.build_store.temp_build_dir, short_id)
-        i = 0
-        # Try to make build_dir, if not then increment a -%d suffix until we        # fine a free slot
-        while True:
-            try:
-                os.makedirs(build_dir)
-            except OSError, e:
-                if e.errno != errno.EEXIST:
-                    raise
-            else:
-                break
-            i += 1
-            build_dir = '%s-%d' % (orig_build_dir, i)
-        return build_dir
-
-    def remove_build_dir(self, build_dir):
-        self.logger.info('Removing %s' % build_dir)
-        rmtree_up_to(build_dir, self.build_store.temp_build_dir)
-
-    def make_artifact_dir(self):
-        # try to make shortened dir and symlink to it; incrementally
-        # lengthen the name in the case of hash collision
-        store = self.build_store.artifact_store_dir
-        extra = 0
-        while True:
-            short_id = shorten_artifact_id(self.artifact_id, SHORT_ARTIFACT_ID_LEN + extra)
-            artifact_dir = pjoin(store, short_id)
-            try:
-                os.makedirs(artifact_dir)
-            except OSError, e:
-                if e.errno != errno.EEXIST:
-                    raise
-                if os.path.exists(pjoin(store, self.artifact_id)):
-                    raise NotImplementedError('race condition or unclean store')
-            else:
-                break
-            extra += 1
-
-        # Make a symlink from the full id to the shortened one
-        artifact_link = pjoin(store, self.artifact_id)
-        os.symlink(os.path.split(short_id)[-1], artifact_link)
-        return artifact_dir, artifact_link
- 
     def serialize_build_spec(self, d):
         with file(pjoin(d, 'build.json'), 'w') as f:
             json.dump(self.build_spec.doc, f, **json_formatting_options)
@@ -145,7 +96,7 @@ class ArtifactBuilder(object):
             execute_files_dsl(self.build_spec.doc.get('files', ()), env)
 
     def run_build_commands(self, build_dir, artifact_dir, env):
-        artifact_display_name = shorten_artifact_id(self.artifact_id, SHORT_ARTIFACT_ID_LEN) + '..'
+        artifact_display_name = self.build_spec.digest[:SHORT_ARTIFACT_ID_LEN] + '..'
         env.update(self.build_spec.doc.get('env', {}))
 
         logger = self.logger
@@ -163,28 +114,6 @@ class ArtifactBuilder(object):
             finally:
                 logger.pop_stream()
         compress(pjoin(build_dir, 'build.log'), pjoin(artifact_dir, 'build.log.gz'))
-
-def rmtree_up_to(path, parent):
-    """Executes shutil.rmtree(path), and then removes any empty parent directories
-    up until (and excluding) parent.
-    """
-    path = os.path.realpath(path)
-    parent = os.path.realpath(parent)
-    if path == parent:
-        return
-    if not path.startswith(parent):
-        raise ValueError('must have path.startswith(parent)')
-    shutil.rmtree(path, ignore_errors=True)
-    while path != parent:
-        path, child = os.path.split(path)
-        if path == parent:
-            break
-        try:
-            os.rmdir(path)
-        except OSError, e:
-            if e.errno != errno.ENOTEMPTY:
-                raise
-            break
 
 def compress(source_filename, dest_filename):
     chunk_size = 16 * 1024

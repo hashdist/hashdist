@@ -25,16 +25,21 @@ class InitHome(object):
                 sys.stderr.write('%s already exists, aborting\n' % x)
                 return 2
 
-        for x in ['opt', 'bld', 'src']:
+        for x in ['opt', 'bld', 'src', 'db', 'cache']:
             os.makedirs(pjoin(store_dir, x))
         with file(config_file, 'w') as f:
             f.write(dedent("""\
+            [global]
+            cache = ~/.hdist/cache
+            db = ~/.hdist/db
+            
             [sourcecache]
-            path = ~/.hdist/src
+            sources = ~/.hdist/src
 
             [builder]
-            builds-path = ~/.hdist/bld
-            artifacts-path = ~/.hdist/opt
+            build-temp = ~/.hdist/bld
+            artifacts = ~/.hdist/opt
+            artifact-dir-pattern = {name}/{shorthash}
             """))
 
 @register_subcommand

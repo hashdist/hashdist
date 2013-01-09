@@ -12,7 +12,7 @@ gcc = hr.HostPackage('gcc')
 
 zlib = hr.ConfigureMakeInstall('zlib', '1.2.7',
                                'http://downloads.sourceforge.net/project/libpng/zlib/1.2.7/zlib-1.2.7.tar.gz',
-                               'tar.gz:+pychjjvuMuO9eTdVFPkVXUeHFMLFZXu1Gbhvpt+JsU',
+                               'tar.gz:7kojzbry564mxdxv4toviu7ekv2r4hct',
                                unix=unix, gcc=gcc)
 
 szip = hr.ConfigureMakeInstall('szip', '2.1',
@@ -23,7 +23,7 @@ szip = hr.ConfigureMakeInstall('szip', '2.1',
 
 hdf5 = hr.ConfigureMakeInstall('hdf5', '1.8.10',
                                'http://www.hdfgroup.org/ftp/HDF5/current/src/hdf5-1.8.10.tar.bz2',
-                               'tar.bz2:+m5rN7eXbtrIYHMrh8UDcOO+ujrnhNBfFvKYwDOkWkQ',
+                               'tar.bz2:7jxgwn5xs5xnvsdaomvypridodr35or2',
                                configure_flags=['--with-szlib', '--with-pic'],
                                zlib=zlib, szip=szip, unix=unix, gcc=gcc)
 

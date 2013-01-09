@@ -19,5 +19,5 @@ class Profile(Recipe):
         for ref, dep in self.dependencies.iteritems():
             before = [bef.get_artifact_id() for bef in dep.dependencies.values()
                       if bef.in_profile]
-            profile.append({"id": dep.get_artifact_id(), "before": before})
+            profile.append({"id": dep.get_artifact_id(), "before": before, "desc": dep.name})
         return {"profile": profile}

@@ -136,10 +136,10 @@ class Recipe(object):
         return self.get_build_spec().artifact_id
 
     def get_display_name(self):
+        paren = self.get_real_artifact_id()[:8] + '..'
         if self.is_virtual:
-            return self.get_artifact_id()
-        else:
-            return core.shorten_artifact_id(self.get_artifact_id()) + '..'
+            paren = '%s=%s' % (self.get_artifact_id(), paren)
+        return "%s-%s (%s)" % (self.name, self.version, paren)
 
     def fetch_sources(self, source_cache):
         for fetch in self.source_fetches:
@@ -155,7 +155,6 @@ class Recipe(object):
         indent = indent_str * level
         build_spec = self.get_build_spec()
         artifact_id = build_spec.artifact_id
-        short_artifact_id = core.shorten_artifact_id(artifact_id) + '..'
 
         def add_line(left, right):
             lines.append('%-70s%s' % (left, right))
@@ -170,11 +169,8 @@ class Recipe(object):
         if artifact_id in visited:
             display_name = visited[artifact_id]
             desc = '%s%s (see above)' % (indent, display_name)
-        elif self.is_virtual:
-            display_name = self.get_artifact_id()
-            desc = '%s%s (=%s)' % (indent, display_name, short_artifact_id)
         else:
-            display_name = short_artifact_id
+            display_name = self.get_display_name()
             desc = '%s%s' % (indent, display_name)
         add_line(desc, status)
 
@@ -225,7 +221,8 @@ class Recipe(object):
             before_ids = [b.get_artifact_id() for b in dep.dependencies.values()]
             dep_specs.append({"ref": dep_name, "id": dep_id, "in_path": True,
                               "in_hdist_compiler_paths": True,
-                              "before": before_ids})
+                              "before": before_ids,
+                              "desc": "%s/%s" % (dep.name, dep.version)})
         return dep_specs
     
     def get_commands(self):

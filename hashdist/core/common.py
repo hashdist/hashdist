@@ -13,7 +13,7 @@ class BuildFailedError(Exception):
 json_formatting_options = dict(indent=2, separators=(', ', ' : '),
                                sort_keys=True, allow_nan=False)
 
-SHORT_BUILD_ID_LEN = 4
+ARTIFACT_PREFIX = "ba"
 SHORT_ARTIFACT_ID_LEN = 4
 
 @contextlib.contextmanager

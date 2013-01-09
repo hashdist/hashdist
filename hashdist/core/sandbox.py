@@ -42,16 +42,8 @@ def get_artifact_dependencies_env(build_store, virtuals, dependencies):
         artifacts
     """
     # do a topological sort of dependencies
-    problem = [(dep['id'], dep['before']) for dep in dependencies]
-    sorted_ids = stable_topological_sort(problem)
-    order = dict((id, i) for i, id in enumerate(sorted_ids))
-    dependencies = sorted(dependencies, key=lambda dep: order[dep['id']])
+    dependencies = stable_topological_sort(dependencies)
     
-    # just need something that has the right depth relative to the cache_path to
-    # use for os.path.relpath
-    prototype_lib_dir = pjoin(build_store.artifact_store_dir,
-                              '__name', '__version', '__hash', 'lib')
-
     env = {}
     # Build the environment variables due to dependencies, and complain if
     # any dependency is not built
@@ -120,47 +112,50 @@ def stable_topological_sort(problem):
     Parameters
     ----------
     
-    problem : list of (obj, before_set)
-        `obj` are the items to be topologically sorted, while `before_lst`
-        is an iterable of constraints; `obj` is required to come before the
-        objects listed in `before_set` in the output.
+    problem : list of dict(id=..., before=..., ...)
+        Each object is a dictionary which is preserved to the output.
+        The `id` key is each objects identity, and the `before` is a list
+        of ids of objects that a given object must come before in
+        the ordered output.
 
     Returns
     -------
 
     solution : list
-        The input `obj` in a possibly different order
+        The input `problem` in a possibly different order
     """
     # record order to use for sorting `before`
+    id_to_obj = {}
     order = {}
-    for i, (obj, before) in enumerate(problem):
-        if obj in order:
-            raise ValueError('%r appears twice in input' % obj)
-        order[obj] = i
+    for i, obj in enumerate(problem):
+        if obj['id'] in order:
+            raise ValueError('%r appears twice in input' % obj['id'])
+        order[obj['id']] = i
+        id_to_obj[obj['id']] = obj
 
     # turn into dict-based graph, and find the roots
     graph = {}
     roots = set(order.keys())
-    for obj, before in problem:
-        graph[obj] = sorted(before, key=order.__getitem__)
-        roots.difference_update(before)
+    for obj in problem:
+        graph[obj['id']] = sorted(obj['before'], key=order.__getitem__)
+        roots.difference_update(obj['before'])
 
     result = []
 
-    def dfs(node):
-        if node not in result:
-            result.append(node)
-            for child in graph[node]:
+    def dfs(obj_id):
+        if obj_id not in result:
+            result.append(obj_id)
+            for child in graph[obj_id]:
                 dfs(child)
 
-    for obj in sorted(roots, key=order.__getitem__):
-        dfs(obj)
+    for obj_id in sorted(roots, key=order.__getitem__):
+        dfs(obj_id)
 
     # cycles will have been left entirely out at this point
     if len(result) != len(problem):
         raise ValueError('provided constraints forms a graph with cycles')
 
-    return result
+    return [id_to_obj[obj_id] for obj_id in result]
     
 def run_script_in_sandbox(logger, script, env, cwd):
     """

@@ -2,13 +2,24 @@ import re
 
 from ..hasher import Hasher
 
-from ..common import SHORT_ARTIFACT_ID_LEN
+from ..common import SHORT_ARTIFACT_ID_LEN, ARTIFACT_PREFIX
 
 class BuildSpec(object):
+    """Wraps the document corresponding to a build.json
+
+    The document is wrapped in order to a) signal that is has been
+    canonicalized, b) make the artifact id available under the
+    artifact_id attribute.
+    """
+
     def __init__(self, build_spec):
         self.doc = canonicalize_build_spec(build_spec)
-        self.artifact_id = get_artifact_id(self.doc)
-
+        self.name = self.doc['name']
+        self.version = self.doc['version']
+        stripped_doc = strip_comments(self.doc)
+        digest = Hasher(stripped_doc).format_digest()
+        self.digest = digest
+        self.artifact_id = '%s:%s' % (ARTIFACT_PREFIX, digest)
 
 def as_build_spec(obj):
     if isinstance(obj, BuildSpec):
@@ -62,6 +73,20 @@ def canonicalize_build_spec(spec):
 
     return result
 
+def strip_comments(spec):
+    """Strips a build spec (which should be in canonical format) of comments
+    that should not affect hash
+    """
+    def strip_desc(obj):
+        r = dict(obj)
+        if 'desc' in r:
+            del r['desc']
+        return r
+    
+    result = dict(spec)
+    result['dependencies'] = [strip_desc(x) for x in spec['dependencies']]
+    return result
+
 _SAFE_NAME_RE = re.compile(r'[a-zA-Z0-9-_+]+')
 def assert_safe_name(x):
     """Raises a ValueError if x does not match ``[a-zA-Z0-9-_+]+``.
@@ -72,23 +97,13 @@ def assert_safe_name(x):
         raise ValueError('version or name "%s" is empty or contains illegal characters' % x)
     return x
 
-def get_artifact_id(build_spec, is_canonical=False):
-    """Produces the hash/"artifact id" from the given build spec.
-
-    This can be produced merely from the textual form of the spec without
-    considering any run-time state on any system.
-    
-    """
-    if not is_canonical:
-        build_spec = canonicalize_build_spec(build_spec)
-    digest = Hasher(build_spec).format_digest()
-    name = assert_safe_name(build_spec['name'])
-    version = assert_safe_name(build_spec['version'])
-    
-    return '%s/%s/%s' % (name, version, digest)
 
 def shorten_artifact_id(artifact_id, length=SHORT_ARTIFACT_ID_LEN):
     """Shortens the hash part of the artifact_id to the desired length
+
+    Note that the result does not contain the "ba:" prefix
     """
-    return artifact_id[:artifact_id.rindex('/') + length + 1]
+    if not artifact_id.startswith('ba:'):
+        raise ValueError('not an artifact ID')
+    return artifact_id[3:3 + length]
 

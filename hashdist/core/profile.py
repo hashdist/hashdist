@@ -73,7 +73,7 @@ def make_profile(logger, build_store, artifacts, target_dir, virtuals):
 
     build_store : BuildStore
 
-    artifacts : list of dict(id=..., before=...)
+    artifacts : list of dict(id=..., before=..., desc=...)
         Lists the artifacts to include together with constraints
 
     target_dir : str
@@ -82,15 +82,14 @@ def make_profile(logger, build_store, artifacts, target_dir, virtuals):
     ensure_empty_existing_dir(target_dir)
     
     # order artifacts
-    problem = [(a['id'], a['before']) for a in artifacts]
-    artifacts = sandbox.stable_topological_sort(problem)
+    artifacts = sandbox.stable_topological_sort(artifacts)
 
     # process artifacts in opposite order; highes prioritized gets to go last
-    for a_id in artifacts[::-1]:
-        a_id_desc = shorten_artifact_id(a_id) + '..'
+    for artifact in artifacts:
+        a_id_desc = artifact.get('desc', artifact['id'][:8])
         logger.info('Linking %s into %s' % (a_id_desc, target_dir))
         sub_logger = logger.get_sub_logger(a_id_desc)
-        install_artifact_into_profile(sub_logger, build_store, a_id, target_dir, virtuals)
+        install_artifact_into_profile(sub_logger, build_store, artifact['id'], target_dir, virtuals)
 
     # make profile.json
     doc = {'artifacts': artifacts}

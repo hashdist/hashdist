@@ -155,7 +155,7 @@ class SourceCache(object):
     def create_from_config(config, logger):
         """Creates a SourceCache from the settings in the configuration
         """
-        return SourceCache(config.get_path('sourcecache', 'path'))
+        return SourceCache(config.get_path('sourcecache', 'sources'))
 
     def fetch_git(self, repository, rev):
         """Fetches source code from git repository
