@@ -8,7 +8,7 @@ import errno
 from .build_spec import as_build_spec
 from .builder import ArtifactBuilder
 
-from ..common import SHORT_ARTIFACT_ID_LEN, ARTIFACT_PREFIX
+from ..common import SHORT_ARTIFACT_ID_LEN
 
 from ..fileutils import silent_unlink, rmtree_up_to, silent_makedirs
 
@@ -36,8 +36,8 @@ class BuildStore(object):
     db_dir : str
         Directory containing symlinks to the artifacts; this is the authoriative
         database of build artifacts, and is always structured as
-        ``os.path.join("ba", digest[:2], digest[2:])``. `db_dir` should point to
-        root of db dir, "ba" is always appended.
+        ``os.path.join("artifacts", digest[:2], digest[2:])``. `db_dir` should point to
+        root of db dir, "artifacts" is always appended.
 
     artifact_root : str
         Root of artifacts, this will be prepended to artifact_path_pattern
@@ -61,7 +61,7 @@ class BuildStore(object):
         if not '{shorthash}' in artifact_path_pattern:
             raise ValueError('artifact_path_pattern must contain at least "{shorthash}"')
         self.temp_build_dir = os.path.realpath(temp_build_dir)
-        self.ba_db_dir = pjoin(os.path.realpath(db_dir), ARTIFACT_PREFIX)
+        self.ba_db_dir = pjoin(os.path.realpath(db_dir), "artifacts")
         self.artifact_root = os.path.realpath(artifact_root)
         self.artifact_path_pattern = artifact_path_pattern
         self.logger = logger
@@ -102,17 +102,15 @@ class BuildStore(object):
                           config.get('builder', 'artifact-dir-pattern'),
                           logger)
 
-    def _get_artifact_link(self, digest):
+    def _get_artifact_link(self, artifact_id):
+        name, digest = artifact_id.split('/')
         return pjoin(self.ba_db_dir, digest[:2], digest[2:])
 
     def resolve(self, artifact_id):
         """Given an artifact_id, resolve the short path for it, or return
         None if the artifact isn't built.
         """
-        if len(artifact_id) != 35 or not artifact_id.startswith('ba:'):
-            raise ValueError('Invalid artifact ID')
-        digest = artifact_id[3:]
-        link = self._get_artifact_link(digest)
+        link = self._get_artifact_link(artifact_id)
         # automatically heal the link database if an artifact has been manually removed
         try:
             a_dir = os.readlink(link)
@@ -184,7 +182,7 @@ class BuildStore(object):
         Returns the new artifact dir (i.e., the input `artifact_dir` unless
         there is a race).
         """
-        link = self._get_artifact_link(build_spec.digest)
+        link = self._get_artifact_link(build_spec.artifact_id)
         rel_artifact_dir = os.path.relpath(artifact_dir, os.path.dirname(link))
         silent_makedirs(os.path.dirname(link))
         try:

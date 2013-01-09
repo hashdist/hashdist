@@ -73,7 +73,7 @@ def make_profile(logger, build_store, artifacts, target_dir, virtuals):
 
     build_store : BuildStore
 
-    artifacts : list of dict(id=..., before=..., desc=...)
+    artifacts : list of dict(id=..., before=...)
         Lists the artifacts to include together with constraints
 
     target_dir : str
@@ -86,7 +86,7 @@ def make_profile(logger, build_store, artifacts, target_dir, virtuals):
 
     # process artifacts in opposite order; highes prioritized gets to go last
     for artifact in artifacts:
-        a_id_desc = artifact.get('desc', artifact['id'][:8])
+        a_id_desc = shorten_artifact_id(artifact['id'])
         logger.info('Linking %s into %s' % (a_id_desc, target_dir))
         sub_logger = logger.get_sub_logger(a_id_desc)
         install_artifact_into_profile(sub_logger, build_store, artifact['id'], target_dir, virtuals)

@@ -21,7 +21,8 @@ from ..common import SHORT_ARTIFACT_ID_LEN
 # Simple tests
 #
 def test_shorten_artifact_id():
-    assert ('4ni' == build_store.shorten_artifact_id('ba:4niostz3iktlg67najtxuwwgss5vl6k4', 3))
+    assert ('foo/4ni' ==
+            build_store.shorten_artifact_id('foo/4niostz3iktlg67najtxuwwgss5vl6k4', 3))
     with assert_raises(ValueError):
         build_store.shorten_artifact_id('foo-1.2-01234567890', 3)
 
@@ -222,7 +223,7 @@ def test_source_target_tries_to_escape(tempdir, sc, bldr):
 def test_fail_to_find_dependency(tempdir, sc, bldr):
     for target in ["..", "/etc"]:
         spec = {"name": "foo", "version": "na",
-                "dependencies": [{"ref": "bar", "id": "ba:01234567890123456789012345678901"}]}
+                "dependencies": [{"ref": "bar", "id": "foo/01234567890123456789012345678901"}]}
         with assert_raises(InvalidBuildSpecError):
             bldr.ensure_present(spec, sc)
 

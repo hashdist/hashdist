@@ -2,7 +2,7 @@ import re
 
 from ..hasher import Hasher
 
-from ..common import SHORT_ARTIFACT_ID_LEN, ARTIFACT_PREFIX
+from ..common import SHORT_ARTIFACT_ID_LEN
 
 class BuildSpec(object):
     """Wraps the document corresponding to a build.json
@@ -19,7 +19,7 @@ class BuildSpec(object):
         stripped_doc = strip_comments(self.doc)
         digest = Hasher(stripped_doc).format_digest()
         self.digest = digest
-        self.artifact_id = '%s:%s' % (ARTIFACT_PREFIX, digest)
+        self.artifact_id = '%s/%s' % (self.name, digest)
 
 def as_build_spec(obj):
     if isinstance(obj, BuildSpec):
@@ -100,10 +100,7 @@ def assert_safe_name(x):
 
 def shorten_artifact_id(artifact_id, length=SHORT_ARTIFACT_ID_LEN):
     """Shortens the hash part of the artifact_id to the desired length
-
-    Note that the result does not contain the "ba:" prefix
     """
-    if not artifact_id.startswith('ba:'):
-        raise ValueError('not an artifact ID')
-    return artifact_id[3:3 + length]
+    name, digest = artifact_id.split('/')
+    return '%s/%s' % (name, digest[:length])
 

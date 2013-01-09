@@ -136,10 +136,11 @@ class Recipe(object):
         return self.get_build_spec().artifact_id
 
     def get_display_name(self):
-        paren = self.get_real_artifact_id()[:8] + '..'
+        short_real = core.shorten_artifact_id(self.get_real_artifact_id()) + '..'
         if self.is_virtual:
-            paren = '%s=%s' % (self.get_artifact_id(), paren)
-        return "%s-%s (%s)" % (self.name, self.version, paren)
+            return '%s (=%s)' % (self.get_artifact_id(), short_real)
+        else:
+            return short_real
 
     def fetch_sources(self, source_cache):
         for fetch in self.source_fetches:
@@ -221,8 +222,7 @@ class Recipe(object):
             before_ids = [b.get_artifact_id() for b in dep.dependencies.values()]
             dep_specs.append({"ref": dep_name, "id": dep_id, "in_path": True,
                               "in_hdist_compiler_paths": True,
-                              "before": before_ids,
-                              "desc": "%s/%s" % (dep.name, dep.version)})
+                              "before": before_ids})
         return dep_specs
     
     def get_commands(self):
