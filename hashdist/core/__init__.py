@@ -6,4 +6,4 @@ from .source_cache import (SourceCache, supported_source_archive_types,
 from .build_store import (BuildStore, get_artifact_id, BuildSpec, shorten_artifact_id)
 from .profile import make_profile
 from .hdist_recipe import hdist_cli_build_spec, HDIST_CLI_ARTIFACT_NAME, HDIST_CLI_ARTIFACT_VERSION
-from .cache import DiskCache, null_cache
+from .cache import DiskCache, null_cache, cached_method

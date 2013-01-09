@@ -2,7 +2,7 @@
 class WrongHostTypeError(Exception):
     pass
 
-class Host(object):
+class HostPackages(object):
     def check_package_key(self, pkgname, key):
         if not is_package_installed(pkgname):
             return False
@@ -30,3 +30,6 @@ class Host(object):
             return False
         else:
             return self.get_package_key(pkgname) == key
+
+    def get_system_description(self):
+        raise NotImplementedError()

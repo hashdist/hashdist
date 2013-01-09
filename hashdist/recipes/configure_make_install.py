@@ -1,7 +1,5 @@
 from textwrap import dedent
 
-from ..core import BuildSpec
-
 from .recipes import Recipe, FetchSourceCode
 
 class ConfigureMakeInstall(Recipe):

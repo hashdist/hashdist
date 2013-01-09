@@ -9,7 +9,8 @@ import tempfile
 
 from ..hdist_logging import Logger, DEBUG, INFO
 
-from ..core import InifileConfiguration, BuildStore, SourceCache, DEFAULT_CONFIG_FILENAME
+from ..core import (InifileConfiguration, BuildStore, SourceCache, DEFAULT_CONFIG_FILENAME,
+                    DiskCache)
 from .recipes import build_recipes
 
 __all__ = ['stack_script_cli']
@@ -47,7 +48,9 @@ def stack_script_cli(root_recipe):
     config = InifileConfiguration.create(args.config)
     build_store = BuildStore.create_from_config(config, logger)
     source_cache = SourceCache.create_from_config(config, logger)
-    
+    cache = DiskCache.create_from_config(config, logger)
+
+    root_recipe.initialize(logger, cache)
     sys.stderr.write('Status:\n\n%s\n\n' % root_recipe.format_tree(build_store))
     if build_store.is_present(root_recipe.get_build_spec()):
         sys.stderr.write('Everything up to date!\n')

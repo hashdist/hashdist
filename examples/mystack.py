@@ -3,9 +3,12 @@ from hashdist.core import BuildStore, InifileConfiguration, SourceCache
 import hashdist.recipes as hr
 
 unix = hr.NonhashedUnix()
-gcc = hr.NonhashedGCCStack()
 
-ccache = hr.CCache(gcc=gcc, unix=unix)
+
+gcc = hr.HostPackage('gcc')
+
+#gcc = hr.NonhashedGCCStack()
+#ccache = hr.CCache(gcc=gcc, unix=unix)
 
 zlib = hr.ConfigureMakeInstall('zlib', '1.2.7',
                                'http://downloads.sourceforge.net/project/libpng/zlib/1.2.7/zlib-1.2.7.tar.gz',

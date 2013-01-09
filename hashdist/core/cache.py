@@ -178,6 +178,9 @@ class NullCache(object):
         else:
             return default
 
+    def invalidate(self, domain):
+        pass
+
 null_cache = NullCache()
 
 def cached_method(domain):

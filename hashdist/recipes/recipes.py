@@ -39,23 +39,15 @@ class Recipe(object):
     Each recipe can be constructable/pickleable without any actions taken
     or the build spec assembled; i.e., a recipe object should be lazy.
     
-    Parameters
-    ----------
-
-    before : list
-        Lists recipes that must appear after this recipe in PATH and
-        other variables.
-    
     """
 
     
     def __init__(self, name, version, source_fetches=(), dependencies=None,
-                 env=None, is_virtual=False, before=(), **kw):
+                 env=None, is_virtual=False, **kw):
         self.name = name
         self.version = version
         self.source_fetches = source_fetches
         self.is_virtual = is_virtual
-        self.before = before
 
         dependencies = dict(dependencies) if dependencies is not None else {}
         env = dict(env) if env is not None else {}
@@ -74,6 +66,48 @@ class Recipe(object):
         self.dependencies = dependencies
         self.env = env
         self._build_spec = None
+        self.is_initialized = False
+
+    def initialize(self, logger, cache):
+        """Initializes the object and its dependencies.
+
+        Any recipe initialization which either a) takes a significant
+        amount of time or b) requires interaction with the host system
+        should be done after construction in this method. This is so
+        that declaration of a Recipe is fast, and so that one can
+        declare many dependencies in scripts without actually using
+        them.
+
+        Before this method is called, no other methods can be called (only the
+        constructor). This method is free to modify any attribute, including
+        dependencies.
+
+        Existing entries in ``self.dependencies`` (passed to the constructor)
+        will have initialize() called prior to ``self`` being constructed.
+        Any new entries added to ``self.dependencies`` should already
+        have been initialized.
+
+        After calling this method, ``self`` is considered immutable.
+
+        Subclasses should override _construct.
+
+        Parameters
+        ----------
+
+        logger : Logger instance
+            Used for logging when interacting with the host system. The recipe
+            should not hold on to this after initialization.
+
+        cache : Cache instance
+            See :mod:`hashdist.core.cache`. The recipe should not hold on to
+            this after initialization.
+        """
+        if self.is_initialized:
+            return
+        for dep_name, dep in self.dependencies.iteritems():
+            dep.initialize(logger, cache)
+        self._initialize(logger, cache)
+        self.is_initialized = True
 
     def get_build_spec(self):
         """
@@ -172,18 +206,20 @@ class Recipe(object):
         doc = dict(name=self.name, version=self.version, sources=sources, env=env,
                    commands=commands, files=files, dependencies=dep_specs,
                    parameters=parameters)
-        return core.BuildSpec(doc)
+        build_spec = core.BuildSpec(doc)
+        return build_spec
 
     # Subclasses may override the following
+    def _initialize(self, logger, cache):
+        pass
 
     def get_dependencies_spec(self):
         dep_specs = []
-        dependencies_ids = [dep.get_artifact_id() for dep in self.dependencies.values()]
-        for dep_name, dep in self.dependencies.iteritems():
-            dep = self.dependencies[dep_name]
+        all_dependencies = get_total_dependencies(self)
+        dependencies_ids = [dep.get_artifact_id() for dep in all_dependencies.values()]
+        for dep_name, dep in all_dependencies.iteritems():
             dep_id = dep.get_artifact_id()
-            before_ids = [b.get_artifact_id() for b in dep.before]
-            before_ids = [x for x in before_ids if x in dependencies_ids] # filter to those present
+            before_ids = [b.get_artifact_id() for b in dep.dependencies.values()]
             dep_specs.append({"ref": dep_name, "id": dep_id, "in_path": True,
                               "in_hdist_compiler_paths": True,
                               "before": before_ids})
@@ -200,6 +236,20 @@ class Recipe(object):
 
     def get_env(self):
         return {}
+
+def get_total_dependencies(recipe, result=None):
+    """Find total dependencies.
+    """
+    if result is None:
+        result = {}
+    for dep_name, dep in recipe.dependencies.iteritems():
+        if dep_name in result:
+            if dep is not result[dep_name]:
+                raise ValueError("two recipes with the same name conflicting")
+            continue
+        result[dep_name] = dep
+        get_total_dependencies(dep, result)
+    return result
 
 def find_dependency_in_spec(spec, ref):
     """Utility to return the dict corresponding to the given ref

@@ -17,6 +17,6 @@ class Profile(Recipe):
     def get_parameters(self):
         profile = []
         for ref, dep in self.dependencies.iteritems():
-            before = [bef.get_artifact_id() for bef in dep.before]
+            before = [bef.get_artifact_id() for bef in dep.dependencies.values()]
             profile.append({"id": dep.get_artifact_id(), "before": before})
         return {"profile": profile}

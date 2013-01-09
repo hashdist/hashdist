@@ -11,7 +11,6 @@ class CCache(Recipe):
     def __init__(self, gcc, unix):
         Recipe.__init__(self, 'ccache', CCache.version,
                         [FetchSourceCode(CCache.url, CCache.key, strip=1)],
-                        before=[gcc],
                         gcc=gcc, unix=unix)
 
     def get_files(self):

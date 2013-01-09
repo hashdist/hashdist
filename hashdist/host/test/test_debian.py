@@ -3,12 +3,14 @@ import functools
 from nose import SkipTest
 
 from ..host import WrongHostTypeError
-from ..debian import DebianHost
+from ..debian import DebianHostPackages
+from ...core import null_cache
+from ...hdist_logging import null_logger
 
 def setup():
     global deb
     try:
-        deb = DebianHost()
+        deb = DebianHostPackages(null_logger, null_cache)
     except WrongHostTypeError, e:
         raise SkipTest("not on Debian")
         
