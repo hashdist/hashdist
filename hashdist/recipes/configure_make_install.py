@@ -2,6 +2,9 @@ from textwrap import dedent
 
 from .recipes import Recipe, FetchSourceCode
 
+import multiprocessing
+ncores = multiprocessing.cpu_count()
+
 class ConfigureMakeInstall(Recipe):
     def __init__(self, name, version, source_url, source_key,
                  configure_flags=[], strip=None, **kw):
@@ -15,7 +18,7 @@ class ConfigureMakeInstall(Recipe):
         return [
             ['LDFLAGS=$HDIST_LDFLAGS', 'CFLAGS=$HDIST_CFLAGS', './configure', '--prefix=${ARTIFACT}'] +
             self.configure_flags,
-            ['make'],
+            ['make', '-j%d' % ncores],
             ['make', 'install']
             ]
     
