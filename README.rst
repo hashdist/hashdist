@@ -1,6 +1,10 @@
 Hashdist
 ========
 
+Note: ``master`` is the development branch.
+
+The ``stable`` branch contains the latest release (currently 0.1).
+
 **Docs**:
     http://hashdist.readthedocs.org/
 
