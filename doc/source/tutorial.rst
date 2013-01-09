@@ -40,7 +40,7 @@ Getting Hashdist
 
 ::
 
-    git clone git://github.com/hashdist/hashdist.git
+    git clone git://github.com/hashdist/hashdist.git stable
 
 There is currently no installer; this tutorial will assume
 that the directory is put in ``PYTHONPATH`` and the ``bin``-subdirectory
