@@ -112,18 +112,21 @@ def test_stable_archive_hash():
         assert key == 'tar.gz:4niostz3iktlg67najtxuwwgss5vl6k4'
         assert key != mock_archive_hash
 
-def test_git():
+def test_git_fetch_git():
     with temp_source_cache() as sc:
         key = sc.fetch_git(mock_git_repo, 'master')
         assert key == 'git:%s' % mock_git_commit
 
-        sc.fetch('git://not-valid', key)
-        sc.fetch(None, key)
-        
         with temp_dir() as d:
             sc.unpack(key, pjoin(d, 'foo'))
             with file(pjoin(d, 'foo', 'README')) as f:
                 assert f.read() == 'First revision'
+
+def test_git_fetch():
+    with temp_source_cache() as sc:
+        sc.fetch(mock_git_repo, 'git:' + mock_git_commit)
+        sc.fetch('git://not-valid', 'git:' + mock_git_commit)
+        sc.fetch(None, 'git:' + mock_git_commit)
 
 def test_able_to_fetch_twice():
     # With 'master' rev

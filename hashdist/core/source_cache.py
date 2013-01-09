@@ -381,7 +381,7 @@ class GitSourceCache(object):
         elif url is None:
             raise SourceNotFoundError('git:%s not present and repo url not provided' % commit)
         else:
-            self.fetch_git(repository, None, commit)            
+            self.fetch_git(url, None, commit)
 
     def fetch_git(self, repository, rev=None, commit=None):
         # It is important to resolve the rev remotely, we can't trust local
