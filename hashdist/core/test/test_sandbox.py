@@ -1,4 +1,5 @@
 import sys
+from os.path import join as pjoin
 from nose.tools import eq_, assert_raises
 from pprint import pprint
 
@@ -6,21 +7,25 @@ from .. import sandbox
 from .test_build_store import fixture as build_store_fixture
 
 
-from .utils import MemoryLogger
+from .utils import MemoryLogger, logger as test_logger
+
+env_to_stderr = [sys.executable, '-c',
+                 "import os, sys; sys.stderr.write("
+                 "'ENV:%s=%s' % (sys.argv[1], repr(os.environ.get(sys.argv[1], None))))"]
+def filter_out(lines):
+    return [x[len('DEBUG:ENV:'):] for x in lines if x.startswith('DEBUG:ENV:')]
 
 @build_store_fixture()
-def test_run_job(tempdir, sc, build_store):
-    # tests everything but importing artifacts; which test_build_store
-    # has a much easier time doing
-    env_to_stderr = [sys.executable, '-c',
-                     "import os, sys; sys.stderr.write('ENV:%s=%s' % (sys.argv[1], repr(os.environ.get(sys.argv[1], None))))"]
+def test_run_job_environment(tempdir, sc, build_store):
+    # tests that the environment gets correctly set up and that the local scope feature
+    # works
     job_spec = {
         "env": {"FOO": "foo"},
         "env_nohash": {"BAR": "$bar"},
         "script": [
             [
                 ["BAR=${FOO}x"],
-                ["HI=$(/bin/echo", "  a  b   \n\n\n ", ")"],
+                ["HI=hi"],
                 env_to_stderr + ["FOO"],
                 env_to_stderr + ["BAR"],
                 env_to_stderr + ["HI"],
@@ -32,9 +37,55 @@ def test_run_job(tempdir, sc, build_store):
         ]}
     logger = MemoryLogger()
     sandbox.run_job(logger, build_store, job_spec, {"BAZ": "BAZ"}, {}, tempdir)
-    lines = [x[len('DEBUG:ENV:'):] for x in logger.lines if x.startswith('DEBUG:ENV:')]
-    eq_(["FOO='foo'", "BAR='foox'", "HI='a  b'", "FOO='foo'", "BAR='$bar'", 'HI=None', "PATH=''"],
+    lines = filter_out(logger.lines)
+    eq_(["FOO='foo'", "BAR='foox'", "HI='hi'", "FOO='foo'", "BAR='$bar'", 'HI=None', "PATH=''"],
         lines)
+
+@build_store_fixture()
+def test_script_dollar_paren(tempdir, sc, build_store):
+    job_spec = {
+        "script": [
+            ["HI=$(/bin/echo", "  a  b   \n\n\n ", ")"],
+            env_to_stderr + ["HI"]
+        ]}
+    logger = MemoryLogger()
+    sandbox.run_job(logger, build_store, job_spec, {}, {}, tempdir)
+    eq_(["HI='a  b'"], filter_out(logger.lines))
+
+@build_store_fixture()
+def test_script_redirect(tempdir, sc, build_store):
+    job_spec = {
+        "script": [
+            ["/bin/echo>foo", "hi"]
+        ]}
+    sandbox.run_job(test_logger, build_store, job_spec, {}, {}, tempdir)
+    with file(pjoin(tempdir, 'foo')) as f:
+        assert f.read() == 'hi\n'
+
+## @build_store_fixture()
+## def test_attach_log(tempdir, sc, build_store):
+##     # tests everything but importing artifacts; which test_build_store
+##     # has a much easier time doing
+##     job_spec = {
+##         "script": [
+##             [
+##                 ["LOG=$(hdist", "logpipe", "foo", "WARNING"],
+##                 ["echo >
+##                 ["HI=$(/bin/echo", "  a  b   \n\n\n ", ")"],
+##                 env_to_stderr + ["FOO"],
+##                 env_to_stderr + ["BAR"],
+##                 env_to_stderr + ["HI"],
+##             ],
+##             env_to_stderr + ["FOO"],
+##             env_to_stderr + ["BAR"],
+##             env_to_stderr + ["HI"],
+##             env_to_stderr + ["PATH"]
+##         ]}
+##     logger = MemoryLogger()
+##     sandbox.run_job(logger, build_store, job_spec, {"BAZ": "BAZ"}, {}, tempdir)
+##     lines = [x[len('DEBUG:ENV:'):] for x in logger.lines if x.startswith('DEBUG:ENV:')]
+##     eq_(["FOO='foo'", "BAR='foox'", "HI='a  b'", "FOO='foo'", "BAR='$bar'", 'HI=None', "PATH=''"],
+##         lines)
 
 def test_substitute():
     env = {"A": "a", "B": "b"}

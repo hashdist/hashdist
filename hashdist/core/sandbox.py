@@ -2,14 +2,10 @@
 :mod:`hashdist.core.sandbox` --- Sandboxed job execution
 ========================================================
 
-Executes a set of commands in a controlled environment. While this
-should usually be used to launch a real script interpreter, a
-bare-bones script language in JSON is provided to perform the script
-launch. This is primarily because it only takes a few lines of code to
-implement, and offers a cross-platform solution (as opposed to, e.g.,
-always using the system shell to launch a process; Python would be
-difficult too as there'd always be a different Python version
-available).
+Executes a set of commands in a controlled environment. This
+should usually be used to launch a real script interpreter, but
+a bare-bones JSON-base "script" language is provided to control
+the launch environment.
 
 Job specification
 -----------------
@@ -129,15 +125,26 @@ are affected:
 Mini script language
 --------------------
 
-The scripting language should only be used for 'launching', not for
-complicated things, and intentionally does not contain any control
-flow. While it is modelled after Bash to make it familiar to read, it
-is *not* in any way Bash, the implementation is entirely in this Python
-module.
+It may seem insane to invent another script language, so here's some
+rationalization: First off, *something* must do the initial launch from
+the Python process. That couldn't be a shell (because no shell is cross-platform)
+and it couldn't be Python (because of all the different Python versions,
+and we would like job specifications to not be Python-specific).
 
-The most important feature is that parsing is at a minimum, since most
-of the structure is already present in the JSON structure. There's
-no quoting, one document string is always passed as a single argument.
+Then, there were a few features (notably getting log output from
+hdist-jail reliably) that were simply easier to implement this way.
+Ultimately, the "advanced" features like redirection are justified by
+how little extra code was needed.
+
+The scripting language should only be used for setting up an
+environment and launching the job, and intentionally does not contain
+any control flow. While it is modelled after Bash to make it familiar
+to read, it is *not* in any way Bash, the implementation is entirely
+in this Python module.
+
+Parsing is at a minimum, since most of the structure is already
+present in the JSON structure. There's no quoting, one string from the
+input document is always passed as a single argument to ``Popen``.
 
 Example script::
 
@@ -163,7 +170,13 @@ Rules:
    is not currently an escape).
 
  * The ``["executable", "arg1", ...]``: First string is command to execute, all strings
-   are used directly as argv (so no quoting etc.).
+   are used directly as argv (so no quoting etc.). Both `stdout` and `stderr` are
+   redirected to the application logger.
+
+ * The ``["executable>filename", "arg1", ...]``: Like the above, but `stdout` is
+   redirected to the file. **Note** the unusual location of the filename (this was
+   done so that one does not have to mess with escaping the ``>`` character for
+   arguments).
 
  * The ``["VAR=str"]`` command sets an environment variable
 
@@ -230,6 +243,7 @@ from pprint import pformat
 import tempfile
 import errno
 import select
+from StringIO import StringIO
 
 from ..hdist_logging import WARNING, INFO, DEBUG
 
@@ -501,6 +515,9 @@ def run_script(logger, script, env, cwd, rpc_dir):
                 action = 'assign'
                 if len(script_line) > 1:
                     raise ValueError('assignment takes no extra arguments')
+            elif '>' in cmd:
+                cmd, stdout_filename = cmd.split('>')
+                action = 'write'
             else:
                 action = 'spawn'
             cmd = substitute(cmd, env)
@@ -516,20 +533,32 @@ def run_script(logger, script, env, cwd, rpc_dir):
                 for line in pformat(env).splitlines():
                     logger.debug('  ' + line)
 
-                try:
-                    out = run_command(logger, [cmd] + args, env, cwd, rpc_dir,
-                                      capture_stdout=(action == 'capture'))
-                except subprocess.CalledProcessError, e:
-                    logger.error("command failed (code=%d); raising" % e.returncode)
-                    raise
-                except:
-                    logger.error("'hdist' command failed; raising")
-                    raise
+                should_close_stdout = False
                 if action == 'capture':
-                    env[varname] = out.strip()
+                    stdout = StringIO()
+                elif action == 'write':
+                    with working_directory(cwd):
+                        stdout = file(stdout_filename, 'w')
+                        should_close_stdout = True
+                else:
+                    stdout = None
+                try:
+                    try:
+                        out = run_command(logger, [cmd] + args, env, cwd, rpc_dir, stdout_to=stdout)
+                    except subprocess.CalledProcessError, e:
+                        logger.error("command failed (code=%d); raising" % e.returncode)
+                        raise
+                    except:
+                        logger.error("'hdist' command failed; raising")
+                        raise
+                finally:
+                    if should_close_stdout:
+                        stdout.close()
+                if action == 'capture':
+                    env[varname] = stdout.getvalue().strip()
                 logger.info('success')
 
-def run_command(logger, command_lst, env, cwd, rpc_dir, capture_stdout):
+def run_command(logger, command_lst, env, cwd, rpc_dir, stdout_to):
     """Runs a single command of the sandbox script
 
     This mainly takes care of stream re-direction and special handling
@@ -557,15 +586,8 @@ def run_command(logger, command_lst, env, cwd, rpc_dir, capture_stdout):
     rpc_dir : str
         Directory to create log pipes in for "hdist logpipe"
 
-    capture_stdout : bool
-        If `False`, redirect stdout to logger, otherwise return it.
-
-    Returns
-    -------
-        
-    stdout : str or None
-        Either captured stdout, or `None`, depending on `get_stdout`
-        
+    stdout_to : bool
+        If `False`, redirect stdout to logger, otherwise return it.        
     """
     if command_lst[0] == 'hdist' and len(command_lst) >= 2 and command_lst[1] == 'logpipe':
         # 'hdist logpipe' special case
@@ -584,9 +606,9 @@ def run_command(logger, command_lst, env, cwd, rpc_dir, capture_stdout):
         finally:
             logger.level = old_level
     else:
-        return logged_check_call(logger, command_lst, env, cwd, capture_stdout)
+        logged_check_call(logger, command_lst, env, cwd, stdout_to)
     
-def logged_check_call(logger, command_lst, env, cwd, capture_stdout):
+def logged_check_call(logger, command_lst, env, cwd, stdout_to):
     """
     Similar to subprocess.check_call, but redirects all output to a Logger instance.
     Also raises BuildFailedError on failures. See usage in run_command for more info.
@@ -613,7 +635,6 @@ def logged_check_call(logger, command_lst, env, cwd, capture_stdout):
     for fd in fd_to_stream.keys():
         poller.register(fd, select.POLLIN)
     eofed = set()
-    result = '' if capture_stdout else None
     while True:
         events = poller.poll()
         for fd, event in events:
@@ -621,8 +642,8 @@ def logged_check_call(logger, command_lst, env, cwd, capture_stdout):
             line = stream.readline()
             if not line:
                 eofed.add(fd)
-            elif capture_stdout and stream is stdout:
-                result += line
+            elif stdout_to is not None and stream is stdout:
+                stdout_to.write(line)
             else:
                 if line[-1] == '\n':
                     line = line[:-1]
@@ -632,4 +653,3 @@ def logged_check_call(logger, command_lst, env, cwd, capture_stdout):
     retcode = proc.wait()
     if retcode != 0:
         raise subprocess.CalledProcessError(retcode, command_lst)
-    return result
