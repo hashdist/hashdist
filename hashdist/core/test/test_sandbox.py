@@ -45,20 +45,21 @@ def test_run_job_environment(tempdir, sc, build_store):
 def test_script_dollar_paren(tempdir, sc, build_store):
     job_spec = {
         "script": [
-            ["HI=$(/bin/echo", "  a  b   \n\n\n ", ")"],
+            ["HI=$($echo", "  a  b   \n\n\n ", ")"],
             env_to_stderr + ["HI"]
         ]}
     logger = MemoryLogger()
-    sandbox.run_job(logger, build_store, job_spec, {}, {}, tempdir)
+    sandbox.run_job(logger, build_store, job_spec, {"echo": "/bin/echo"}, {}, tempdir)
     eq_(["HI='a  b'"], filter_out(logger.lines))
 
 @build_store_fixture()
 def test_script_redirect(tempdir, sc, build_store):
     job_spec = {
         "script": [
-            ["/bin/echo>foo", "hi"]
+            ["$echo>$foo", "hi"]
         ]}
-    sandbox.run_job(test_logger, build_store, job_spec, {}, {}, tempdir)
+    sandbox.run_job(test_logger, build_store, job_spec,
+                    {"echo": "/bin/echo", "foo": "foo"}, {}, tempdir)
     with file(pjoin(tempdir, 'foo')) as f:
         assert f.read() == 'hi\n'
 

@@ -495,70 +495,49 @@ def run_script(logger, script, env, cwd, rpc_dir):
     """
     env = dict(env)
     for script_line in script:
-        # substitute variables ina all strings
         if len(script_line) == 0:
-            pass
-        elif isinstance(script_line[0], list):
+            continue
+        if isinstance(script_line[0], list):
+            if any(not isinstance(x, list) for x in script_line):
+                raise ValueError("mixing list and str at same level in script")
             # sub-scope; recurse and discard the modified environment
             run_script(logger, script_line, env, cwd, rpc_dir)
         else:
-            # command
             cmd = script_line[0]
+            args = [substitute(x, env) for x in script_line[1:]]        
             if '=$(' in cmd:
+                # a=$(command)
                 varname, cmd = cmd.split('=$(')
-                if script_line[-1] != ')':
+                if args[-1] != ')':
                     raise ValueError("opens with $( but no closing ): %r" % script_line)
-                del script_line[-1]
-                action = 'capture'
+                del args[-1]
+                cmd = substitute(cmd, env)
+                stdout = StringIO()
+                run_command(logger, [cmd] + args, env, cwd, rpc_dir, stdout_to=stdout)
+                env[varname] = stdout.getvalue().strip()
             elif '=' in cmd:
-                varname, cmd = cmd.split('=')
-                action = 'assign'
-                if len(script_line) > 1:
+                # VAR=value
+                varname, value = cmd.split('=')
+                if args:
                     raise ValueError('assignment takes no extra arguments')
+                env[varname] = substitute(value, env)
             elif '>' in cmd:
+                # program>out
                 cmd, stdout_filename = cmd.split('>')
-                action = 'write'
-            else:
-                action = 'spawn'
-            cmd = substitute(cmd, env)
-            args = [substitute(x, env) for x in script_line[1:]]
-
-            if action == 'assign':
-                env[varname] = cmd
-            else:
-                # spawn command; first log our environment
-                logger.info('running %r' % script_line)
-                logger.debug('cwd: ' + cwd)
-                logger.debug('environment:')
-                for line in pformat(env).splitlines():
-                    logger.debug('  ' + line)
-
-                should_close_stdout = False
-                if action == 'capture':
-                    stdout = StringIO()
-                elif action == 'write':
-                    with working_directory(cwd):
-                        stdout = file(stdout_filename, 'w')
-                        should_close_stdout = True
-                else:
-                    stdout = None
+                cmd = substitute(cmd, env)
+                stdout_filename = substitute(stdout_filename, env)
+                with working_directory(cwd):
+                    stdout = file(stdout_filename, 'w')
                 try:
-                    try:
-                        out = run_command(logger, [cmd] + args, env, cwd, rpc_dir, stdout_to=stdout)
-                    except subprocess.CalledProcessError, e:
-                        logger.error("command failed (code=%d); raising" % e.returncode)
-                        raise
-                    except:
-                        logger.error("'hdist' command failed; raising")
-                        raise
+                    run_command(logger, [cmd] + args, env, cwd, rpc_dir, stdout_to=stdout)
                 finally:
-                    if should_close_stdout:
-                        stdout.close()
-                if action == 'capture':
-                    env[varname] = stdout.getvalue().strip()
-                logger.info('success')
+                    stdout.close()
+            else:
+                # program
+                cmd = substitute(cmd, env)
+                run_command(logger, [cmd] + args, env, cwd, rpc_dir)
 
-def run_command(logger, command_lst, env, cwd, rpc_dir, stdout_to):
+def run_command(logger, command_lst, env, cwd, rpc_dir, stdout_to=None):
     """Runs a single command of the sandbox script
 
     This mainly takes care of stream re-direction and special handling
@@ -589,6 +568,11 @@ def run_command(logger, command_lst, env, cwd, rpc_dir, stdout_to):
     stdout_to : bool
         If `False`, redirect stdout to logger, otherwise return it.        
     """
+    logger.info('running %r' % command_lst)
+    logger.debug('cwd: ' + cwd)
+    logger.debug('environment:')
+    for line in pformat(env).splitlines():
+        logger.debug('  ' + line)
     if command_lst[0] == 'hdist' and len(command_lst) >= 2 and command_lst[1] == 'logpipe':
         # 'hdist logpipe' special case
         1/0
@@ -603,10 +587,17 @@ def run_command(logger, command_lst, env, cwd, rpc_dir, stdout_to):
         try:
             with working_directory(cwd):
                 cli_main(command_lst, env, logger)
+        except:
+            logger.error("hdist command failed; raising")
+            raise
         finally:
             logger.level = old_level
     else:
-        logged_check_call(logger, command_lst, env, cwd, stdout_to)
+        try:
+            logged_check_call(logger, command_lst, env, cwd, stdout_to)
+        except subprocess.CalledProcessError, e:
+            logger.error("command failed (code=%d); raising" % e.returncode)
+            raise
     
 def logged_check_call(logger, command_lst, env, cwd, stdout_to):
     """
