@@ -233,7 +233,9 @@ Reference
 
 """
 
+import sys
 import os
+import fcntl
 from os.path import join as pjoin
 import shutil
 import subprocess
@@ -245,7 +247,7 @@ import errno
 import select
 from StringIO import StringIO
 
-from ..hdist_logging import WARNING, INFO, DEBUG
+from ..hdist_logging import CRITICAL, ERROR, WARNING, INFO, DEBUG
 
 from .common import InvalidBuildSpecError, BuildFailedError, working_directory
 
@@ -290,11 +292,11 @@ def run_job(logger, build_store, job_spec, env, virtuals, cwd):
     env.update(job_spec['env'])
     env.update(job_spec['env_nohash'])
     env.update(get_imports_env(build_store, virtuals, job_spec['import']))
-    rpc_dir = tempfile.mkdtemp(prefix='hdist-sandbox-')
+    executor = ScriptExecution(logger, cwd)
     try:
-        out_env = run_script(logger, job_spec['script'], env, cwd, rpc_dir)
+        out_env = executor.run(job_spec['script'], env)
     finally:
-        shutil.rmtree(rpc_dir)
+        executor.close()
     return out_env
 
 def canonicalize_job_spec(job_spec):
@@ -463,22 +465,21 @@ def stable_topological_sort(problem):
         raise ValueError('provided constraints forms a graph with cycles')
 
     return [id_to_obj[obj_id] for obj_id in result]
+
+
+class ScriptExecution(object):
+    """
+    Class for maintaining state (in particular logging pipes) while
+    executing script. Note that the environment is passed around as
+    parameters instead.
+
+    Executing :meth:`run` multiple times amounts to executing
+    different variable scopes (but with same logging pipes set up).
     
-def run_script(logger, script, env, cwd, rpc_dir):
-    """Executes the 'script' part of the job spec.
-
-    This is a building block of :func:`run_job`.
-
     Parameters
     ----------
 
     logger : Logger
-
-    script : document
-        The 'script' part of the job spec
-
-    env : dict
-        The starting process environment
 
     cwd : str
         The working directory for the script (stays the same for all commands)
@@ -486,161 +487,256 @@ def run_script(logger, script, env, cwd, rpc_dir):
     rpc_dir : str
         A temporary directory on a local filesystem. Currently used for creating
         pipes with the "hdist logpipe" command.
-
-    Returns
-    -------
-
-    out_env : dict
-        The environment as modified by the script.
     """
-    env = dict(env)
-    for script_line in script:
-        if len(script_line) == 0:
-            continue
-        if isinstance(script_line[0], list):
-            if any(not isinstance(x, list) for x in script_line):
-                raise ValueError("mixing list and str at same level in script")
-            # sub-scope; recurse and discard the modified environment
-            run_script(logger, script_line, env, cwd, rpc_dir)
-        else:
-            cmd = script_line[0]
-            args = [substitute(x, env) for x in script_line[1:]]        
-            if '=$(' in cmd:
-                # a=$(command)
-                varname, cmd = cmd.split('=$(')
-                if args[-1] != ')':
-                    raise ValueError("opens with $( but no closing ): %r" % script_line)
-                del args[-1]
-                cmd = substitute(cmd, env)
-                stdout = StringIO()
-                run_command(logger, [cmd] + args, env, cwd, rpc_dir, stdout_to=stdout)
-                env[varname] = stdout.getvalue().strip()
-            elif '=' in cmd:
-                # VAR=value
-                varname, value = cmd.split('=')
-                if args:
-                    raise ValueError('assignment takes no extra arguments')
-                env[varname] = substitute(value, env)
-            elif '>' in cmd:
-                # program>out
-                cmd, stdout_filename = cmd.split('>')
-                cmd = substitute(cmd, env)
-                stdout_filename = substitute(stdout_filename, env)
-                with working_directory(cwd):
-                    stdout = file(stdout_filename, 'w')
-                try:
-                    run_command(logger, [cmd] + args, env, cwd, rpc_dir, stdout_to=stdout)
-                finally:
-                    stdout.close()
+    
+    def __init__(self, logger, cwd):
+        self.logger = logger
+        self.cwd = cwd
+        self.log_fifo_fds = {}
+        self.rpc_dir = tempfile.mkdtemp(prefix='hdist-sandbox-')
+
+    def close(self):
+        """Terminates and removes log FIFOs; should always be called when one is done
+        """
+        for fd in self.log_fifo_fds.values():
+            os.close(fd)
+        shutil.rmtree(self.rpc_dir)
+
+    def run(self, script, env):
+        """Executes script, given as the 'script' part of the job spec.
+
+        Parameters
+        ----------
+        script : document
+            The 'script' part of the job spec
+
+        env : dict
+            The starting process environment
+
+        Returns
+        -------
+
+        out_env : dict
+            The environment as modified by the script.
+        """
+        env = dict(env)
+        for script_line in script:
+            if len(script_line) == 0:
+                continue
+            if isinstance(script_line[0], list):
+                if any(not isinstance(x, list) for x in script_line):
+                    raise ValueError("mixing list and str at same level in script")
+                # sub-scope; recurse and discard the modified environment
+                self.run(script_line, env)
             else:
-                # program
-                cmd = substitute(cmd, env)
-                run_command(logger, [cmd] + args, env, cwd, rpc_dir)
+                cmd = script_line[0]
+                args = [substitute(x, env) for x in script_line[1:]]        
+                if '=$(' in cmd:
+                    # a=$(command)
+                    varname, cmd = cmd.split('=$(')
+                    if args[-1] != ')':
+                        raise ValueError("opens with $( but no closing ): %r" % script_line)
+                    del args[-1]
+                    cmd = substitute(cmd, env)
+                    stdout = StringIO()
+                    self.run_command([cmd] + args, env, stdout_to=stdout)
+                    env[varname] = stdout.getvalue().strip()
+                elif '=' in cmd:
+                    # VAR=value
+                    varname, value = cmd.split('=')
+                    if args:
+                        raise ValueError('assignment takes no extra arguments')
+                    env[varname] = substitute(value, env)
+                elif '>' in cmd:
+                    # program>out
+                    cmd, stdout_filename = cmd.split('>')
+                    cmd = substitute(cmd, env)
+                    
+                    stdout_filename = substitute(stdout_filename, env)
+                    if not os.path.isabs(stdout_filename):
+                        stdout_filename = pjoin(self.cwd, stdout_filename)
+                    stdout_filename = os.path.realpath(stdout_filename)
+                    if stdout_filename.startswith(self.rpc_dir):
+                        raise NotImplementedError("Cannot currently use stream re-direction to write to "
+                                                  "a sandbox log-pipe (doing the write from a "
+                                                  "sub-process is OK)")
+                    stdout = file(stdout_filename, 'a')
+                    try:
+                        self.run_command([cmd] + args, env, stdout_to=stdout)
+                    finally:
+                        stdout.close()
+                else:
+                    # program
+                    cmd = substitute(cmd, env)
+                    self.run_command([cmd] + args, env)
+        return env
 
-def run_command(logger, command_lst, env, cwd, rpc_dir, stdout_to=None):
-    """Runs a single command of the sandbox script
+    def run_command(self, command_lst, env, stdout_to=None):
+        """Runs a single command of the sandbox script
 
-    This mainly takes care of stream re-direction and special handling
-    of the hdist command.
+        This mainly takes care of stream re-direction and special handling
+        of the hdist command.
 
-    Raises `subprocess.CalledProcessError` on non-zero return code,
-    except when running ``hdist`` in-process in which case exception
-    is simply propagated.
-    
+        Raises `subprocess.CalledProcessError` on non-zero return code,
+        except when running ``hdist`` in-process in which case exception
+        is simply propagated.
 
-    Parameters
-    ----------
 
-    logger : Logger
-    
-    command_lst : list
-        Passed dirctly on to Popen
+        Parameters
+        ----------
 
-    env : dict
-        Process environment
+        command_lst : list
+            Passed dirctly on to Popen
 
-    cwd : str
-        Process cwd
+        env : dict
+            Process environment
 
-    rpc_dir : str
-        Directory to create log pipes in for "hdist logpipe"
+        stdout_to : bool
+            If `False`, redirect stdout to logger, otherwise return it
+        """
+        logger = self.logger
+        logger.info('running %r' % command_lst)
+        logger.debug('cwd: ' + self.cwd)
+        logger.debug('environment:')
+        for line in pformat(env).splitlines():
+            logger.debug('  ' + line)
+        if command_lst[0] == 'hdist':
+            # run hdist cli in-process special case the 'hdist'
+            # command and run it in the same process do not emit
+            # INFO-messages from sub-command unless level is DEBUG
+            old_level = logger.level
+            old_stdout = sys.stdout
+            try:
+                if logger.level > DEBUG:
+                    logger.level = WARNING
+                if stdout_to is not None:
+                    sys.stdout = stdout_to
+                self.hdist_command(command_lst)
+            except:
+                logger.error("hdist command failed; raising")
+                raise
+            finally:
+                logger.level = old_level
+                sys.stdout = old_stdout
+        else:
+            try:
+                self.logged_check_call(command_lst, env, stdout_to)
+            except subprocess.CalledProcessError, e:
+                logger.error("command failed (code=%d); raising" % e.returncode)
+                raise
 
-    stdout_to : bool
-        If `False`, redirect stdout to logger, otherwise return it.        
-    """
-    logger.info('running %r' % command_lst)
-    logger.debug('cwd: ' + cwd)
-    logger.debug('environment:')
-    for line in pformat(env).splitlines():
-        logger.debug('  ' + line)
-    if command_lst[0] == 'hdist' and len(command_lst) >= 2 and command_lst[1] == 'logpipe':
-        # 'hdist logpipe' special case
-        1/0
-    elif command_lst[0] == 'hdist':
-        # run hdist cli in-process special case the 'hdist' command and run it in the same
-        # process
-        from ..cli import main as cli_main
-        # do not emit INFO-messages from sub-command unless level is DEBUG
-        old_level = logger.level
-        if logger.level > DEBUG:
-            logger.level = WARNING
+    def logged_check_call(self, command_lst, env, stdout_to):
+        """
+        Similar to subprocess.check_call, but multiplexes input from stderr, stdout
+        and any number of log FIFO pipes available to the called process into
+        a single Logger instance. Optionally captures stdout instead of logging it.
+        """
+        logger = self.logger
         try:
-            with working_directory(cwd):
+            proc = subprocess.Popen(command_lst,
+                                    cwd=self.cwd,
+                                    env=env,
+                                    stdin=subprocess.PIPE,
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE,
+                                    close_fds=True)
+        except OSError, e:
+            if e.errno == errno.ENOENT:
+                # fix error message up a bit since the situation is so confusing
+                logger.error('command "%s" not found in PATH' % command_lst[0])
+                raise OSError(e.errno, 'command "%s" not found in PATH (cwd: "%s")' %
+                              (command_lst[0], self.cwd), self.cwd)
+            else:
+                raise
+
+        # Multiplex input from stdout, stderr, and any attached log
+        # pipes.  To avoid any deadlocks with unbuffered stderr
+        # interlaced with use of log pipe etc. we avoid readline(), but
+        # instead use os.open to read and handle line-assembly ourselves...
+        stdout_fd, stderr_fd = proc.stdout.fileno(), proc.stderr.fileno()
+        fds = [stdout_fd, stderr_fd] + self.log_fifo_fds.values()
+        # map from fd to logger and level to use
+        loggers = {stdout_fd: (logger, DEBUG), stderr_fd: (logger, DEBUG)}
+        for (header, level), fd in self.log_fifo_fds.iteritems():
+            sublogger = logger.get_sub_logger(header)
+            loggers[fd] = (sublogger, level)
+
+        poller = select.poll()
+        for fd in fds:
+            poller.register(fd, select.POLLIN)
+
+        buffers = dict((fd, '') for fd in fds)
+        BUFSIZE = 4096
+        while True:
+            # Python poll() doesn't return when SIGCHLD is received;
+            # and there's the freak case where a process first
+            # terminates stdout/stderr, then trying to write to a log
+            # pipe, so we should track child termination the proper
+            # way. Being in Python, it's easiest to just poll every
+            # 50 ms; the majority of the time is spent in poll() so
+            # it doesn't really increase log message latency
+            events = poller.poll(50)
+            if len(events) == 0:
+                if proc.poll() is not None:
+                    break # child terminated
+            for fd, reason in events:
+                if reason & select.POLLHUP:
+                    poller.unregister(fd)
+
+                if reason & select.POLLIN:
+                    if stdout_to is not None and fd == stdout_fd:
+                        # Just forward
+                        buf = os.read(fd, BUFSIZE)
+                        stdout_to.write(buf)
+                    else:
+                        # append new bytes to what's already been read on this fd; and
+                        # emit any completed lines
+                        new_bytes = os.read(fd, BUFSIZE)
+                        assert new_bytes != '' # after all, we did poll
+                        buffers[fd] += new_bytes
+                        lines = buffers[fd].splitlines()
+                        if lines[-1][-1] != '\n':
+                            buffers[fd] = lines[-1]
+                            del lines[-1]
+                        else:
+                            buffers[fd] = ''
+                        # have list of lines, emit them to logger
+                        sublogger, level = loggers[fd]
+                        for line in lines:
+                            if line[-1] == '\n':
+                                line = line[:-1]
+                            sublogger.log(level, line)
+        # deal with buffers not terminated by '\n'
+        for fd, buf in buffers.iteritems():
+            sublogger, level = loggers[fd]
+            if buf:
+                sublogger.log(level, buf)
+
+        retcode = proc.wait()
+        if retcode != 0:
+            raise subprocess.CalledProcessError(retcode, command_lst)
+
+    def hdist_command(self, argv):
+        if len(argv) >= 2 and argv[1] == 'logpipe':
+            if len(argv) != 4:
+                raise ValueError('wrong number of arguments to "hdist logpipe"')
+            sublogger_name, level = argv[2:]
+            self.create_log_pipe(sublogger_name, level)
+        else:
+            from ..cli import main as cli_main
+            with working_directory(self.cwd):
                 cli_main(command_lst, env, logger)
-        except:
-            logger.error("hdist command failed; raising")
-            raise
-        finally:
-            logger.level = old_level
-    else:
-        try:
-            logged_check_call(logger, command_lst, env, cwd, stdout_to)
-        except subprocess.CalledProcessError, e:
-            logger.error("command failed (code=%d); raising" % e.returncode)
-            raise
-    
-def logged_check_call(logger, command_lst, env, cwd, stdout_to):
-    """
-    Similar to subprocess.check_call, but redirects all output to a Logger instance.
-    Also raises BuildFailedError on failures. See usage in run_command for more info.
-    """
-    try:
-        proc = subprocess.Popen(command_lst,
-                                cwd=cwd,
-                                env=env,
-                                stdin=subprocess.PIPE,
-                                stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE)
-    except OSError, e:
-        if e.errno == errno.ENOENT:
-            logger.error('command "%s" not found in PATH' % command_lst[0])
-            raise BuildFailedError('command "%s" not found in PATH (cwd: "%s")' %
-                                   (command_lst[0], cwd), cwd)
-        else:
-            raise
-    proc.stdin.close()
-    poller = select.poll()
-    stdout = proc.stdout
-    streams = [proc.stdout, proc.stderr]
-    fd_to_stream = dict((stream.fileno(), stream) for stream in streams)
-    for fd in fd_to_stream.keys():
-        poller.register(fd, select.POLLIN)
-    eofed = set()
-    while True:
-        events = poller.poll()
-        for fd, event in events:
-            stream = fd_to_stream[fd]
-            line = stream.readline()
-            if not line:
-                eofed.add(fd)
-            elif stdout_to is not None and stream is stdout:
-                stdout_to.write(line)
-            else:
-                if line[-1] == '\n':
-                    line = line[:-1]
-                logger.debug(line)
-        if len(eofed) == len(streams):
-            break
-    retcode = proc.wait()
-    if retcode != 0:
-        raise subprocess.CalledProcessError(retcode, command_lst)
+
+    def create_log_pipe(self, sublogger_name, level_str):
+        level = dict(CRITICAL=CRITICAL, ERROR=ERROR, WARNING=WARNING, INFO=INFO, DEBUG=DEBUG)[level_str]
+        fifo_name = pjoin(self.rpc_dir, "logpipe-%s-%s" % (sublogger_name, level_str))
+        fifo_file = self.log_fifo_fds.get((sublogger_name, level), None)
+        if fifo_file is None:
+            os.mkfifo(fifo_name, 0600)
+            fd = os.open(fifo_name, os.O_NONBLOCK|os.O_RDONLY)
+            # remove non-blocking after open to treat all streams uniformly in
+            # the multiplexer code
+            fcntl.fcntl(fd, fcntl.F_SETFL, os.O_RDONLY) 
+            self.log_fifo_fds[sublogger_name, level] = fd
+        sys.stdout.write(fifo_name)
+        

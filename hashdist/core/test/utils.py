@@ -8,7 +8,8 @@ import hashlib
 
 from nose.tools import eq_
 
-from ...hdist_logging import Logger, null_logger, DEBUG, INFO, WARNING, ERROR, CRITICAL
+from ...hdist_logging import Logger, null_logger, DEBUG
+from logging import getLevelName
 
 from os.path import join as pjoin
 
@@ -51,29 +52,23 @@ if VERBOSE:
 else:
     logger = null_logger
 
-def get_level_name(level):
-    if level >= CRITICAL:
-        return 'CRITICAL'
-    elif level >= ERROR:
-        return 'ERROR'
-    elif level >= WARNING:
-        return 'WARNING'
-    elif level >= INFO:
-        return 'INFO'
-    else:
-        return 'DEBUG'
-
 class MemoryLogger(Logger):
-    def __init__(self):
-        self.lines = []
+    def __init__(self, names=[], lines=None):
+        if lines is None:
+            lines = []
+        self.lines = lines
+        self.level = DEBUG
+        self.names = names
     
-    def get_sub_logger(self):
-        pass
+    def get_sub_logger(self, name):
+        return MemoryLogger(self.names + [name], self.lines)
     
     def log(self, level, msg, *args):
         if args:
             msg = msg % args
-        msg = "%s:%s" % (get_level_name(level), msg)
+        if self.names:
+            msg = '%s:%s' % ('/'.join(self.names), msg)
+        msg = "%s:%s" % (getLevelName(level), msg)
         self.lines.append(msg)
 
 

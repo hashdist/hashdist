@@ -36,7 +36,14 @@ def test_run_job_environment(tempdir, sc, build_store):
             env_to_stderr + ["PATH"]
         ]}
     logger = MemoryLogger()
-    sandbox.run_job(logger, build_store, job_spec, {"BAZ": "BAZ"}, {}, tempdir)
+    ret_env = sandbox.run_job(logger, build_store, job_spec, {"BAZ": "BAZ"}, {}, tempdir)
+    assert ret_env == {
+        'PATH': '',
+        'HDIST_LDFLAGS': '',
+        'HDIST_CFLAGS': '',
+        'BAR': '$bar',
+        'FOO': 'foo',
+        'BAZ': 'BAZ'}
     lines = filter_out(logger.lines)
     eq_(["FOO='foo'", "BAR='foox'", "HI='hi'", "FOO='foo'", "BAR='$bar'", 'HI=None', "PATH=''"],
         lines)
@@ -63,30 +70,29 @@ def test_script_redirect(tempdir, sc, build_store):
     with file(pjoin(tempdir, 'foo')) as f:
         assert f.read() == 'hi\n'
 
-## @build_store_fixture()
-## def test_attach_log(tempdir, sc, build_store):
-##     # tests everything but importing artifacts; which test_build_store
-##     # has a much easier time doing
-##     job_spec = {
-##         "script": [
-##             [
-##                 ["LOG=$(hdist", "logpipe", "foo", "WARNING"],
-##                 ["echo >
-##                 ["HI=$(/bin/echo", "  a  b   \n\n\n ", ")"],
-##                 env_to_stderr + ["FOO"],
-##                 env_to_stderr + ["BAR"],
-##                 env_to_stderr + ["HI"],
-##             ],
-##             env_to_stderr + ["FOO"],
-##             env_to_stderr + ["BAR"],
-##             env_to_stderr + ["HI"],
-##             env_to_stderr + ["PATH"]
-##         ]}
-##     logger = MemoryLogger()
-##     sandbox.run_job(logger, build_store, job_spec, {"BAZ": "BAZ"}, {}, tempdir)
-##     lines = [x[len('DEBUG:ENV:'):] for x in logger.lines if x.startswith('DEBUG:ENV:')]
-##     eq_(["FOO='foo'", "BAR='foox'", "HI='a  b'", "FOO='foo'", "BAR='$bar'", 'HI=None', "PATH=''"],
-##         lines)
+@build_store_fixture()
+def test_attach_log(tempdir, sc, build_store):
+    with file(pjoin(tempdir, 'hello'), 'w') as f:
+        f.write('hello from pipe')
+    job_spec = {
+        "script": [
+            ["LOG=$(hdist", "logpipe", "mylog", "WARNING", ")"],
+            ["/bin/dd", "if=hello", "of=$LOG"],
+        ]}
+    logger = MemoryLogger()
+    sandbox.run_job(logger, build_store, job_spec, {}, {}, tempdir)
+    assert 'WARNING:mylog:hello from pipe' in logger.lines
+
+@build_store_fixture()
+def test_notimplemented_redirection(tempdir, sc, build_store):
+    job_spec = {
+        "script": [
+            ["LOG=$(hdist", "logpipe", "mylog", "WARNING", ")"],
+            ["/bin/echo>$LOG", "my warning"]
+        ]}
+    with assert_raises(NotImplementedError):
+        logger = MemoryLogger()
+        sandbox.run_job(logger, build_store, job_spec, {}, {}, tempdir)
 
 def test_substitute():
     env = {"A": "a", "B": "b"}
