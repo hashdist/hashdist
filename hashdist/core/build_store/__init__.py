@@ -58,16 +58,19 @@ An example build spec:
         "name" : "<name of piece of software>",
         "version" : "<version>",
         "description": "<what makes this build special>",
-        "comment": "<free-form comment>",
         "build": {
             "import" : [
-                {"ref": "bash", "id": "virtual:bash"},
-                {"ref": "make", "id": "virtual:gnu-make/3+"},
-                {"ref": "zlib", "id": "zlib/1.2.7/fXHu+8dcqmREfXaz+ixMkh2LQbvIKlHf+rtl5HEfgmU"},
-                {"ref": "unix", "id": "virtual:unix"},
-                {"ref": "gcc", "id": "gcc/host-4.6.3/q0VSL7JmzH1P17meqITYc4kMbnIjIexrWPdlAlqPn3s", "before": ["virtual:unix"]},
+                 {"ref": "bash", "id": "virtual:bash"},
+                 {"ref": "make", "id": "virtual:gnu-make/3+"},
+                 {"ref": "zlib", "id": "zlib/1.2.7/fXHu+8dcqmREfXaz+ixMkh2LQbvIKlHf+rtl5HEfgmU"},
+                 {"ref": "unix", "id": "virtual:unix"},
+                 {"ref": "gcc", "id": "gcc/host-4.6.3/q0VSL7JmzH1P17meqITYc4kMbnIjIexrWPdlAlqPn3s", "before": ["virtual:unix"]},
              ],
-             "script" : [["bash", "build.sh"]],
+             "script" : [
+                 ["hdist", "build-unpack-sources"],
+                 ["hdist", "build-write-files"],
+                 ["bash", "build.sh"]
+             ],
          },
          "sources" : [
              {"key": "git:c5ccca92c5f136833ad85614feb2aa4f5bd8b7c3"},
@@ -93,22 +96,19 @@ An example build spec:
 **version**:
     Should match ``[a-zA-Z0-9-_+]*``.
 
-**description**:
+..
+    **description**:
     What makes this build special in some human-readable form, e.g.,
     ``icc-avx-gotoblas`` (this may be part of the pathname on some
     platforms). Should match ``[a-zA-Z0-9-_+]*``.
 
 **build**:
-    A job to run to perform the build. See :mod:`hashdist.core.execute_job`
+    A job to run to perform the build. See :mod:`hashdist.core.run_job`
     for the documentation of this sub-document.
-    
-**sources**:
-    Extracted using ``hdist build-unpack-sources``, see
-    :class:``.BuildUnpackSources``. Order does not affect the hashing.
-    
-**files**:
-    Extracted using ``hdist build-write-files``, see
-    :class:``.BuildWriteFiles``. Order does not affect the hashing.
+
+In addition, extra keys can be added at will to use for input to
+commands executed in the build. In the example above, the `sources`
+key is read by the ``hdist build-unpack-sources`` command.
 
 The build environment
 ---------------------

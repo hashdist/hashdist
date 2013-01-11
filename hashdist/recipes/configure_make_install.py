@@ -16,6 +16,8 @@ class ConfigureMakeInstall(Recipe):
 
     def get_commands(self):
         return [
+            ["hdist", "build-unpack-sources"],
+            ["hdist", "build-write-files"],
             [
                 ['LDFLAGS=$HDIST_LDFLAGS'],
                 ['CFLAGS=$HDIST_CFLAGS'],
@@ -29,7 +31,7 @@ class ConfigureMakeInstall(Recipe):
         artifact_json = {
           "install": {
               "script": [
-                  ["hdist", "create-links", "--key=links", "artifact.json"]
+                  ["@hdist", "create-links", "--key=links", "artifact.json"]
               ]
           },
           "links": [

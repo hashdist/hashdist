@@ -90,7 +90,7 @@ class BuildUnpackSources(object):
     @staticmethod
     def setup(ap):
         ap.add_argument('--key', default="sources", help='key to read from json (default: "sources")')
-        ap.add_argument('input', help='json parameter file')
+        ap.add_argument('--input', default="build.json", help='json parameter file (default: "build.json")')
 
     @staticmethod
     def run(ctx, args):
@@ -100,7 +100,8 @@ class BuildUnpackSources(object):
         for source_item in doc:
             key = source_item['key']
             target = source_item.get('target', '.')
-            source_cache.unpack(key, target, unsafe_mode=True, strip=source_item['strip'])
+            strip = source_item.get('strip', 0)
+            source_cache.unpack(key, target, unsafe_mode=True, strip=strip)
 
 @register_subcommand
 class BuildWriteFiles(object):
@@ -153,7 +154,7 @@ class BuildWriteFiles(object):
     @staticmethod
     def setup(ap):
         ap.add_argument('--key', default="files", help='key to read from json (default: "files")')
-        ap.add_argument('input', help='json parameter file')
+        ap.add_argument('--input', default="build.json", help='json parameter file (default: "build.json")')
 
     @staticmethod
     def run(ctx, args):

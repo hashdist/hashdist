@@ -36,16 +36,7 @@ def test_canonical_build_spec():
                     {"id": "c", "in_env": False, "ref": "the_c"},
                     {"id": "a", "before": ["c", "b"]}
                 ]
-            },
-            "sources" : [
-              {"key": "git:c5ccca92c5f136833ad85614feb2aa4f5bd8b7c3"},
-              {"key": "tar.bz2:efn3i7ni7lbtik4frlb5wcnqgpdmi3ql", "target": "sources", "strip": 1},
-              {"key": "files:efn3i7ni7lbtik4frlb5wcnqgpdmi3ql"}
-            ],
-            "files" : [
-              {"target": "zsh-build", "text": []},
-              {"target": "build.sh", "text": []}
-            ]
+            }
           }
     got = build_store.build_spec.canonicalize_build_spec(doc)
     exp = {
@@ -59,16 +50,7 @@ def test_canonical_build_spec():
             "env": {},
             "env_nohash": {},
           },
-          "name" : "foo", "version": "r0",
-          "sources" : [
-            {"key": "files:efn3i7ni7lbtik4frlb5wcnqgpdmi3ql", "target" : ".", "strip" : 0},
-            {"key": "git:c5ccca92c5f136833ad85614feb2aa4f5bd8b7c3", "target" : ".", "strip" : 0},
-            {"key": "tar.bz2:efn3i7ni7lbtik4frlb5wcnqgpdmi3ql", "target": "sources", "strip": 1},
-          ],
-          "files" : [
-            {"target": "build.sh", "text": []},
-            {"target": "zsh-build", "text": []},
-          ]
+          "name" : "foo", "version": "r0"
         }
     eq_(exp, got)
 
@@ -177,9 +159,13 @@ def test_basic(tempdir, sc, bldr, config):
         "files" : [{"target": "$ARTIFACT/$BAR/foo", "text": ["foo${BAR}foo"], "expandvars": True}],
         "build": {
             "env": {"BAR": "bar"},
-            "script": [["/bin/bash", "build.sh"]]
-            }
+            "script": [
+                ["hdist", "build-unpack-sources"],
+                ["hdist", "build-write-files"],
+                ["/bin/bash", "build.sh"]
+            ]
         }
+    }
     assert not bldr.is_present(spec)
     name, path = bldr.ensure_present(spec, config)
     assert bldr.is_present(spec)
@@ -209,10 +195,11 @@ def test_basic(tempdir, sc, bldr, config):
 def test_failing_build_and_multiple_commands(tempdir, sc, bldr, config):
     spec = {"name": "foo", "version": "na",
             "build": {
-                "script": [["/bin/true"],
-                           ["/bin/false"]],
-                },
-            "files" : [{"target": "foo", "text": ["foo"]}]
+                "script": [
+                    ["/bin/echo>foo", "test"],
+                    ["/bin/true"],
+                    ["/bin/false"]],
+                }
            }
     try:
         bldr.ensure_present(spec, config, keep_build='error')
@@ -249,7 +236,7 @@ def test_hash_prefix_collision(tempdir, sc, bldr, config):
         # changes to the hashing could change this a bit but assertions below will
         # warn in those cases
         hashparts = []
-        for k in range(12):
+        for k in range(15):
             spec = {"name": "foo", "version": "na",
                     "build": {
                         "script": [["/bin/echo", "hello", str(k)]]
@@ -289,6 +276,7 @@ def test_source_unpack_options(tempdir, sc, bldr, config):
                 ],
             "build": {
                 "script": [
+                    ["hdist", "build-unpack-sources"],
                     ["/bin/cp", "subdir/coolproject-2.3/README", "$ARTIFACT/a"],
                     ["/bin/cp", "README", "$ARTIFACT/b"],
                 ]
@@ -317,12 +305,16 @@ def build_mock_packages(builder, config, packages, virtuals={}, name_to_artifact
         script += ['echo %(x)s $%(x)s_id $%(x)s >> ${ARTIFACT}/deps' % dict(x=dep.name)
                    for dep in pkg.deps]
         spec = {"name": pkg.name, "version": "na",
+                "files" : [{"target": "build.sh", "text": script}],
                 "build": {
                     "import": [{"ref": dep.name, "id": name_to_artifact[dep.name][0]}
                                for dep in pkg.deps],
-                    "script": [["/bin/bash", "build.sh"]]
+                    "script": [
+                        ["hdist", "build-write-files"],
+                        ["/bin/bash", "build.sh"]
+                    ]
                     },
-                "files" : [{"target": "build.sh", "text": script}]}
+                }
         artifact, path = builder.ensure_present(spec, config, virtuals=virtuals)
         name_to_artifact[pkg.name] = (artifact, path)
 

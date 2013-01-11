@@ -33,13 +33,6 @@ class ArtifactBuilder(object):
         self.artifact_id = build_spec.artifact_id
         self.virtuals = virtuals
 
-        # Some features are implemented by transforming the build spec to add
-        # items to the job script
-        transformed_job_spec = self.build_spec.doc['build']
-        for transform in [transform_job_unpack_sources, transform_job_write_files]:
-            transformed_job_spec = transform(self.build_spec.doc, transformed_job_spec)
-        self.transformed_job_spec = transformed_job_spec
-
     def build(self, config, keep_build):
         assert isinstance(config, dict), "caller not refactored"
         artifact_dir = self.build_store.make_artifact_dir(self.build_spec)
@@ -81,7 +74,8 @@ class ArtifactBuilder(object):
 
     def run_build_commands(self, build_dir, artifact_dir, env, config):
         artifact_display_name = self.build_spec.digest[:SHORT_ARTIFACT_ID_LEN] + '..'
-        env.update(self.build_spec.doc.get('env', {}))
+
+        job_spec = self.build_spec.doc['build']
 
         logger = self.logger
         log_filename = pjoin(build_dir, 'build.log')
@@ -93,7 +87,7 @@ class ArtifactBuilder(object):
                 logger.info('Building %s' % artifact_display_name)
             logger.push_stream(log_file, raw=True)
             try:
-                run_job.run_job(logger, self.build_store, self.transformed_job_spec,
+                run_job.run_job(logger, self.build_store, job_spec,
                                 env, self.virtuals, build_dir, config)
             except:
                 exc_type, exc_value, exc_tb = sys.exc_info()
@@ -105,36 +99,6 @@ class ArtifactBuilder(object):
             finally:
                 logger.pop_stream()
         compress(pjoin(build_dir, 'build.log'), pjoin(artifact_dir, 'build.log.gz'))
-
-
-def _prepend_command(command, job_spec):
-    result = dict(job_spec)
-    result['script'] = [command] + list(job_spec['script'])
-    return result
-
-def transform_job_unpack_sources(build_spec, job_spec):
-    """Given a build spec document with a 'sources' section, transform
-    the job spec to add actions for unpacking sources.
-
-    Returns a new job_spec without modifying the old one (though it may
-    share sub-trees that were not modified).
-    """
-    if not build_spec['sources']:
-        return job_spec
-    else:
-        return _prepend_command(['@hdist', 'build-unpack-sources', 'build.json'], job_spec)
-
-def transform_job_write_files(build_spec, job_spec):
-    """Given a build spec document with a 'files' section, transform
-    the job spec to add actions for writing files.
-
-    Returns a new job_spec without modifying the old one (though it may
-    share sub-trees that were not modified).
-    """
-    if not build_spec['files']:
-        return job_spec
-    else:
-        return _prepend_command(['@hdist', 'build-write-files', 'build.json'], job_spec)
 
 def compress(source_filename, dest_filename):
     chunk_size = 16 * 1024
