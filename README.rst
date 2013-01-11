@@ -41,16 +41,18 @@ for full details.
 Since Hashdist is used as the installation tool, some very small
 dependencies are simply ripped out of the original projects and
 bundled under ``hashdist/deps``. The copyright of these belong to the
-respective authors.
+respective authors; the licenses are included in LICENSE.txt.
 
- * hashdist/deps/sh:
+ * sh
+     * location: hashdist/deps/sh:
      * version: commit abb0ba6
      * main author: Andrew Moffat
      * license: MIT
      * homepage: https://github.com/amoffat/sh
 
- * pyparsing [NOTE: NOT IN USE in v.0.1, may be removed]
-     * version: 1.5.7
-     * main author: Paul McGuire
+ * PyYAML
+     * location: hashdist/deps/yaml
+     * version: 3.10
+     * main author: Kirill Simonov
      * license: MIT
-     * homepage:  http://pyparsing.wikispaces.com/
+     * homepage:  https://bitbucket.org/xi/pyyaml/
