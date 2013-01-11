@@ -13,7 +13,8 @@ _INTERESTING_FILE_RE = re.compile(r'^/usr/(lib.*|include|bin)/.*$')
 
 class HostPackage(Recipe):
     def __init__(self, name):
-        Recipe.__init__(self, name, 'host', in_profile=False)
+        Recipe.__init__(self, 'host-' + name, 'host', in_profile=False)
+        self.host_pkg_name = name
 
     def __new__(cls, *args):
         key = tuple(args)
@@ -29,7 +30,7 @@ class HostPackage(Recipe):
         except KeyError:
             hostpkgs = get_host_packages(logger, cache)
             cache.put(HostPackage, 'hostpkgs', hostpkgs, on_disk=False)
-        for dep in hostpkgs.get_immediate_dependencies(self.name):
+        for dep in hostpkgs.get_immediate_dependencies(self.host_pkg_name):
             recipe = _interned.get(dep, None)
             if recipe is None:
                 recipe = _interned[dep] = HostPackage(dep)
@@ -37,7 +38,7 @@ class HostPackage(Recipe):
             self.dependencies[dep] = recipe
 
         self.files_to_link = files = []
-        for filename in hostpkgs.get_files_of(self.name):
+        for filename in hostpkgs.get_files_of(self.host_pkg_name):
             if (_INTERESTING_FILE_RE.match(filename) and os.path.isfile(filename)):
                 files.append(filename)
 
