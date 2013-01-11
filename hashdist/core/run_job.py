@@ -1,11 +1,11 @@
 """
-:mod:`hashdist.core.sandbox` --- Sandboxed job execution
-========================================================
+:mod:`hashdist.core.execute_job` --- Job exection
+=================================================
 
 Executes a set of commands in a controlled environment. This
 should usually be used to launch a real script interpreter, but
-a bare-bones JSON-base "script" language is provided to control
-the launch environment.
+basic support for modifying the environment and running multiple
+commands are provided through the JSON job specification.
 
 Job specification
 -----------------
@@ -90,8 +90,8 @@ to reproduce a job run, and hash the job spec. Example:
     paths to manually downloaded binary installers, etc.
 
 
-The sandbox environment
------------------------
+The execution environment
+-------------------------
 
 Standard output (except with "<=", see below) and error of all
 commands are both re-directed to a Logger instance passed in
@@ -246,14 +246,19 @@ import tempfile
 import errno
 import select
 from StringIO import StringIO
+import json
 
 from ..hdist_logging import CRITICAL, ERROR, WARNING, INFO, DEBUG
 
-from .common import InvalidBuildSpecError, BuildFailedError, working_directory
+from .common import working_directory
 
+class InvalidJobSpecError(ValueError):
+    pass
 
+class JobFailedError(RuntimeError):
+    pass
 
-def run_job(logger, build_store, job_spec, env, virtuals, cwd):
+def run_job(logger, build_store, job_spec, env, virtuals, cwd, config):
     """Runs a job in a sandbox, according to rules documented above.
 
     Parameters
@@ -279,6 +284,11 @@ def run_job(logger, build_store, job_spec, env, virtuals, cwd):
         cannot be changed (though a ``cd`` command may be implemented in
         the future if necesarry)
 
+    config : dict
+        Configuration from :mod:`hashdist.core.config`. This will be
+        serialied and put into the HDIST_CONFIG environment variable
+        for use by ``hdist``.
+
     Returns
     -------
 
@@ -292,6 +302,8 @@ def run_job(logger, build_store, job_spec, env, virtuals, cwd):
     env.update(job_spec['env'])
     env.update(job_spec['env_nohash'])
     env.update(get_imports_env(build_store, virtuals, job_spec['import']))
+    env['HDIST_VIRTUALS'] = pack_virtuals_envvar(virtuals)
+    env['HDIST_CONFIG'] = json.dumps(config, separators=(',', ':'))
     executor = ScriptExecution(logger, cwd)
     try:
         out_env = executor.run(job_spec['script'], env)
@@ -302,14 +314,24 @@ def run_job(logger, build_store, job_spec, env, virtuals, cwd):
 def canonicalize_job_spec(job_spec):
     """Returns a copy of job_spec with default values filled in.
 
-    May also in time perform validation.
+    Also performs a tiny bit of validation.
     """
-    job_spec = dict(job_spec)
-    job_spec.setdefault("import", [])
-    job_spec.setdefault("env", {})
-    job_spec.setdefault("env_nohash", {})
-    job_spec.setdefault("script", [])
-    return job_spec
+    def canonicalize_import(item):
+        item = dict(item)
+        item.setdefault('in_env', True)
+        if item.setdefault('ref', None) == '':
+            raise ValueError('Empty ref should be None, not ""')
+        item['before'] = sorted(item.get('before', []))
+        return item
+
+    result = dict(job_spec)
+    result['import'] = [
+        canonicalize_import(item) for item in result.get('import', ())]
+    result['import'].sort(key=lambda item: item['id'])
+    result.setdefault("env", {})
+    result.setdefault("env_nohash", {})
+    result.setdefault("script", [])
+    return result
     
 def substitute(x, env):
     """
@@ -376,26 +398,25 @@ def get_imports_env(build_store, virtuals, imports):
 
         dep_dir = build_store.resolve(dep_id)
         if dep_dir is None:
-            raise InvalidBuildSpecError('Dependency "%s"="%s" not already built, please build it first' %
+            raise InvalidJobSpecError('Dependency "%s"="%s" not already built, please build it first' %
                                         (dep_ref, dep_id))
 
         if dep_ref is not None:
             env[dep_ref] = dep_dir
             env['%s_id' % dep_ref] = dep_id
 
-        if dep['in_path']:
+        if dep['in_env']:
             bin_dir = pjoin(dep_dir, 'bin')
             if os.path.exists(bin_dir):
                 PATH.append(bin_dir)
 
-        if dep['in_hdist_compiler_paths']:
             libdirs = glob(pjoin(dep_dir, 'lib*'))
             if len(libdirs) == 1:
                 HDIST_LDFLAGS.append('-L' + libdirs[0])
                 HDIST_LDFLAGS.append('-Wl,-R,' + libdirs[0])
             elif len(libdirs) > 1:
-                raise InvalidBuildSpecError('in_hdist_compiler_paths set for artifact %s with '
-                                            'more than one library dir (%r)' % (dep_id, libdirs))
+                raise InvalidJobSpecError('in_hdist_compiler_paths set for artifact %s with '
+                                          'more than one library dir (%r)' % (dep_id, libdirs))
 
             incdir = pjoin(dep_dir, 'include')
             if os.path.exists(incdir):
@@ -406,6 +427,12 @@ def get_imports_env(build_store, virtuals, imports):
     env['HDIST_LDFLAGS'] = ' '.join(HDIST_LDFLAGS)
     return env
     
+def pack_virtuals_envvar(virtuals):
+    return ';'.join('%s=%s' % tup for tup in sorted(virtuals.items()))
+
+def unpack_virtuals_envvar(x):
+    return dict(tuple(tup.split('=')) for tup in x.split(';'))
+
 
 def stable_topological_sort(problem):
     """Topologically sort items with dependencies
@@ -611,7 +638,7 @@ class ScriptExecution(object):
                     logger.level = WARNING
                 if stdout_to is not None:
                     sys.stdout = stdout_to
-                self.hdist_command(command_lst)
+                self.hdist_command(command_lst, env, logger)
             except:
                 logger.error("hdist command failed; raising")
                 raise
@@ -716,7 +743,7 @@ class ScriptExecution(object):
         if retcode != 0:
             raise subprocess.CalledProcessError(retcode, command_lst)
 
-    def hdist_command(self, argv):
+    def hdist_command(self, argv, env, logger):
         if len(argv) >= 2 and argv[1] == 'logpipe':
             if len(argv) != 4:
                 raise ValueError('wrong number of arguments to "hdist logpipe"')
@@ -725,7 +752,7 @@ class ScriptExecution(object):
         else:
             from ..cli import main as cli_main
             with working_directory(self.cwd):
-                cli_main(command_lst, env, logger)
+                cli_main(argv, env, logger)
 
     def create_log_pipe(self, sublogger_name, level_str):
         level = dict(CRITICAL=CRITICAL, ERROR=ERROR, WARNING=WARNING, INFO=INFO, DEBUG=DEBUG)[level_str]

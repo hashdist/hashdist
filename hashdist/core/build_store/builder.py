@@ -17,7 +17,7 @@ from pprint import pformat
 import gzip
 
 from ..source_cache import scatter_files
-from .. import sandbox
+from .. import run_job
 from ..common import (InvalidBuildSpecError, BuildFailedError,
                       json_formatting_options, SHORT_ARTIFACT_ID_LEN,
                       working_directory)
@@ -33,37 +33,40 @@ class ArtifactBuilder(object):
         self.artifact_id = build_spec.artifact_id
         self.virtuals = virtuals
 
-    def build(self, source_cache, keep_build):
+        # Some features are implemented by transforming the build spec to add
+        # items to the job script
+        transformed_job_spec = self.build_spec.doc['build']
+        for transform in [transform_job_unpack_sources, transform_job_write_files]:
+            transformed_job_spec = transform(self.build_spec.doc, transformed_job_spec)
+        self.transformed_job_spec = transformed_job_spec
+
+    def build(self, config, keep_build):
+        assert isinstance(config, dict), "caller not refactored"
         artifact_dir = self.build_store.make_artifact_dir(self.build_spec)
         try:
-            self.build_to(artifact_dir, source_cache, keep_build)
+            self.build_to(artifact_dir, config, keep_build)
         except:
             shutil.rmtree(artifact_dir)
             raise
         artifact_dir = self.build_store.register_artifact(self.build_spec, artifact_dir)
         return artifact_dir
 
-    def build_to(self, artifact_dir, source_cache, keep_build):
+    def build_to(self, artifact_dir, config, keep_build):
         if keep_build not in ('never', 'always', 'error'):
             raise ValueError("keep_build not in ('never', 'always', 'error')")
-        env = sandbox.get_artifact_dependencies_env(self.build_store, self.virtuals,
-                                                    self.build_spec.doc.get('dependencies', ()))
-        env['HDIST_VIRTUALS'] = pack_virtuals_envvar(self.virtuals)
-
         build_dir = self.build_store.make_build_dir(self.build_spec)
         self.logger.info('Unpacking sources to %s' % build_dir)
-        
+
         should_keep = False # failures in init are bugs in hashdist itself, no need to keep dir
         try:
+            env = {}
             env['ARTIFACT'] = artifact_dir
             env['BUILD'] = build_dir
             self.serialize_build_spec(build_dir)
-            self.unpack_sources(build_dir, source_cache)
-            self.unpack_files(build_dir, env)
 
             should_keep = (keep_build == 'always')
             try:
-                self.run_build_commands(build_dir, artifact_dir, env)
+                self.run_build_commands(build_dir, artifact_dir, env, config)
                 self.serialize_build_spec(artifact_dir)
             except:
                 should_keep = (keep_build in ('always', 'error'))
@@ -78,24 +81,7 @@ class ArtifactBuilder(object):
             json.dump(self.build_spec.doc, f, **json_formatting_options)
             f.write('\n')
 
-    def unpack_sources(self, build_dir, source_cache):
-        # sources
-        for source_item in self.build_spec.doc.get('sources', []):
-            key = source_item['key']
-            target = source_item.get('target', '.')
-            full_target = os.path.abspath(pjoin(build_dir, target))
-            if not full_target.startswith(build_dir):
-                raise InvalidBuildSpecError('source target attempted to escape '
-                                            'from build directory')
-            # if an exception is raised the directory is removed, so unsafe_mode
-            # should be ok
-            source_cache.unpack(key, full_target, unsafe_mode=True, strip=source_item['strip'])
-
-    def unpack_files(self, build_dir, env):
-        with working_directory(build_dir):
-            execute_files_dsl(self.build_spec.doc.get('files', ()), env)
-
-    def run_build_commands(self, build_dir, artifact_dir, env):
+    def run_build_commands(self, build_dir, artifact_dir, env, config):
         artifact_display_name = self.build_spec.digest[:SHORT_ARTIFACT_ID_LEN] + '..'
         env.update(self.build_spec.doc.get('env', {}))
 
@@ -109,11 +95,48 @@ class ArtifactBuilder(object):
                 logger.info('Building %s' % artifact_display_name)
             logger.push_stream(log_file, raw=True)
             try:
-                script = self.build_spec.doc.get('commands', ())
-                sandbox.run_script_in_sandbox(logger, script, env=env, cwd=build_dir)
+                run_job.run_job(logger, self.build_store, self.transformed_job_spec,
+                                env, self.virtuals, build_dir, config)
+            except:
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                # Python 2 'wrapped exception': We raise an exception with the same traceback
+                # but changing the type, and embedding the original type name in the message
+                # string. This is primarily done in order to communicate the build_dir to
+                # the caller
+                raise BuildFailedError("%s: %s" % (exc_type.__name__, exc_value), build_dir), None, exc_tb
             finally:
                 logger.pop_stream()
         compress(pjoin(build_dir, 'build.log'), pjoin(artifact_dir, 'build.log.gz'))
+
+
+def _prepend_command(command, job_spec):
+    result = dict(job_spec)
+    result['script'] = [command] + list(job_spec['script'])
+    return result
+
+def transform_job_unpack_sources(build_spec, job_spec):
+    """Given a build spec document with a 'sources' section, transform
+    the job spec to add actions for unpacking sources.
+
+    Returns a new job_spec without modifying the old one (though it may
+    share sub-trees that were not modified).
+    """
+    if not build_spec['sources']:
+        return job_spec
+    else:
+        return _prepend_command(['hdist', 'build-unpack-sources', 'build.json'], job_spec)
+
+def transform_job_write_files(build_spec, job_spec):
+    """Given a build spec document with a 'files' section, transform
+    the job spec to add actions for writing files.
+
+    Returns a new job_spec without modifying the old one (though it may
+    share sub-trees that were not modified).
+    """
+    if not build_spec['files']:
+        return job_spec
+    else:
+        return _prepend_command(['hdist', 'build-write-files', 'build.json'], job_spec)
 
 def compress(source_filename, dest_filename):
     chunk_size = 16 * 1024
@@ -124,15 +147,10 @@ def compress(source_filename, dest_filename):
                 if not chunk: break
                 dst.write(chunk)
 
-def pack_virtuals_envvar(virtuals):
-    return ';'.join('%s=%s' % tup for tup in sorted(virtuals.items()))
-
-def unpack_virtuals_envvar(x):
-    return dict(tuple(tup.split('=')) for tup in x.split(';'))
-
 def execute_files_dsl(files, env):
     """
     Executes the mini-language used in the "files" section of the build-spec.
+    See :class:`.BuildWriteFiles`.
 
     Relative directories in targets are relative to current cwd.
 
@@ -140,7 +158,7 @@ def execute_files_dsl(files, env):
     ----------
 
     files : json-like
-        Files to create in the "files" mini-language (todo: document)
+        Files to create in the "files" mini-language
 
     env : dict
         Environment to use for variable substitutation
@@ -161,12 +179,12 @@ def execute_files_dsl(files, env):
         if 'object' in file_spec and 'expandvars' in file_spec:
             raise NotImplementedError('"expandvars" only supported for "text" currently')
 
-        # IIUC in Python 3.3+ one can do this with the 'x' file mode, but need to do it
-        # ourselves currently
+        # IIUC in Python 3.3+ one can do exclusive creation with the 'x'
+        # file mode, but need to do it ourselves currently
         if file_spec.get('executable', False):
-            mode = 0700
+            mode = 0o700
         else:
-            mode = 0600
+            mode = 0o600
         fd = os.open(pjoin(dirname, basename), os.O_EXCL | os.O_CREAT | os.O_WRONLY, mode)
         with os.fdopen(fd, 'w') as f:
             if 'text' in file_spec:

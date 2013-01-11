@@ -9,7 +9,7 @@ import tempfile
 
 from ..hdist_logging import Logger, DEBUG, INFO
 
-from ..core import (InifileConfiguration, BuildStore, SourceCache, DEFAULT_CONFIG_FILENAME,
+from ..core import (load_configuration_from_inifile, SourceCache, DEFAULT_CONFIG_FILENAME,
                     DiskCache)
 from .recipes import build_recipes
 
@@ -45,7 +45,7 @@ def stack_script_cli(root_recipe):
         parser.error('"%s" exists and is not a symlink')
     logger = Logger(DEBUG if args.verbose else INFO)
         
-    config = InifileConfiguration.create(args.config)
+    config = load_configuration_from_inifile(args.config)
     build_store = BuildStore.create_from_config(config, logger)
     source_cache = SourceCache.create_from_config(config, logger)
     cache = DiskCache.create_from_config(config, logger)

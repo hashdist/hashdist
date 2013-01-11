@@ -9,9 +9,9 @@ import argparse
 import sys
 import textwrap
 import os
-
+import json
         
-from ..core import InifileConfiguration, DEFAULT_CONFIG_FILENAME
+from ..core import load_configuration_from_inifile, DEFAULT_CONFIG_FILENAME
 from ..hdist_logging import Logger, DEBUG, INFO
 
 #
@@ -73,7 +73,7 @@ def main(unparsed_argv, env, logger=None):
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--config-file',
                         help='Location of hashdist configuration file (default: %s)' % DEFAULT_CONFIG_FILENAME,
-                        default=os.path.expanduser(DEFAULT_CONFIG_FILENAME))
+                        default=None)
     subparser_group = parser.add_subparsers(title='subcommands')
 
     subcmd_parsers = {}
@@ -93,12 +93,18 @@ def main(unparsed_argv, env, logger=None):
     if len(unparsed_argv) == 1:
         # Print help by default rather than an error about too few arguments
         parser.print_help()
+        retcode = 1
     else:
         args = parser.parse_args(unparsed_argv[1:])
-
+        if args.config_file is None and 'HDIST_CONFIG' in env:
+            config = json.loads(env['HDIST_CONFIG'])
+        else:
+            if args.config_file is None:
+                args.config_file = os.path.expanduser(DEFAULT_CONFIG_FILENAME)
+            config = load_configuration_from_inifile(args.config_file)
+        
         if logger is None:
             logger = Logger(DEBUG)
-        config = InifileConfiguration.create(args.config_file)
         ctx = HashdistCommandContext(parser, subcmd_parsers, sys.stdout, config, env, logger)
 
         retcode = args.subcommand_handler(ctx, args)

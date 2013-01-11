@@ -3,6 +3,7 @@ import re
 from ..hasher import Hasher
 
 from ..common import SHORT_ARTIFACT_ID_LEN
+from .. import run_job
 
 class BuildSpec(object):
     """Wraps the document corresponding to a build.json
@@ -16,8 +17,7 @@ class BuildSpec(object):
         self.doc = canonicalize_build_spec(build_spec)
         self.name = self.doc['name']
         self.version = self.doc['version']
-        stripped_doc = strip_comments(self.doc)
-        digest = Hasher(stripped_doc).format_digest()
+        digest = Hasher(self.doc).format_digest()
         self.digest = digest
         self.artifact_id = '%s/%s' % (self.name, digest)
 
@@ -60,11 +60,7 @@ def canonicalize_build_spec(spec):
     result = dict(spec) # shallow copy
     assert_safe_name(result['name'])
     assert_safe_name(result['version'])
-
-    result['dependencies'] = [
-        canonicalize_dependency(item) for item in result.get('dependencies', ())]
-    result['dependencies'].sort(key=lambda item: item['id'])
-        
+    result['build'] = run_job.canonicalize_job_spec(result['build'])
     sources = [canonicalize_source_item(item) for item in result.get('sources', ())]
     sources.sort(key=lambda item: item['key'])
     result['sources'] = sources
@@ -77,6 +73,7 @@ def strip_comments(spec):
     """Strips a build spec (which should be in canonical format) of comments
     that should not affect hash
     """
+    raise NotImplementedError("please fix")
     def strip_desc(obj):
         r = dict(obj)
         if 'desc' in r:

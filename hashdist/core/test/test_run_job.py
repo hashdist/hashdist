@@ -3,7 +3,7 @@ from os.path import join as pjoin
 from nose.tools import eq_, assert_raises
 from pprint import pprint
 
-from .. import sandbox
+from .. import run_job
 from .test_build_store import fixture as build_store_fixture
 
 
@@ -16,7 +16,7 @@ def filter_out(lines):
     return [x[len('DEBUG:ENV:'):] for x in lines if x.startswith('DEBUG:ENV:')]
 
 @build_store_fixture()
-def test_run_job_environment(tempdir, sc, build_store):
+def test_run_job_environment(tempdir, sc, build_store, cfg):
     # tests that the environment gets correctly set up and that the local scope feature
     # works
     job_spec = {
@@ -36,11 +36,16 @@ def test_run_job_environment(tempdir, sc, build_store):
             env_to_stderr + ["PATH"]
         ]}
     logger = MemoryLogger()
-    ret_env = sandbox.run_job(logger, build_store, job_spec, {"BAZ": "BAZ"}, {}, tempdir)
+    ret_env = run_job.run_job(logger, build_store, job_spec, {"BAZ": "BAZ"},
+                              {"virtual:bash": "bash/ljnq7g35h6h4qtb456h5r35ku3dq25nl"},
+                              tempdir, cfg)
+    assert 'HDIST_CONFIG' in ret_env
+    del ret_env['HDIST_CONFIG']
     assert ret_env == {
         'PATH': '',
         'HDIST_LDFLAGS': '',
         'HDIST_CFLAGS': '',
+        'HDIST_VIRTUALS': 'virtual:bash=bash/ljnq7g35h6h4qtb456h5r35ku3dq25nl',
         'BAR': '$bar',
         'FOO': 'foo',
         'BAZ': 'BAZ'}
@@ -49,29 +54,29 @@ def test_run_job_environment(tempdir, sc, build_store):
         lines)
 
 @build_store_fixture()
-def test_script_dollar_paren(tempdir, sc, build_store):
+def test_script_dollar_paren(tempdir, sc, build_store, cfg):
     job_spec = {
         "script": [
             ["HI=$($echo", "  a  b   \n\n\n ", ")"],
             env_to_stderr + ["HI"]
         ]}
     logger = MemoryLogger()
-    sandbox.run_job(logger, build_store, job_spec, {"echo": "/bin/echo"}, {}, tempdir)
+    run_job.run_job(logger, build_store, job_spec, {"echo": "/bin/echo"}, {}, tempdir, cfg)
     eq_(["HI='a  b'"], filter_out(logger.lines))
 
 @build_store_fixture()
-def test_script_redirect(tempdir, sc, build_store):
+def test_script_redirect(tempdir, sc, build_store, cfg):
     job_spec = {
         "script": [
             ["$echo>$foo", "hi"]
         ]}
-    sandbox.run_job(test_logger, build_store, job_spec,
-                    {"echo": "/bin/echo", "foo": "foo"}, {}, tempdir)
+    run_job.run_job(test_logger, build_store, job_spec,
+                    {"echo": "/bin/echo", "foo": "foo"}, {}, tempdir, cfg)
     with file(pjoin(tempdir, 'foo')) as f:
         assert f.read() == 'hi\n'
 
 @build_store_fixture()
-def test_attach_log(tempdir, sc, build_store):
+def test_attach_log(tempdir, sc, build_store, cfg):
     with file(pjoin(tempdir, 'hello'), 'w') as f:
         f.write('hello from pipe')
     job_spec = {
@@ -80,11 +85,11 @@ def test_attach_log(tempdir, sc, build_store):
             ["/bin/dd", "if=hello", "of=$LOG"],
         ]}
     logger = MemoryLogger()
-    sandbox.run_job(logger, build_store, job_spec, {}, {}, tempdir)
+    run_job.run_job(logger, build_store, job_spec, {}, {}, tempdir, cfg)
     assert 'WARNING:mylog:hello from pipe' in logger.lines
 
 @build_store_fixture()
-def test_notimplemented_redirection(tempdir, sc, build_store):
+def test_notimplemented_redirection(tempdir, sc, build_store, cfg):
     job_spec = {
         "script": [
             ["LOG=$(hdist", "logpipe", "mylog", "WARNING", ")"],
@@ -92,15 +97,15 @@ def test_notimplemented_redirection(tempdir, sc, build_store):
         ]}
     with assert_raises(NotImplementedError):
         logger = MemoryLogger()
-        sandbox.run_job(logger, build_store, job_spec, {}, {}, tempdir)
+        run_job.run_job(logger, build_store, job_spec, {}, {}, tempdir, cfg)
 
 def test_substitute():
     env = {"A": "a", "B": "b"}
     def check(want, x):
-        eq_(want, sandbox.substitute(x, env))
+        eq_(want, run_job.substitute(x, env))
     def check_raises(x):
         with assert_raises(KeyError):
-            sandbox.substitute(x, env)
+            run_job.substitute(x, env)
     yield check, "ab", "$A$B"
     yield check, "ax", "${A}x"
     yield check, "\\", "\\"
@@ -114,7 +119,7 @@ def test_stable_topological_sort():
         # pack simpler problem description into objects
         problem_objs = [dict(id=id, before=before, preserve=id[::-1])
                         for id, before in problem]
-        got = sandbox.stable_topological_sort(problem_objs)
+        got = run_job.stable_topological_sort(problem_objs)
         got_ids = [x['id'] for x in got]
         assert expected == got_ids
         for obj in got:

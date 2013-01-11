@@ -71,13 +71,15 @@ def hdist_cli_build_spec(python=None, package=None):
                 }
             ]
         },
-        "commands": [
-            ["hdist", "create-links", "--key=parameters/links", "build.json"]
-        ]
+        "build": {
+            "script": [
+                ["hdist", "create-links", "--key=parameters/links", "build.json"]
+            ]
+        }
     }
     return BuildSpec(spec)
     
-def ensure_hdist_cli_artifact(build_store, source_cache):
+def ensure_hdist_cli_artifact(build_store, config):
     """
     Builds an artifact which executes the 'hdist' command using the current
     Python interpreter and current Hashdist package.
@@ -90,4 +92,4 @@ def ensure_hdist_cli_artifact(build_store, source_cache):
     as a "virtual:hdist", not as a concrete artifact.
     """
     spec = hdist_cli_build_spec()
-    return build_store.ensure_present(spec, source_cache)
+    return build_store.ensure_present(spec, config)

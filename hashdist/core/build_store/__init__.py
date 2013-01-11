@@ -31,25 +31,14 @@ the job of :mod:`hashdist.core.profile`.
 Artifact IDs
 ------------
 
-A Hashdist artifact ID has the form ``name/version/hash``, e.g.,
-``zlib/1.2.7/fXHu+8dcqmREfXaz+ixMkh2LQbvIKlHf+rtl5HEfgmU``.
-
- * `name` is a descriptive name for the package
- * `version` describes the specific build in human-friendly terms;
-   this may be a simple version number (``1.2``) or something
-   more descriptive (``1.2-beta-intel-openblas-avx``). For simplicity
-   we require this to always be present; by convention set it to ``n`` for
-   "does not apply" or ``dev`` for "not released yet".
- * `hash` is a secure sha-256 hash of the build specification (43 characters)
-
-All explicit references to build artifacts happens by using the full
-three-part ID.
+A Hashdist artifact ID has the form ``name/hash``, e.g.,
+``zlib/4niostz3iktlg67najtxuwwgss5vl6k4``.
 
 For the artifact paths on disk, a shortened form (4-char hash) is used
 to make things more friendly to the human user. If there is a
 collision, the length is simply increased for the one that comes
 later. Thus, the example above could be stored on disk as
-``~/.hdist/opt/zlib/1.2.7/fXHu``, or ``~/.hdist/opt/zlib/1.2.7/fXHu+``
+``~/.hdist/opt/zlib/4nio``, or ``~/.hdist/opt/zlib/1.2.7/4nios``
 in the (rather unlikely) case of a collision. There is a symlink
 from the full ID to the shortened form. See also Discussion below.
 
@@ -67,14 +56,19 @@ An example build spec:
     
     {
         "name" : "<name of piece of software>",
-        "version" : "<human-readable description what makes this build special>",
-        "dependencies" : [
-            {"ref": "bash", "id": "virtual:bash"},
-            {"ref": "make", "id": "virtual:gnu-make/3+"},
-            {"ref": "zlib", "id": "zlib/1.2.7/fXHu+8dcqmREfXaz+ixMkh2LQbvIKlHf+rtl5HEfgmU"},
-            {"ref": "unix", "id": "virtual:unix"},
-            {"ref": "gcc", "id": "gcc/host-4.6.3/q0VSL7JmzH1P17meqITYc4kMbnIjIexrWPdlAlqPn3s", "before": ["virtual:unix"]},
-         ],
+        "version" : "<version>",
+        "description": "<what makes this build special>",
+        "comment": "<free-form comment>",
+        "build": {
+            "import" : [
+                {"ref": "bash", "id": "virtual:bash"},
+                {"ref": "make", "id": "virtual:gnu-make/3+"},
+                {"ref": "zlib", "id": "zlib/1.2.7/fXHu+8dcqmREfXaz+ixMkh2LQbvIKlHf+rtl5HEfgmU"},
+                {"ref": "unix", "id": "virtual:unix"},
+                {"ref": "gcc", "id": "gcc/host-4.6.3/q0VSL7JmzH1P17meqITYc4kMbnIjIexrWPdlAlqPn3s", "before": ["virtual:unix"]},
+             ],
+             "script" : [["bash", "build.sh"]],
+         },
          "sources" : [
              {"key": "git:c5ccca92c5f136833ad85614feb2aa4f5bd8b7c3"},
              {"key": "tar.bz2:RB1JbykVljxdvL07mN60y9V9BVCruWRky2FpK2QCCow", "target": "sources", "strip": 1},
@@ -90,93 +84,38 @@ An example build spec:
                ]
              }
          ],
-         "commands" : [["bash", "build.sh"]],
     }
 
 
 **name**:
-    See previous section
+    Should match ``[a-zA-Z0-9-_+]+``.
 
 **version**:
-    See previous section
+    Should match ``[a-zA-Z0-9-_+]*``.
 
-**dependencies**:
-    The dependencies needed for the build. After the
-    artifact is built these have no effect (i.e., they do not
-    affect garbage collection or run-time dependencies).
-    The list specifies an unordered set; `before` can be used to
-    specify order.
+**description**:
+    What makes this build special in some human-readable form, e.g.,
+    ``icc-avx-gotoblas`` (this may be part of the pathname on some
+    platforms). Should match ``[a-zA-Z0-9-_+]*``.
 
-    * **id**: The artifact ID. If the value is prepended with
-      ``"virtual:"``, the ID is a virtual ID, used so that the real
-      one does not contribute to the hash. See section on virtual
-      dependencies below.
-
-    * **ref**: A name to use to inject information of this dependency
-      into the build environment. Above, ``$zlib`` will be the
-      absolute path to the ``zlib`` artifact, and ``$zlib_id`` will be
-      the full artifact ID. This can be set to `None` in order to not
-      set any environment variables for the artifact.
-
-    * **before**: List of artifact IDs. Adds a constraint that this
-      dependency is listed before the dependencies listed in all paths.
-
-    * **in_path**: Whether to add the ``bin`` sub-directory of the
-      artifact to the ``$PATH``. Defaults to `True`. (If the artifact
-      lacks a ``bin`` sub-directory it will not be added regardless.)
-
-    * **in_hdist_rpath**: Like `in_path` but affects ``HDIST_RPATH``; defaults
-      to `True`.
-
-    * **in_hdist_compiler_paths**: Like `in_path` but affects
-      ``HDIST_CFLAGS` and ``HDIST_LDFLAGS``; defaults to `True`.
-    
+**build**:
+    A job to run to perform the build. See :mod:`hashdist.core.execute_job`
+    for the documentation of this sub-document.
     
 **sources**:
-    Unpacked into the temporary build directory. The optional ``target`` parameter
-    gives a directory they should be extracted to (default: ``"."``). The ``strip``
-    parameter (only applies to tarballs) acts like the
-    `tar` ``--strip-components`` flag.
-
-    Order does not affect the hashing. The build will fail if any of
-    the archives contain conflicting files.
-
+    Extracted using ``hdist build-unpack-sources``, see
+    :class:``.BuildUnpackSources``. Order does not affect the hashing.
+    
 **files**:
-    Embed small text files in-line in the build spec, potentially expanding
-    variables within them. This is suitable for configuration files, small
-    scripts and so on. For anything more than a hundred lines or so
-    you should upload to the source cache and put a ``files:...`` key
-    in *sources* instead. Note that a JSON-like object can be provided
-    instead of text.
+    Extracted using ``hdist build-write-files``, see
+    :class:``.BuildWriteFiles``. Order does not affect the hashing.
 
-    * **target**: Target filename. Variable substitution is performed,
-      so it is possible to put ``$ARTIFACT/filename`` here.
-      
-    * **text**: Contents as a list of lines which will be joined with "\\n".
+The build environment
+---------------------
 
-    * **object**: As an alternative to *text*, one can provide an object
-      which will be serialized to the file as JSON.
-
-    * **executable**: Whether to set the executable permission bit
-
-    * **expandvars**: Whether to expand variables in the text itself
-      (defaults to False)
-
-    Order does not affect hashing. Files will always be encoded in UTF-8.
-
-**commands**:
-    Executed to perform the build. If any command fails, the build fails.
-
-    Note that while more than one command is allowed, and they will be
-    executed in order, this is not a shell script: Each command is
-    spawned from the builder process with a pristine environment. For anything
-    that is not completely trivial one should use a scripting language.
-
-The build sandbox
------------------
-
-The build environment variables are wiped out, and then set as
-documented here.
+See :mod:`hashdist.core.execute_job` for information about how the
+build job is executed. In addition, the following environment variables
+are set:
 
 **BUILD**:
     Set to the build directory. This is also the starting `cwd` of
@@ -187,59 +126,9 @@ documented here.
     and should, e.g., be passed as the ``--prefix`` to ``./configure``-style
     scripts.
 
-**PATH**:
-    Set to point to the ``bin``-sub-directories of dependencies with `in_path`
-    set.
-
-**HDIST_CFLAGS**:
-    Set to point to the ``include``-sub-directories of dependencies with
-    `in_hdist_compiler_path` set. The entries are of the usual form
-    ``-I/path/to/artifact/include -I/next/artifact/include``.
-
-**HDIST_LDFLAGS**:
-    Set to point to the ``lib*``-sub-directories of dependencies with
-    `in_hdist_compiler_path` set. The entries are both for the linker
-    (``-L/path/to/artifact/lib``) and for setting the `RPATH`
-    (``-Wl,-R,/path/to/artifact/lib``).
-
-    Note that it is almost impossible to inject a relative RPATH; even
-    if one manages to escaoe $ORIGIN properly for the build system,
-    any auto-detection will tend to prepend absolute RPATHs
-    anyway. See experiences in mess.rst. If on wishes '$ORIGIN' in the
-    RPATH then ``patchelf`` should be used.
-
-**HDIST_VIRTUALS**:
-    The mapping of virtual artifacts to concrete artifact IDs that has
-    been used. Format by example:
-    ``virtual:unix=unix/r0/KALiap2<...>;virtual:hdist=hdist/r0/sLt4Zc<...>``
-
 The build specification is available under ``$BUILD/build.json``, and
 stdout and stderr are redirected to ``$BUILD/build.log``. These two
 files will also be present in ``$ARTIFACT`` after the build.
-
-
-Virtual dependencies
---------------------
-
-Some times one do not wish some dependencies to become part of the
-hash.  For instance, if the ``cp`` tool is used during the build, one
-is normally ready to trust that the build wouldn't have been different
-if a newer version of the ``cp`` tool was used instead.
-
-Virtual dependencies, such as ``virtual:unix`` in the example above,
-are used so that the hash depends on a user-defined string rather
-than the artifact contents. If a bug in ``cp`` is indeed discovered,
-one can change the user-defined string (e.g, ``virtual:unix/r2``).
-
-This feature should not be over-used. For instance, GCC should almost
-certainly not be a virtual dependency.
-
-.. note::
-   One should think about virtual dependencies merely as a tool that gives
-   the user control (and responsibility) over when the hash should change.
-   They are *not* the primary mechanism for providing software
-   from the host; though software from the host will sometimes be
-   specified as virtual dependencies.
 
 
 Discussion
@@ -290,6 +179,5 @@ Reference
 """
 
 # package exports
-from .builder import pack_virtuals_envvar, unpack_virtuals_envvar
 from .build_spec import BuildSpec, as_build_spec, shorten_artifact_id
 from .build_store import BuildStore

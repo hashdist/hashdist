@@ -52,9 +52,10 @@ import errno
 from os.path import join as pjoin
 import json
 
-from .build_store import shorten_artifact_id, pack_virtuals_envvar
+from .build_store import shorten_artifact_id
+from .run_job import pack_virtuals_envvar
 from .common import json_formatting_options
-from . import sandbox
+from . import run_job
 
 def ensure_empty_existing_dir(d):
     try:
