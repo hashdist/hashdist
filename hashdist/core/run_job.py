@@ -95,7 +95,7 @@ The execution environment
 
 Standard output (except with "<=", see below) and error of all
 commands are both re-directed to a Logger instance passed in
-by the sandbox user. There is no stdin (it's set to a closed pipe).
+by the user. There is no stdin (it's set to a closed pipe).
 
 The build environment variables are wiped out and the variables in `env`
 and `env_nohash` set. Then, each of the `import`-ed artifacts are
@@ -190,13 +190,13 @@ Rules:
 
 
 The ``hdist`` command is given special treatment and is executed in the
-same process, with logging set up to the logger of the sandbox.
+same process, with logging set up to the logger of the job runner.
 In addition to what is listed in ``hdist --help``, the following special
-command is available for interacting with the sandbox:
+command is available for interacting with the job runner:
 
  * ``hdist logpipe HEADING LEVEL``: Creates a new Unix FIFO and prints
    its name to standard output (it will be removed once the job
-   terminates). The sandbox runner will poll the pipe and print
+   terminates). The job runner will poll the pipe and print
    anything written to it nicely formatted to the log with the given
    heading and log level (the latter is one of ``DEBUG``, ``INFO``,
    ``WARNING``, ``ERROR``).
@@ -205,8 +205,8 @@ command is available for interacting with the sandbox:
 
     ``hdist`` is not automatically available in the environment in general
     (in launched scripts etc.), for that, see :mod:`hashdist.core.hdist_recipe`.
-    ``hdist logpipe`` is currently not supported outside of the sandbox script
-    at all (this could be supported through RPC with the sandbox, but the
+    ``hdist logpipe`` is currently not supported outside of the job script
+    at all (this could be supported through RPC with the job runner, but the
     gain seems very slight).
 
 
@@ -263,10 +263,10 @@ class JobFailedError(RuntimeError):
     pass
 
 def run_job(logger, build_store, job_spec, env, virtuals, cwd, config):
-    """Runs a job in a sandbox, according to rules documented above.
+    """Runs a job in a controlled environment, according to rules documented above.
 
     Parameters
-    ---------
+    ----------
 
     logger : Logger
 
@@ -592,7 +592,7 @@ class ScriptExecution(object):
                     stdout_filename = os.path.realpath(stdout_filename)
                     if stdout_filename.startswith(self.rpc_dir):
                         raise NotImplementedError("Cannot currently use stream re-direction to write to "
-                                                  "a sandbox log-pipe (doing the write from a "
+                                                  "a log-pipe (doing the write from a "
                                                   "sub-process is OK)")
                     stdout = file(stdout_filename, 'a')
                     try:
@@ -606,7 +606,7 @@ class ScriptExecution(object):
         return env
 
     def run_command(self, command_lst, env, stdout_to=None, silent=False):
-        """Runs a single command of the sandbox script
+        """Runs a single command of the job script
 
         This mainly takes care of stream re-direction and special handling
         of the hdist command.
@@ -629,7 +629,7 @@ class ScriptExecution(object):
             If `False`, redirect stdout to logger, otherwise return it
         """
         logger = self.logger
-        logger.info('running %r' % command_lst)
+        logger.debug('running %r' % command_lst)
         if not silent:
             logger.debug('cwd: ' + self.cwd)
             logger.debug('environment:')
