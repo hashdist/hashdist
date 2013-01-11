@@ -53,7 +53,6 @@ from os.path import join as pjoin
 import json
 
 from .build_store import shorten_artifact_id
-from .run_job import pack_virtuals_envvar
 from .common import json_formatting_options
 from . import run_job
 
@@ -65,7 +64,7 @@ def ensure_empty_existing_dir(d):
             if os.listdir(d) != []:
                 raise Exception('target directory %s not empty' % target_dir)
 
-def make_profile(logger, build_store, artifacts, target_dir, virtuals):
+def make_profile(logger, build_store, artifacts, target_dir, virtuals, cfg):
     """
 
     Parameters
@@ -83,14 +82,15 @@ def make_profile(logger, build_store, artifacts, target_dir, virtuals):
     ensure_empty_existing_dir(target_dir)
     
     # order artifacts
-    artifacts = sandbox.stable_topological_sort(artifacts)
+    artifacts = run_job.stable_topological_sort(artifacts)
 
     # process artifacts in opposite order; highes prioritized gets to go last
     for artifact in artifacts:
         a_id_desc = shorten_artifact_id(artifact['id'])
         logger.info('Linking %s into %s' % (a_id_desc, target_dir))
         sub_logger = logger.get_sub_logger(a_id_desc)
-        install_artifact_into_profile(sub_logger, build_store, artifact['id'], target_dir, virtuals)
+        install_artifact_into_profile(sub_logger, build_store, artifact['id'], target_dir,
+                                      virtuals, cfg)
 
     # make profile.json
     doc = {'artifacts': artifacts}
@@ -98,7 +98,8 @@ def make_profile(logger, build_store, artifacts, target_dir, virtuals):
         json.dump(doc, f, **json_formatting_options)
         f.write('\n')
 
-def install_artifact_into_profile(logger, build_store, artifact_id, target_dir, virtuals):
+def install_artifact_into_profile(logger, build_store, artifact_id, target_dir, virtuals, cfg):
+    target_dir = os.path.abspath(target_dir)
     artifact_dir = build_store.resolve(artifact_id)
     if artifact_dir is None:
         raise Exception('artifact %s not available' % artifact_id)
@@ -108,17 +109,11 @@ def install_artifact_into_profile(logger, build_store, artifact_id, target_dir, 
     else:
         with file(doc_filename) as f:
             doc = json.load(f)
-        doc = doc.get("install", {})
-        script = doc.get('commands', [])
-        if script:
-            env = dict(doc.get('env', {}))
-            env['HDIST_VIRTUALS'] = pack_virtuals_envvar(virtuals)
+        job_spec = doc.get("install", None)
+        if job_spec:
+            env = {}
             env['ARTIFACT'] = artifact_dir
             env['PROFILE'] = os.path.abspath(target_dir)
-            dep_env = sandbox.get_artifact_dependencies_env(build_store, virtuals,
-                                                            doc.get('dependencies', []))
-            env.update(dep_env)
-            logger.info('Running command %r' % script)
-            sandbox.run_script_in_sandbox(logger, script, env, artifact_dir)
+            run_job.run_job(logger, build_store, job_spec, env, virtuals, artifact_dir, cfg)
         else:
             logger.info('Nothing to do')

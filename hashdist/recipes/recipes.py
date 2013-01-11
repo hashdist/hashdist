@@ -202,10 +202,15 @@ class Recipe(object):
         files = self.get_files()
         parameters = self.get_parameters()
         env = self.get_env()
+
+        build = {"script": commands, "import": dep_specs, "env": env}
         
-        doc = dict(name=self.name, version=self.version, sources=sources, env=env,
-                   commands=commands, files=files, dependencies=dep_specs,
-                   parameters=parameters)
+        doc = dict(name=self.name,
+                   version=self.version,
+                   sources=sources,
+                   files=files,
+                   parameters=parameters,
+                   build=build)
         build_spec = core.BuildSpec(doc)
         return build_spec
 
@@ -271,7 +276,7 @@ hdist_tool = HdistTool()
 HDIST_TOOL_VIRTUAL = 'virtual:%s/%s' % (core.HDIST_CLI_ARTIFACT_NAME, core.HDIST_CLI_ARTIFACT_VERSION)
 
 
-def build_recipes(build_store, source_cache, recipes, **kw):
+def build_recipes(build_store, source_cache, config, recipes, **kw):
     built = set() # artifact_id
     virtuals = {} # virtual_name -> artifact_id
 
@@ -285,7 +290,7 @@ def build_recipes(build_store, source_cache, recipes, **kw):
         build_spec = recipe.get_build_spec()
         if not build_spec.artifact_id in built:
             # todo: move to in-memory cache in BuildStore
-            build_store.ensure_present(build_spec, source_cache, virtuals=virtuals,
+            build_store.ensure_present(build_spec, config, virtuals=virtuals,
                                        **kw)
             built.add(build_spec.artifact_id)
 

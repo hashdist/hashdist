@@ -169,8 +169,8 @@ Rules:
    syntax. ``\$`` is an escape for ``$`` (but ``\`` not followed by ``$``
    is not currently an escape).
 
- * The ``["executable", "arg1", ...]``: First string is command to execute, all strings
-   are used directly as argv (so no quoting etc.). Both `stdout` and `stderr` are
+ * The ``["executable", "arg1", ...]``: First string is command to execute (either
+   absolute or looked up in ``$PATH``). Both `stdout` and `stderr` are
    redirected to the application logger.
 
  * The ``["executable>filename", "arg1", ...]``: Like the above, but `stdout` is
@@ -184,6 +184,10 @@ Rules:
    to the variable. The result has leading and trailing whitespace stripped
    but is otherwise untouched. The trailing ``")"`` must stand by itself (and does not
    really mean anything except as to balance the opening visually).
+
+ * All forms above can be prepended with ``@`` on the command-string to silence
+   logging the running environment (this may silence even more in the future).
+
 
 The ``hdist`` command is given special treatment and is executed in the
 same process, with logging set up to the logger of the sandbox.
@@ -557,7 +561,10 @@ class ScriptExecution(object):
                 self.run(script_line, env)
             else:
                 cmd = script_line[0]
-                args = [substitute(x, env) for x in script_line[1:]]        
+                silent = cmd.startswith('@')
+                if silent:
+                    cmd = cmd[1:]
+                args = [substitute(x, env) for x in script_line[1:]]
                 if '=$(' in cmd:
                     # a=$(command)
                     varname, cmd = cmd.split('=$(')
@@ -566,7 +573,7 @@ class ScriptExecution(object):
                     del args[-1]
                     cmd = substitute(cmd, env)
                     stdout = StringIO()
-                    self.run_command([cmd] + args, env, stdout_to=stdout)
+                    self.run_command([cmd] + args, env, stdout_to=stdout, silent=silent)
                     env[varname] = stdout.getvalue().strip()
                 elif '=' in cmd:
                     # VAR=value
@@ -589,16 +596,16 @@ class ScriptExecution(object):
                                                   "sub-process is OK)")
                     stdout = file(stdout_filename, 'a')
                     try:
-                        self.run_command([cmd] + args, env, stdout_to=stdout)
+                        self.run_command([cmd] + args, env, stdout_to=stdout, silent=silent)
                     finally:
                         stdout.close()
                 else:
                     # program
                     cmd = substitute(cmd, env)
-                    self.run_command([cmd] + args, env)
+                    self.run_command([cmd] + args, env, silent=silent)
         return env
 
-    def run_command(self, command_lst, env, stdout_to=None):
+    def run_command(self, command_lst, env, stdout_to=None, silent=False):
         """Runs a single command of the sandbox script
 
         This mainly takes care of stream re-direction and special handling
@@ -623,10 +630,11 @@ class ScriptExecution(object):
         """
         logger = self.logger
         logger.info('running %r' % command_lst)
-        logger.debug('cwd: ' + self.cwd)
-        logger.debug('environment:')
-        for line in pformat(env).splitlines():
-            logger.debug('  ' + line)
+        if not silent:
+            logger.debug('cwd: ' + self.cwd)
+            logger.debug('environment:')
+            for line in pformat(env).splitlines():
+                logger.debug('  ' + line)
         if command_lst[0] == 'hdist':
             # run hdist cli in-process special case the 'hdist'
             # command and run it in the same process do not emit
@@ -721,7 +729,7 @@ class ScriptExecution(object):
                         new_bytes = os.read(fd, BUFSIZE)
                         assert new_bytes != '' # after all, we did poll
                         buffers[fd] += new_bytes
-                        lines = buffers[fd].splitlines()
+                        lines = buffers[fd].splitlines(True) # keepends=True
                         if lines[-1][-1] != '\n':
                             buffers[fd] = lines[-1]
                             del lines[-1]

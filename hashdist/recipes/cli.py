@@ -10,7 +10,7 @@ import tempfile
 from ..hdist_logging import Logger, DEBUG, INFO
 
 from ..core import (load_configuration_from_inifile, SourceCache, DEFAULT_CONFIG_FILENAME,
-                    DiskCache)
+                    DiskCache, BuildStore)
 from .recipes import build_recipes
 
 __all__ = ['stack_script_cli']
@@ -58,7 +58,7 @@ def stack_script_cli(root_recipe):
         sys.stderr.write('Build needed\n')
 
     if not args.status:
-        build_recipes(build_store, source_cache, [root_recipe], keep_build=args.keep)
+        build_recipes(build_store, source_cache, config, [root_recipe], keep_build=args.keep)
 
     artifact_dir = build_store.resolve(root_recipe.get_artifact_id())
     if not artifact_dir:

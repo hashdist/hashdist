@@ -52,8 +52,8 @@ class CreateProfile(object):
     @staticmethod
     def run(ctx, args):
         from ..core import make_profile, BuildStore
-        from ..core.build_store import unpack_virtuals_envvar
+        from ..core.run_job import unpack_virtuals_envvar
         virtuals = unpack_virtuals_envvar(ctx.env.get('HDIST_VIRTUALS', ''))
         build_store = BuildStore.create_from_config(ctx.config, ctx.logger)
         doc = fetch_parameters_from_json(args.input, args.key)
-        make_profile(ctx.logger, build_store, doc, args.target, virtuals)
+        make_profile(ctx.logger, build_store, doc, args.target, virtuals, ctx.config)

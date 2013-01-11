@@ -55,8 +55,6 @@ class ArtifactBuilder(object):
         if keep_build not in ('never', 'always', 'error'):
             raise ValueError("keep_build not in ('never', 'always', 'error')")
         build_dir = self.build_store.make_build_dir(self.build_spec)
-        self.logger.info('Unpacking sources to %s' % build_dir)
-
         should_keep = False # failures in init are bugs in hashdist itself, no need to keep dir
         try:
             env = {}
@@ -124,7 +122,7 @@ def transform_job_unpack_sources(build_spec, job_spec):
     if not build_spec['sources']:
         return job_spec
     else:
-        return _prepend_command(['hdist', 'build-unpack-sources', 'build.json'], job_spec)
+        return _prepend_command(['@hdist', 'build-unpack-sources', 'build.json'], job_spec)
 
 def transform_job_write_files(build_spec, job_spec):
     """Given a build spec document with a 'files' section, transform
@@ -136,7 +134,7 @@ def transform_job_write_files(build_spec, job_spec):
     if not build_spec['files']:
         return job_spec
     else:
-        return _prepend_command(['hdist', 'build-write-files', 'build.json'], job_spec)
+        return _prepend_command(['@hdist', 'build-write-files', 'build.json'], job_spec)
 
 def compress(source_filename, dest_filename):
     chunk_size = 16 * 1024

@@ -16,8 +16,11 @@ class ConfigureMakeInstall(Recipe):
 
     def get_commands(self):
         return [
-            ['LDFLAGS=$HDIST_LDFLAGS', 'CFLAGS=$HDIST_CFLAGS', './configure', '--prefix=${ARTIFACT}'] +
-            self.configure_flags,
+            [
+                ['LDFLAGS=$HDIST_LDFLAGS'],
+                ['CFLAGS=$HDIST_CFLAGS'],
+                ['./configure', '--prefix=${ARTIFACT}'] + self.configure_flags,
+            ],
             ['make', '-j%d' % ncores],
             ['make', 'install']
             ]
@@ -25,16 +28,14 @@ class ConfigureMakeInstall(Recipe):
     def get_files(self):
         artifact_json = {
           "install": {
-            "commands": [
-              ["hdist", "create-links", "--key=install/parameters/links", "artifact.json"]
-            ],
-            "parameters": {
-              "links": [
-                {"action": "symlink", "select": "$ARTIFACT/*/**/*", "prefix": "$ARTIFACT",
-                 "target": "$PROFILE"}
+              "script": [
+                  ["hdist", "create-links", "--key=links", "artifact.json"]
               ]
-            }
-          }
+          },
+          "links": [
+            {"action": "symlink", "select": "$ARTIFACT/*/**/*", "prefix": "$ARTIFACT",
+             "target": "$PROFILE"}
+          ]
         }
 
         return [
