@@ -96,10 +96,10 @@ class BuildStore(object):
     def create_from_config(config, logger):
         """Creates a SourceCache from the settings in the configuration
         """
-        return BuildStore(config.get_path('builder', 'build-temp'),
-                          config.get_path('global', 'db'),
-                          config.get_path('builder', 'artifacts'),
-                          config.get('builder', 'artifact-dir-pattern'),
+        return BuildStore(config['builder/build-temp'],
+                          config['global/db'],
+                          config['builder/artifacts'],
+                          config['builder/artifact-dir-pattern'],
                           logger)
 
     def _get_artifact_link(self, artifact_id):

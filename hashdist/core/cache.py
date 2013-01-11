@@ -50,7 +50,7 @@ class DiskCache(object):
     def create_from_config(config, logger):
         """Creates a DiskCache from the settings in the configuration
         """
-        return DiskCache(config.get_path('global', 'cache'))
+        return DiskCache(config['global/cache'])
 
     def _as_domain(self, domain):
         if not isinstance(domain, str):

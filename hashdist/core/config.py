@@ -4,39 +4,47 @@ Handles reading the Hashdist configuration file. By default this is
 """
 
 import os
-from ConfigParser import RawConfigParser
+from os.path import join as pjoin
+import ConfigParser
+import json
 
 DEFAULT_CONFIG_FILENAME = '~/.hdistconfig'
 
-class InifileConfiguration(object):
-    """
-    Provides access to configuration data.
+SCHEMA = {
+    'global': {
+        'cache': ('dir', '~/.hdist/cache'),
+        'db': ('dir', '~/.hdist/db'),
+        },
+    'sourcecache': {
+        'sources': ('dir', '~/.hdist/src'),
+        },
+    'builder': {
+        'build-temp': ('dir', '~/.hdist/bld'),
+        'artifacts': ('dir', '~/.hdist/opt'),
+        'artifact-dir-pattern': ('str', '{name}/{shorthash}'),
+        }
+    }
 
-    This default implementation simply wraps a RawConfigParser.
-    """
-    
-    def __init__(self, config_parser):
-        self.config_parser = config_parser
 
-    @staticmethod
-    def create_from_string(s):
-        from StringIO import StringIO
-        parser = RawConfigParser()
-        parser.readfp(StringIO(s))
-        return InifileConfiguration(parser)
-
-    @staticmethod
-    def create(filename=None):
-        if filename is None:
-            filename = os.path.expanduser(DEFAULT_CONFIG_FILENAME)
-        parser = RawConfigParser()
-        parser.read(filename)
-        return InifileConfiguration(parser)
-
-    def get(self, section, key):
-        return self.config_parser.get(section, key)
-
-    def get_path(self, section, key):
-        x = self.get(section, key)
-        return os.path.expanduser(x)
-
+def load_configuration_from_inifile(filename):
+    base_dir = os.path.dirname(os.path.realpath(filename))
+    parser = ConfigParser.RawConfigParser()
+    parser.read(filename)
+    result = {}
+    for section, section_schema in SCHEMA.items():
+        for key, (type, default) in section_schema.items():
+            try:
+                value = parser.get(section, key)
+            except ConfigParser.Error:
+                value = default
+            if type == 'dir':
+                value = os.path.expanduser(value)
+                if not os.path.isabs(value):
+                    value = pjoin(base_dir, value)
+            elif type == 'str':
+                pass
+            else:
+                assert False
+            result['%s/%s' % (section, key)] = value
+    return result
+        
