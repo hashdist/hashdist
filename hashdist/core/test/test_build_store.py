@@ -38,7 +38,7 @@ def test_canonical_build_spec():
                 ]
             }
           }
-    got = build_store.build_spec.canonicalize_build_spec(doc)
+    got = build_store.canonicalize_build_spec(doc)
     exp = {
           "build": {
             "import": [
@@ -57,9 +57,9 @@ def test_canonical_build_spec():
 def test_strip_comments():
     raise SkipTest()
     doc = {"dependencies": [{"id": "a", "desc": "foo"}]}
-    got = build_store.build_spec.strip_comments(doc)
+    got = build_store.strip_comments(doc)
     eq_({"dependencies": [{"id": "a"}]}, got)
-    eq_(got, build_store.build_spec.strip_comments(got))
+    eq_(got, build_store.strip_comments(got))
 
         
 #
