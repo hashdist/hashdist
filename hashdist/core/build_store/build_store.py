@@ -68,7 +68,7 @@ class BuildStore(object):
         self.short_hash_len = short_hash_len
 
     def delete_all(self):
-        for dirpath, dirnames, filenames in os.walk(self.db_dir):
+        for dirpath, dirnames, filenames in os.walk(self.ba_db_dir):
             for link in filenames:
                 link = pjoin(dirpath, link)
                 if not os.path.islink(link):
@@ -87,10 +87,10 @@ class BuildStore(object):
                         self.logger.warning("%s referenced in db but does not exist" % artifact_dir)
 
         for x in os.listdir(self.ba_db_dir):
-            shutil.rmtree(x)
+            shutil.rmtree(pjoin(self.ba_db_dir, x))
 
         for x in os.listdir(self.temp_build_dir):
-            shutil.rmtree(x)
+            shutil.rmtree(pjoin(self.temp_build_dir, x))
 
     @staticmethod
     def create_from_config(config, logger):
