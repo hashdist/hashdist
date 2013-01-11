@@ -1,5 +1,3 @@
-import hashdist as hd
-from hashdist.core import BuildStore, InifileConfiguration, SourceCache
 import hashdist.recipes as hr
 
 unix = hr.NonhashedUnix()
@@ -7,7 +5,6 @@ unix = hr.NonhashedUnix()
 
 gcc = hr.HostPackage('gcc')
 
-#gcc = hr.NonhashedGCCStack()
 #ccache = hr.CCache(gcc=gcc, unix=unix)
 
 zlib = hr.ConfigureMakeInstall('zlib', '1.2.7',
@@ -27,7 +24,7 @@ hdf5 = hr.ConfigureMakeInstall('hdf5', '1.8.10',
                                configure_flags=['--with-szlib', '--with-pic'],
                                zlib=zlib, szip=szip, unix=unix, gcc=gcc)
 
-profile = hr.Profile([hdf5, szip, zlib])
+profile = hr.Profile([szip])
 
 hr.cli.stack_script_cli(profile)
 
