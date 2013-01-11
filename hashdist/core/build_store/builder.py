@@ -12,14 +12,14 @@ import json
 import errno
 import sys
 from textwrap import dedent
-import gzip
 
 from ..source_cache import scatter_files
 from .. import run_job
 from ..common import (InvalidBuildSpecError, BuildFailedError,
                       json_formatting_options, SHORT_ARTIFACT_ID_LEN,
                       working_directory)
-from ..fileutils import rmtree_up_to
+
+from ..fileutils import rmtree_up_to, gzip_compress
 
 from ...hdist_logging import DEBUG
 
@@ -96,14 +96,5 @@ class ArtifactBuilder(object):
                 raise BuildFailedError("%s: %s" % (exc_type.__name__, exc_value), build_dir), None, exc_tb
             finally:
                 logger.pop_stream()
-        compress(pjoin(build_dir, 'build.log'), pjoin(artifact_dir, 'build.log.gz'))
-
-def compress(source_filename, dest_filename):
-    chunk_size = 16 * 1024
-    with file(source_filename, 'rb') as src:
-        with gzip.open(dest_filename, 'wb') as dst:
-            while True:
-                chunk = src.read(chunk_size)
-                if not chunk: break
-                dst.write(chunk)
+        gzip_compress(pjoin(build_dir, 'build.log'), pjoin(artifact_dir, 'build.log.gz'))
 

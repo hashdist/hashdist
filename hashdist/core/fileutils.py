@@ -1,6 +1,7 @@
 import os
 import errno
 import shutil
+import gzip
 
 def silent_makedirs(path):
     """like os.makedirs, but does not raise error in the event that the directory already exists"""
@@ -41,3 +42,11 @@ def rmtree_up_to(path, parent, silent=False):
                 raise
             break
 
+def gzip_compress(source_filename, dest_filename):
+    chunk_size = 16 * 1024
+    with file(source_filename, 'rb') as src:
+        with gzip.open(dest_filename, 'wb') as dst:
+            while True:
+                chunk = src.read(chunk_size)
+                if not chunk: break
+                dst.write(chunk)
