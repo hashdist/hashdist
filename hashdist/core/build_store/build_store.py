@@ -218,10 +218,10 @@ class BuildStore(object):
                 break
             i += 1
             build_dir = '%s-%d' % (orig_build_dir, i)
-        self.logger.info('Created build dir: %s' % build_dir)
+        self.logger.debug('Created build dir: %s' % build_dir)
         return build_dir
         
     def remove_build_dir(self, build_dir):
-        self.logger.info('Removing build dir: %s' % build_dir)
+        self.logger.debug('Removing build dir: %s' % build_dir)
         shutil.rmtree(build_dir)
  
