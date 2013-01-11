@@ -158,6 +158,6 @@ class BuildWriteFiles(object):
 
     @staticmethod
     def run(ctx, args):
-        from ..core.build_store.builder import execute_files_dsl
+        from ..core.build_tools import execute_files_dsl
         doc = fetch_parameters_from_json(args.input, args.key)
         execute_files_dsl(doc, ctx.env)
