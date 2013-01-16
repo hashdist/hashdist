@@ -1,0 +1,81 @@
+=======================
+Distutils2 Contributors
+=======================
+
+The Distutils2 project was started by Tarek Ziadé and is currently
+maintained by Éric Araujo.  Many people have contributed to the project.
+
+distlib has started off using some of the code from distutil2.
+
+If you're making a patch, please add your name below in alphabetical order,
+and welcome into the Fellowship of the Packaging!
+
+Thanks to:
+
+- Rajiv Abraham
+- Ali Afshar
+- David Barnett
+- Pior Bastida
+- Anthony Baxter
+- Erik Bray
+- C. Titus Brown
+- Francisco Martín Brugué
+- Nicolas Cadou
+- Godefroid Chapelle
+- Julien Courteau
+- Christophe Combelles
+- Jason R. Coombs
+- Pierre-Yves David
+- Ned Deily
+- Konrad Delong
+- Josip Djolonga
+- John Edmonds
+- André Espaze
+- Boris Feld
+- Andrew Francis
+- Hallvard B Furuseth
+- Patrice Gauthier
+- Yannick Gingras
+- Filip Gruszczyński
+- Walker Hale IV
+- Alexandre Hamelin
+- Kelsey Hightower
+- Thomas Holmes
+- Preston Holmes
+- Christian Hudon
+- Julien Jehannet
+- Jeremy Kloth
+- Amos Latteier
+- Mathieu Leduc-Hamel
+- Pierre Paul Lefebvre
+- Tshepang Lekhonkhobe
+- Alain Leufroy
+- Janusz Lewandowski
+- Martin von Löwis
+- Hugo Lopes Tavares
+- Guillermo López-Anglada
+- Justin Love
+- Simon Mathieu
+- Carl Meyer
+- Alexis Métaireau
+- Julien Miotte
+- Zubin Mithra
+- Derek McTavish Mounce
+- Paul Moore
+- Michael Mulich
+- Louis Munro
+- Gaël Pasgrimaud
+- George Peristerakis
+- Mathieu Perreault
+- Guillaume Pratte
+- Sean Reifschneider
+- Antoine Reversat
+- Arc Riley
+- Elson Rodriguez
+- Luis Rojas
+- Erik Rose
+- Brian Rosner
+- Vinay Sajip
+- Victor Stinner
+- Alexandre Vassalotti
+- Nadeem Vawda

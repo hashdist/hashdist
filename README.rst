@@ -58,3 +58,8 @@ respective authors; the licenses are included in LICENSE.txt.
      * homepage:  https://bitbucket.org/xi/pyyaml/
      * additional patches: (see git log on hashdist/deps/yaml):
         * http://pyyaml.org/ticket/128
+ * distlib
+     * location: hashdist/deps/distlib
+     * version: commit 5e64fd139851
+     * authors: see distlib-CONTRIBUTORS.txt
+     * homepage: https://bitbucket.org/vinay.sajip/distlib
