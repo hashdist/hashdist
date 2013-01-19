@@ -50,8 +50,7 @@ Once downloaded, execute::
 
     $ hdist inithome
 
-This will set up ``~/.hdistconfig``, which by default points to
-``~/.hdist`` which is also created::
+This will set up ``~/.hdistconfig``, which by default configures hashdist to use storage in ``~/.hdist`` which is also created::
 
     $ ls ~/.hdist
     bld  opt  src
@@ -83,7 +82,7 @@ Example: Building HDF5 from sources
 We want to build HDF5 together with its two dependencies, szip and
 zlib.  We fetch one as a tarball and one using git::
 
-    $ hdist fetch http://zlib.net/zlib-1.2.6.tar.gz
+    $ hdist fetch http://sourceforge.net/projects/libpng/files/zlib/1.2.6/zlib-1.2.6.tar.gz
     <snip curl output>
     tar.gz:HtaA96RDXGi2QGcJuwiHQrVit67BpE0Llh6UzzCv-q8
 
@@ -111,8 +110,8 @@ the creation of a script ``mystack.py`` containing::
     gcc = hr.NonhashedGCCStack()
     
     zlib = hr.ConfigureMakeInstall('zlib', '1.2.6',
-                                   'http://zlib.net/zlib-1.2.6.tar.gz',
-                                   'tar.gz:HtaA96RDXGi2QGcJuwiHQrVit67BpE0Llh6UzzCv-q8',
+                                   'http://sourceforge.net/projects/libpng/files/zlib/1.2.6/zlib-1.2.6.tar.gz',
+                                   'tar.gz:ISNeCFUub+ugnqXo11CAWzORxi+4HHGiNcAETceophs',
                                    unix=unix, gcc=gcc)
     
     szip = hr.ConfigureMakeInstall('szip', '2.1',

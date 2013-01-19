@@ -90,7 +90,7 @@ def get_artifact_dependencies_env(build_store, virtuals, dependencies):
             libdirs = glob(pjoin(dep_dir, 'lib*'))
             if len(libdirs) == 1:
                 HDIST_LDFLAGS.append('-L' + libdirs[0])
-                HDIST_LDFLAGS.append('-Wl,-R,' + libdirs[0])
+                HDIST_LDFLAGS.append('-Wl,-rpath,' + libdirs[0])
             elif len(libdirs) > 1:
                 raise InvalidBuildSpecError('in_hdist_compiler_paths set for artifact %s with '
                                             'more than one library dir (%r)' % (dep_id, libdirs))
