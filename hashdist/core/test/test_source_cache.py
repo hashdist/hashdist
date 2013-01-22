@@ -40,9 +40,9 @@ def temp_source_cache():
 
 
 def setup():
-    global mock_git_repo, mock_git_commit
+    global mock_git_repo, mock_git_commit, mock_git_devel_branch_commit
     mock_git_repo = tempfile.mkdtemp()
-    mock_git_commit = make_mock_git_repo()
+    mock_git_commit, mock_git_devel_branch_commit = make_mock_git_repo()
     make_mock_archive()
         
 def teardown():
@@ -78,11 +78,16 @@ def make_mock_git_repo():
     with working_directory(mock_git_repo):
         repo = os.path.join(mock_git_repo, '.git')
         git('init', repo=repo)
-        cat('README', 'First revision',)
+        cat('README', 'First revision')
         git('add', 'README', repo=repo)
         git('commit', '-m', 'First revision', repo=repo)
-        commit = git('rev-list', '-n1', 'HEAD', repo=repo).strip()
-        return commit        
+        master_commit = git('rev-list', '-n1', 'HEAD', repo=repo).strip()
+        cat('README', 'Second revision')
+        git('checkout', '-b', 'devel', repo=repo)
+        git('add', 'README', repo=repo)
+        git('commit', '-m', 'Second revision', repo=repo)
+        devel_commit = git('rev-list', '-n1', 'HEAD', repo=repo).strip()
+        return master_commit, devel_commit
 
 #
 # Tests
@@ -117,6 +122,9 @@ def test_git_fetch_git():
         key = sc.fetch_git(mock_git_repo, 'master')
         assert key == 'git:%s' % mock_git_commit
 
+        devel_key = sc.fetch_git(mock_git_repo, 'devel')
+        assert devel_key == 'git:%s' % mock_git_devel_branch_commit
+
         with temp_dir() as d:
             sc.unpack(key, pjoin(d, 'foo'))
             with file(pjoin(d, 'foo', 'README')) as f:
@@ -124,8 +132,8 @@ def test_git_fetch_git():
 
 def test_git_fetch():
     with temp_source_cache() as sc:
-        sc.fetch(mock_git_repo, 'git:' + mock_git_commit)
-        sc.fetch('git://not-valid', 'git:' + mock_git_commit)
+        sc.fetch(mock_git_repo + ' master', 'git:' + mock_git_commit)
+        sc.fetch('git://not-valid' + ' master', 'git:' + mock_git_commit)
         sc.fetch(None, 'git:' + mock_git_commit)
 
 def test_unpack_nonexisting_git():
@@ -146,12 +154,6 @@ def test_able_to_fetch_twice():
         result = sc.fetch_git(mock_git_repo, 'master')
         assert result == 'git:%s' % mock_git_commit
         result = sc.fetch_git(mock_git_repo, 'master')
-        assert result == 'git:%s' % mock_git_commit
-    # with commit as rev
-    with temp_source_cache() as sc:
-        result = sc.fetch_git(mock_git_repo, mock_git_commit)
-        assert result == 'git:%s' % mock_git_commit
-        result = sc.fetch_git(mock_git_repo, mock_git_commit)
         assert result == 'git:%s' % mock_git_commit
 
 def test_hash_check():

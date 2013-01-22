@@ -381,9 +381,12 @@ class GitSourceCache(object):
         elif url is None:
             raise SourceNotFoundError('git:%s not present and repo url not provided' % commit)
         else:
-            self.fetch_git(url, None, commit)
+            if not url.count(' ') == 1:
+                raise ValueError('Please specify git repository as "git://repo/url branchname"')
+            repo, branch = url.split(' ')
+            self.fetch_git(repo, branch, commit)
 
-    def fetch_git(self, repository, rev=None, commit=None):
+    def fetch_git(self, repository, rev, commit=None):
         # It is important to resolve the rev remotely, we can't trust local
         # branch-names at all since we merge all projects encountered into the
         # same repo
@@ -391,7 +394,13 @@ class GitSourceCache(object):
             commit = self._resolve_remote_rev(repository, rev)
         # Fetch everything from the repository to us. (We don't pass rev here, but fetch
         # everything, because newer versions of git don't accept commits as revs...)
-        self.git_interactive('fetch', repository)
+        try:
+            self.git_interactive('fetch', repository, rev)
+        except subprocess.CalledProcessError:
+            if len(rev) == 40:
+                raise ValueError('The rev/branch name can not be a commit hash')
+            else:
+                raise
             
         # Assert that the commit is indeed present and is a commit hash and not a revspec
         retcode, out, err = self.git('rev-list', '-n1', '--quiet', commit)
