@@ -143,7 +143,7 @@ class Hasher(DocumentSerializer):
         if x is not None:
             self.update(x)
 
-    def raw_digest(self):
+    def digest(self):
         return self._wrapped.digest()
 
     def format_digest(self):
