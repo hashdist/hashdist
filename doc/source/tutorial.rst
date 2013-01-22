@@ -1,6 +1,13 @@
 Hashdist 0.1 tutorial
 ========================
 
+.. note::
+
+   Please access this tutorial through http://hashdist.readthedocs.org/en/stable/tutorial.html
+   to get the latest patches for the released version of Hashdist. The tutorial
+   below is part of the development branch and may be out of date w.r.t. either
+   the `stable` branch or the development `master` branch.
+
 Status
 ------
 
