@@ -408,6 +408,9 @@ class GitSourceCache(object):
         assert type == 'git'
         if strip != 0:
             raise NotImplementedError('unpacking with git does not support strip != 0')
+        retcode, out, err = self.git('rev-list', '-n1', '--quiet', hash)
+        if retcode != 0:
+            raise KeyNotFoundError('Source item not present: git:%s' % hash)
         archive_p = sh.git('archive', '--format=tar', hash, _env=self._git_env, _piped=True)
         unpack_p = sh.tar(archive_p, 'x', _cwd=target_path)
         unpack_p.wait()

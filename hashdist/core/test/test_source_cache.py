@@ -13,7 +13,7 @@ pjoin = os.path.join
 from nose.tools import assert_raises
 
 from ..source_cache import (ArchiveSourceCache, SourceCache, CorruptSourceCacheError,
-                            hdist_pack, hdist_unpack, scatter_files)
+                            hdist_pack, hdist_unpack, scatter_files, KeyNotFoundError)
 from ..hasher import Hasher, format_digest
 
 from .utils import temp_dir, working_directory, VERBOSE
@@ -128,6 +128,18 @@ def test_git_fetch():
         sc.fetch('git://not-valid', 'git:' + mock_git_commit)
         sc.fetch(None, 'git:' + mock_git_commit)
 
+def test_unpack_nonexisting_git():
+    with temp_source_cache() as sc:
+        with temp_dir() as d:
+            with assert_raises(KeyNotFoundError):
+                sc.unpack('git:267897bb6a35ad602943612ab61d252341fe27b2', pjoin(d, 'foo'))
+
+def test_unpack_nonexisting_tarball():
+    with temp_source_cache() as sc:
+        with temp_dir() as d:
+            with assert_raises(KeyNotFoundError):
+                sc.unpack('tar.gz:4niostz3iktlg67najtxuwwgss5vl6k4', pjoin(d, 'bar'))
+            
 def test_able_to_fetch_twice():
     # With 'master' rev
     with temp_source_cache() as sc:
