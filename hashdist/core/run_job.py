@@ -256,6 +256,9 @@ from ..hdist_logging import CRITICAL, ERROR, WARNING, INFO, DEBUG
 
 from .common import working_directory
 
+LOG_PIPE_BUFSIZE = 4096
+
+
 class InvalidJobSpecError(ValueError):
     pass
 
@@ -523,14 +526,12 @@ class ScriptExecution(object):
     def __init__(self, logger, cwd):
         self.logger = logger
         self.cwd = cwd
-        self.log_fifo_fds = {}
+        self.log_fifo_filenames = {}
         self.rpc_dir = tempfile.mkdtemp(prefix='hdist-sandbox-')
 
     def close(self):
-        """Terminates and removes log FIFOs; should always be called when one is done
+        """Removes log FIFOs; should always be called when one is done
         """
-        for fd in self.log_fifo_fds.values():
-            os.close(fd)
         shutil.rmtree(self.rpc_dir)
 
     def run(self, script, env):
@@ -684,24 +685,62 @@ class ScriptExecution(object):
             else:
                 raise
 
-        # Multiplex input from stdout, stderr, and any attached log
+        # Weave together input from stdout, stderr, and any attached log
         # pipes.  To avoid any deadlocks with unbuffered stderr
         # interlaced with use of log pipe etc. we avoid readline(), but
         # instead use os.open to read and handle line-assembly ourselves...
+
         stdout_fd, stderr_fd = proc.stdout.fileno(), proc.stderr.fileno()
-        fds = [stdout_fd, stderr_fd] + self.log_fifo_fds.values()
-        # map from fd to logger and level to use
-        loggers = {stdout_fd: (logger, DEBUG), stderr_fd: (logger, DEBUG)}
-        for (header, level), fd in self.log_fifo_fds.iteritems():
-            sublogger = logger.get_sub_logger(header)
-            loggers[fd] = (sublogger, level)
-
         poller = select.poll()
-        for fd in fds:
-            poller.register(fd, select.POLLIN)
+        poller.register(stdout_fd)
+        poller.register(stderr_fd)
 
-        buffers = dict((fd, '') for fd in fds)
-        BUFSIZE = 4096
+        # Set up { fd : (logger, level) }
+        loggers = {stdout_fd: (logger, DEBUG), stderr_fd: (logger, DEBUG)}
+        buffers = {stdout_fd: '', stderr_fd: ''}
+
+        # The FIFO pipes are a bit tricky as they need to the re-opened whenever
+        # any client closes. This also modified the loggers dict and fd_to_logpipe
+        # dict.
+
+        fd_to_logpipe = {} # stderr/stdout not re-opened
+        
+        def open_fifo(fifo_filename, logger, level):
+            # need to open in non-blocking mode to avoid waiting for printing client process
+            fd = os.open(fifo_filename, os.O_NONBLOCK|os.O_RDONLY)
+            # remove non-blocking after open to treat all streams uniformly in
+            # the reading code
+            fcntl.fcntl(fd, fcntl.F_SETFL, os.O_RDONLY)
+            loggers[fd] = (logger, level)
+            buffers[fd] = ''
+            fd_to_logpipe[fd] = fifo_filename
+            poller.register(fd)
+
+        def flush_buffer(fd):
+            buf = buffers[fd]
+            if buf:
+                # flush buffer in case last line not terminated by '\n'
+                sublogger, level = loggers[fd]
+                sublogger.log(level, buf)
+            del buffers[fd]
+
+        def close_fifo(fd):
+            flush_buffer(fd)
+            poller.unregister(fd)
+            os.close(fd)
+            del loggers[fd]
+            del fd_to_logpipe[fd]
+            
+        def reopen_fifo(fd):
+            fifo_filename = fd_to_logpipe[fd]
+            logger, level = loggers[fd]
+            close_fifo(fd)
+            open_fifo(fifo_filename, logger, level)
+
+        for (header, level), fifo_filename in self.log_fifo_filenames.items():
+            sublogger = logger.get_sub_logger(header)
+            open_fifo(fifo_filename, sublogger, level)
+            
         while True:
             # Python poll() doesn't return when SIGCHLD is received;
             # and there's the freak case where a process first
@@ -715,18 +754,22 @@ class ScriptExecution(object):
                 if proc.poll() is not None:
                     break # child terminated
             for fd, reason in events:
-                if reason & select.POLLHUP:
-                    poller.unregister(fd)
-
-                if reason & select.POLLIN:
+                if reason & select.POLLHUP and not (reason & select.POLLIN):
+                    # we want to continue receiving PULLHUP|POLLIN until all
+                    # is read
+                    if fd in fd_to_logpipe:
+                        reopen_fifo(fd)
+                    elif fd in (stdout_fd, stderr_fd):
+                        poller.unregister(fd)
+                elif reason & select.POLLIN:
                     if stdout_to is not None and fd == stdout_fd:
                         # Just forward
-                        buf = os.read(fd, BUFSIZE)
+                        buf = os.read(fd, LOG_PIPE_BUFSIZE)
                         stdout_to.write(buf)
                     else:
                         # append new bytes to what's already been read on this fd; and
                         # emit any completed lines
-                        new_bytes = os.read(fd, BUFSIZE)
+                        new_bytes = os.read(fd, LOG_PIPE_BUFSIZE)
                         assert new_bytes != '' # after all, we did poll
                         buffers[fd] += new_bytes
                         lines = buffers[fd].splitlines(True) # keepends=True
@@ -741,11 +784,11 @@ class ScriptExecution(object):
                             if line[-1] == '\n':
                                 line = line[:-1]
                             sublogger.log(level, line)
-        # deal with buffers not terminated by '\n'
-        for fd, buf in buffers.iteritems():
-            sublogger, level = loggers[fd]
-            if buf:
-                sublogger.log(level, buf)
+
+        flush_buffer(stderr_fd)
+        flush_buffer(stdout_fd)
+        for fd in fd_to_logpipe.keys():
+            close_fifo(fd)
 
         retcode = proc.wait()
         if retcode != 0:
@@ -764,14 +807,10 @@ class ScriptExecution(object):
 
     def create_log_pipe(self, sublogger_name, level_str):
         level = dict(CRITICAL=CRITICAL, ERROR=ERROR, WARNING=WARNING, INFO=INFO, DEBUG=DEBUG)[level_str]
-        fifo_name = pjoin(self.rpc_dir, "logpipe-%s-%s" % (sublogger_name, level_str))
-        fifo_file = self.log_fifo_fds.get((sublogger_name, level), None)
-        if fifo_file is None:
-            os.mkfifo(fifo_name, 0600)
-            fd = os.open(fifo_name, os.O_NONBLOCK|os.O_RDONLY)
-            # remove non-blocking after open to treat all streams uniformly in
-            # the multiplexer code
-            fcntl.fcntl(fd, fcntl.F_SETFL, os.O_RDONLY) 
-            self.log_fifo_fds[sublogger_name, level] = fd
-        sys.stdout.write(fifo_name)
+        fifo_filename = self.log_fifo_filenames.get((sublogger_name, level), None)
+        if fifo_filename is None:
+            fifo_filename = pjoin(self.rpc_dir, "logpipe-%s-%s" % (sublogger_name, level_str))
+            os.mkfifo(fifo_filename, 0600)
+            self.log_fifo_filenames[sublogger_name, level] = fifo_filename
+        sys.stdout.write(fifo_filename)
         

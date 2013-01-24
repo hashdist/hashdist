@@ -1,7 +1,9 @@
 import sys
+import os
 from os.path import join as pjoin
 from nose.tools import eq_, assert_raises
 from pprint import pprint
+from textwrap import dedent
 
 from .. import run_job
 from .test_build_store import fixture as build_store_fixture
@@ -88,6 +90,78 @@ def test_attach_log(tempdir, sc, build_store, cfg):
     run_job.run_job(logger, build_store, job_spec, {}, {}, tempdir, cfg)
     assert 'WARNING:mylog:hello from pipe' in logger.lines
 
+@build_store_fixture()
+def test_log_pipe_stress(tempdir, sc, build_store, cfg):
+    # Stress-test the log piping a bit, since the combination of Unix FIFO
+    # pipes and poll() is a bit tricky to get right.
+
+    # We want to launch many clients who each concurrently send many messages,
+    # then check that they all get through to the MemoryLogger(). We do this by
+    # writing out two Python scripts and executing them...
+    NJOBS = 5
+    NMSGS = 300 # must divide 2
+    
+    with open(pjoin(tempdir, 'client.py'), 'w') as f:
+        f.write(dedent('''\
+        import os, sys
+        msg = sys.argv[1] * (256 // 4) # less than PIPE_BUF, more than what we set BUFSIZE to
+        for i in range(int(sys.argv[2]) // 2):
+            with open(os.environ["LOG"], "a") as f:
+                f.write("%s\\n" % msg)
+                f.write("%s\\n" % msg)
+            # hit stdout too
+            sys.stdout.write("stdout:%s\\nstdout:%s\\n" % (sys.argv[1], sys.argv[1]))
+            sys.stdout.flush()
+            sys.stderr.write("stderr:%s\\nstderr:%s\\n" % (sys.argv[1], sys.argv[1]))
+            sys.stderr.flush()
+        '''))
+
+    with open(pjoin(tempdir, 'launcher.py'), 'w') as f:
+        f.write(dedent('''\
+        import sys
+        import subprocess
+        procs = [subprocess.Popen([sys.executable, sys.argv[1], '%4d' % i, sys.argv[3]]) for i in range(int(sys.argv[2]))]
+        for p in procs:
+            if not p.wait() == 0:
+                raise AssertionError("process failed: %d" % p.pid)
+        '''))
+
+    job_spec = {
+        "script": [
+            ["LOG=$(hdist", "logpipe", "mylog", "WARNING", ")"],
+            [sys.executable, pjoin(tempdir, 'launcher.py'), pjoin(tempdir, 'client.py'), str(NJOBS), str(NMSGS)],
+        ]}
+    logger = MemoryLogger()
+    old = run_job.LOG_PIPE_BUFSIZE
+    try:
+        run_job.LOG_PIPE_BUFSIZE = 50
+        run_job.run_job(logger, build_store, job_spec, {}, {}, tempdir, cfg)
+    finally:
+        run_job.LOG_PIPE_BUFSIZE = old
+
+    log_bins = [0] * NJOBS
+    stdout_bins = [0] * NJOBS
+    stderr_bins = [0] * NJOBS
+    for line in logger.lines:
+        parts = line.split(':')
+        if len(parts) != 3:
+            continue
+        level, log, msg = parts
+        if log == 'mylog':
+            assert level == 'WARNING'
+            assert msg == msg[:4] * (256 // 4)
+            idx = int(msg[:4])
+            log_bins[idx] += 1
+        elif log == 'stdout':
+            assert level == 'DEBUG'
+            stdout_bins[int(msg)] += 1
+        elif log == 'stderr':
+            assert level == 'DEBUG'
+            stderr_bins[int(msg)] += 1
+    assert all(x == NMSGS for x in log_bins)
+    assert all(x == NMSGS for x in stdout_bins)
+    assert all(x == NMSGS for x in stderr_bins)
+    
 @build_store_fixture()
 def test_notimplemented_redirection(tempdir, sc, build_store, cfg):
     job_spec = {
