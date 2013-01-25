@@ -133,6 +133,7 @@ def test_git_fetch_git():
 def test_git_fetch():
     with temp_source_cache() as sc:
         sc.fetch(mock_git_repo, 'git:' + mock_git_commit)
+        sc.fetch(mock_git_repo, 'git:' + mock_git_devel_branch_commit)
         sc.fetch('git://not-valid', 'git:' + mock_git_commit)
         sc.fetch(None, 'git:' + mock_git_commit)
 

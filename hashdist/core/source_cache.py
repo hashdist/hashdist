@@ -396,6 +396,11 @@ class GitSourceCache(object):
                 raise ValueError('Please specify git repository as "git://repo/url [branchname]"')
             self.fetch_git(repo, branch, commit)
 
+    def _has_commit(self, commit):
+        # Assert that the commit is indeed present and is a commit hash and not a revspec
+        retcode, out, err = self.git('rev-list', '-n1', '--quiet', commit)
+        return retcode == 0
+
     def fetch_git(self, repository, rev=None, commit=None):
         if commit is None and rev is None:
             raise ValueError('Either a commit or a branch/rev must be specified')
@@ -414,16 +419,13 @@ class GitSourceCache(object):
                 else:
                     raise
         else:
-            # when rev is None, simply fetch *all* the remote heads, and trust the
-            # wanted commit is fetched somewhere along the way
+            # when rev is None, fetch all the remote heads; seems like one must
+            # do a separate ls-remote...
             out = self.checked_git('ls-remote', '--heads', repository)
             heads = [line.split()[1] for line in out.splitlines() if line.strip()]
-            for head in heads:
-                self.git_interactive('fetch', repository, head)
+            self.git_interactive(*(['fetch', repository] + heads))
             
-        # Assert that the commit is indeed present and is a commit hash and not a revspec
-        retcode, out, err = self.git('rev-list', '-n1', '--quiet', commit)
-        if retcode != 0:
+        if not self._has_commit(commit):
             raise SourceNotFoundError('Repository "%s" did not contain commit "%s"' %
                                       (repository, commit))
 
