@@ -311,9 +311,9 @@ def run_job(logger, build_store, job_spec, env, virtuals, cwd, config):
     env.update(get_imports_env(build_store, virtuals, job_spec['import']))
     env['HDIST_VIRTUALS'] = pack_virtuals_envvar(virtuals)
     env['HDIST_CONFIG'] = json.dumps(config, separators=(',', ':'))
-    executor = ScriptExecution(logger, cwd)
+    executor = ScriptExecution(logger)
     try:
-        out_env = executor.run(job_spec['script'], env)
+        out_env = executor.run(job_spec['script'], env, cwd)
     finally:
         executor.close()
     return out_env
@@ -518,17 +518,13 @@ class ScriptExecution(object):
 
     logger : Logger
 
-    cwd : str
-        The working directory for the script (stays the same for all commands)
-
     rpc_dir : str
         A temporary directory on a local filesystem. Currently used for creating
         pipes with the "hdist logpipe" command.
     """
     
-    def __init__(self, logger, cwd):
+    def __init__(self, logger):
         self.logger = logger
-        self.cwd = cwd
         self.log_fifo_filenames = {}
         self.rpc_dir = tempfile.mkdtemp(prefix='hdist-sandbox-')
 
@@ -537,7 +533,7 @@ class ScriptExecution(object):
         """
         shutil.rmtree(self.rpc_dir)
 
-    def run(self, script, env):
+    def run(self, script, env, cwd):
         """Executes script, given as the 'script' part of the job spec.
 
         Parameters
@@ -547,6 +543,9 @@ class ScriptExecution(object):
 
         env : dict
             The starting process environment
+
+        cwd : str
+            Working directory
 
         Returns
         -------
@@ -562,7 +561,7 @@ class ScriptExecution(object):
                 if any(not isinstance(x, list) for x in script_line):
                     raise ValueError("mixing list and str at same level in script")
                 # sub-scope; recurse and discard the modified environment
-                self.run(script_line, env)
+                self.run(script_line, env, cwd)
             else:
                 cmd = script_line[0]
                 silent = cmd.startswith('@')
@@ -577,7 +576,7 @@ class ScriptExecution(object):
                     del args[-1]
                     cmd = substitute(cmd, env)
                     stdout = StringIO()
-                    self.run_command([cmd] + args, env, stdout_to=stdout, silent=silent)
+                    self.run_command([cmd] + args, env, cwd, stdout_to=stdout, silent=silent)
                     env[varname] = stdout.getvalue().strip()
                 elif '=' in cmd:
                     # VAR=value
@@ -592,7 +591,7 @@ class ScriptExecution(object):
                     
                     stdout_filename = substitute(stdout_filename, env)
                     if not os.path.isabs(stdout_filename):
-                        stdout_filename = pjoin(self.cwd, stdout_filename)
+                        stdout_filename = pjoin(cwd, stdout_filename)
                     stdout_filename = os.path.realpath(stdout_filename)
                     if stdout_filename.startswith(self.rpc_dir):
                         raise NotImplementedError("Cannot currently use stream re-direction to write to "
@@ -600,16 +599,21 @@ class ScriptExecution(object):
                                                   "sub-process is OK)")
                     stdout = file(stdout_filename, 'a')
                     try:
-                        self.run_command([cmd] + args, env, stdout_to=stdout, silent=silent)
+                        self.run_command([cmd] + args, env, cwd, stdout_to=stdout, silent=silent)
                     finally:
                         stdout.close()
+                elif cmd == 'cd':
+                    # cd command just affects cwd on this scope
+                    if len(args) != 1:
+                        raise ValueError("wrong number of arguments to cd")
+                    cwd = os.path.realpath(pjoin(cwd, args[0]))
                 else:
                     # program
                     cmd = substitute(cmd, env)
-                    self.run_command([cmd] + args, env, silent=silent)
+                    self.run_command([cmd] + args, env, cwd, silent=silent)
         return env
 
-    def run_command(self, command_lst, env, stdout_to=None, silent=False):
+    def run_command(self, command_lst, env, cwd, stdout_to=None, silent=False):
         """Runs a single command of the job script
 
         This mainly takes care of stream re-direction and special handling
@@ -635,7 +639,7 @@ class ScriptExecution(object):
         logger = self.logger
         logger.debug('running %r' % command_lst)
         if not silent:
-            logger.debug('cwd: ' + self.cwd)
+            logger.debug('cwd: ' + cwd)
             logger.debug('environment:')
             for line in pformat(env).splitlines():
                 logger.debug('  ' + line)
@@ -650,7 +654,7 @@ class ScriptExecution(object):
                     logger.level = WARNING
                 if stdout_to is not None:
                     sys.stdout = stdout_to
-                self.hdist_command(command_lst, env, logger)
+                self.hdist_command(command_lst, env, cwd, logger)
             except:
                 logger.error("hdist command failed; raising")
                 raise
@@ -659,12 +663,12 @@ class ScriptExecution(object):
                 sys.stdout = old_stdout
         else:
             try:
-                self.logged_check_call(command_lst, env, stdout_to)
+                self.logged_check_call(command_lst, env, cwd, stdout_to)
             except subprocess.CalledProcessError, e:
                 logger.error("command failed (code=%d); raising" % e.returncode)
                 raise
 
-    def logged_check_call(self, command_lst, env, stdout_to):
+    def logged_check_call(self, command_lst, env, cwd, stdout_to):
         """
         Similar to subprocess.check_call, but multiplexes input from stderr, stdout
         and any number of log FIFO pipes available to the called process into
@@ -673,7 +677,7 @@ class ScriptExecution(object):
         logger = self.logger
         try:
             proc = subprocess.Popen(command_lst,
-                                    cwd=self.cwd,
+                                    cwd=cwd,
                                     env=env,
                                     stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE,
@@ -684,7 +688,7 @@ class ScriptExecution(object):
                 # fix error message up a bit since the situation is so confusing
                 logger.error('command "%s" not found in PATH' % command_lst[0])
                 raise OSError(e.errno, 'command "%s" not found in PATH (cwd: "%s")' %
-                              (command_lst[0], self.cwd), self.cwd)
+                              (command_lst[0], cwd), cwd)
             else:
                 raise
 
@@ -797,7 +801,7 @@ class ScriptExecution(object):
         if retcode != 0:
             raise subprocess.CalledProcessError(retcode, command_lst)
 
-    def hdist_command(self, argv, env, logger):
+    def hdist_command(self, argv, env, cwd, logger):
         if len(argv) >= 2 and argv[1] == 'logpipe':
             if len(argv) != 4:
                 raise ValueError('wrong number of arguments to "hdist logpipe"')
@@ -805,7 +809,7 @@ class ScriptExecution(object):
             self.create_log_pipe(sublogger_name, level)
         else:
             from ..cli import main as cli_main
-            with working_directory(self.cwd):
+            with working_directory(cwd):
                 cli_main(argv, env, logger)
 
     def create_log_pipe(self, sublogger_name, level_str):
