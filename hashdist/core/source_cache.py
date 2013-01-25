@@ -100,6 +100,7 @@ import stat
 
 from ..deps import sh
 from .hasher import Hasher, format_digest, HashingReadStream, HashingWriteStream
+from .fileutils import silent_makedirs
 
 pjoin = os.path.join
 
@@ -137,10 +138,14 @@ class SourceCache(object):
     """
     """
 
-    def __init__(self, cache_path):
+    def __init__(self, cache_path, create_dirs=False):
         if not os.path.isdir(cache_path):
-            raise ValueError('"%s" is not an existing directory' % cache_path)
+            if create_dirs:
+                silent_makedirs(cache_path)
+            else:
+                raise ValueError('"%s" is not an existing directory' % cache_path)
         self.cache_path = os.path.realpath(cache_path)
+        
 
     def _ensure_subdir(self, name):
         path = pjoin(self.cache_path, name)
@@ -152,10 +157,10 @@ class SourceCache(object):
         os.mkdir(self.cache_path)
 
     @staticmethod
-    def create_from_config(config, logger):
+    def create_from_config(config, logger, create_dirs=False):
         """Creates a SourceCache from the settings in the configuration
         """
-        return SourceCache(config['sourcecache/sources'])
+        return SourceCache(config['sourcecache/sources'], create_dirs)
 
     def fetch_git(self, repository, rev):
         """Fetches source code from git repository

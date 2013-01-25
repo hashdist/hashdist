@@ -318,8 +318,8 @@ class BuildStore(object):
 
 
     def __init__(self, temp_build_dir, db_dir, artifact_root, artifact_path_pattern, logger,
-                 short_hash_len=SHORT_ARTIFACT_ID_LEN):
-        if not os.path.isdir(db_dir):
+                 create_dirs=False, short_hash_len=SHORT_ARTIFACT_ID_LEN):
+        if not os.path.isdir(db_dir) and not create_dirs:
             raise ValueError('"%s" is not an existing directory' % db_dir)
         if not '{shorthash}' in artifact_path_pattern:
             raise ValueError('artifact_path_pattern must contain at least "{shorthash}"')
@@ -329,6 +329,9 @@ class BuildStore(object):
         self.artifact_path_pattern = artifact_path_pattern
         self.logger = logger
         self.short_hash_len = short_hash_len
+        if create_dirs:
+            for d in [self.temp_build_dir, self.ba_db_dir, self.artifact_root]:
+                silent_makedirs(d)
 
     def delete_all(self):
         for dirpath, dirnames, filenames in os.walk(self.ba_db_dir):
@@ -356,14 +359,15 @@ class BuildStore(object):
             shutil.rmtree(pjoin(self.temp_build_dir, x))
 
     @staticmethod
-    def create_from_config(config, logger):
+    def create_from_config(config, logger, create_dirs=False):
         """Creates a SourceCache from the settings in the configuration
         """
         return BuildStore(config['builder/build-temp'],
                           config['global/db'],
                           config['builder/artifacts'],
                           config['builder/artifact-dir-pattern'],
-                          logger)
+                          logger,
+                          create_dirs)
 
     def _get_artifact_link(self, artifact_id):
         name, digest = artifact_id.split('/')
