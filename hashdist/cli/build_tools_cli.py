@@ -1,3 +1,4 @@
+import sys
 import os
 from os.path import join as pjoin
 import json
@@ -5,7 +6,7 @@ import json
 from .main import register_subcommand
 from .utils import fetch_parameters_from_json
 
-from ..core import SourceCache
+from ..core import SourceCache, BuildStore
 
 @register_subcommand
 class CreateLinks(object):
@@ -161,3 +162,25 @@ class BuildWriteFiles(object):
         from ..core.build_tools import execute_files_dsl
         doc = fetch_parameters_from_json(args.input, args.key)
         execute_files_dsl(doc, ctx.env)
+
+@register_subcommand
+class BuildWhitelist(object):
+    """
+    Prints a whitelist based on artifacts listed in the HDIST_IMPORTS environment
+    variable to standard output.
+    """
+    command = 'build-whitelist'
+
+    @staticmethod
+    def setup(ap):
+        pass
+
+    @staticmethod
+    def run(ctx, args):
+        from ..core.build_tools import build_whitelist, get_import_envvar
+        artifacts = get_import_envvar(ctx.env)
+        build_store = BuildStore.create_from_config(ctx.config, ctx.logger)
+        sys.stdout.write('%s\n' % pjoin(build_store.get_build_dir(), '**'))
+        sys.stdout.write('/tmp/**\n')
+        sys.stdout.write('/etc/**\n')
+        build_whitelist(build_store, artifacts, sys.stdout)

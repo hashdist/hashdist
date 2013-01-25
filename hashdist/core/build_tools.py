@@ -53,3 +53,14 @@ def execute_files_dsl(files, env):
             else:
                 json.dump(file_spec['object'], f, **json_formatting_options)
 
+def get_import_envvar(env):
+    return env['HDIST_IMPORT'].split()
+
+def build_whitelist(build_store, artifact_ids, stream):
+    for artifact_id in artifact_ids:
+        path = build_store.resolve(artifact_id)
+        if path is None:
+            raise Exception("Artifact %s not found" % artifact_id)
+        stream.write('%s\n' % pjoin(path, '**'))
+        #with open(pjoin(path, 'artifact.json')) as f:
+        #    doc = json.load(f)

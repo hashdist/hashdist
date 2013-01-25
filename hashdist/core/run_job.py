@@ -389,10 +389,12 @@ def get_imports_env(build_store, virtuals, imports):
     PATH = []
     HDIST_CFLAGS = []
     HDIST_LDFLAGS = []
+    HDIST_IMPORT = []
     
     for dep in imports:
         dep_ref = dep['ref']
         dep_id = dep['id']
+        HDIST_IMPORT.append(dep_id)
 
         # Resolutions of virtual imports should be provided by the user
         # at the time of build
@@ -410,7 +412,7 @@ def get_imports_env(build_store, virtuals, imports):
 
         if dep_ref is not None:
             env[dep_ref] = dep_dir
-            env['%s_id' % dep_ref] = dep_id
+            env['%s_ID' % dep_ref] = dep_id
 
         if dep['in_env']:
             bin_dir = pjoin(dep_dir, 'bin')
@@ -432,6 +434,7 @@ def get_imports_env(build_store, virtuals, imports):
     env['PATH'] = os.path.pathsep.join(PATH)
     env['HDIST_CFLAGS'] = ' '.join(HDIST_CFLAGS)
     env['HDIST_LDFLAGS'] = ' '.join(HDIST_LDFLAGS)
+    env['HDIST_IMPORT'] = ' '.join(HDIST_IMPORT)
     return env
     
 def pack_virtuals_envvar(virtuals):

@@ -333,6 +333,9 @@ class BuildStore(object):
             for d in [self.temp_build_dir, self.ba_db_dir, self.artifact_root]:
                 silent_makedirs(d)
 
+    def get_build_dir(self):
+        return self.temp_build_dir
+
     def delete_all(self):
         for dirpath, dirnames, filenames in os.walk(self.ba_db_dir):
             for link in filenames:
