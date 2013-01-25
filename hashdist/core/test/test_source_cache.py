@@ -132,8 +132,8 @@ def test_git_fetch_git():
 
 def test_git_fetch():
     with temp_source_cache() as sc:
-        sc.fetch(mock_git_repo + ' master', 'git:' + mock_git_commit)
-        sc.fetch('git://not-valid' + ' master', 'git:' + mock_git_commit)
+        sc.fetch(mock_git_repo, 'git:' + mock_git_commit)
+        sc.fetch('git://not-valid', 'git:' + mock_git_commit)
         sc.fetch(None, 'git:' + mock_git_commit)
 
 def test_unpack_nonexisting_git():
