@@ -56,14 +56,6 @@ from .build_store import shorten_artifact_id
 from .common import json_formatting_options
 from . import run_job
 
-def ensure_empty_existing_dir(d):
-    try:
-        os.makedirs(d)
-    except OSError, e:
-        if e.errno == errno.EEXIST:
-            if os.listdir(d) != []:
-                raise Exception('target directory %s not empty' % target_dir)
-
 def make_profile(logger, build_store, artifacts, target_dir, virtuals, cfg):
     """
 
@@ -79,8 +71,6 @@ def make_profile(logger, build_store, artifacts, target_dir, virtuals, cfg):
     target_dir : str
         Target directory, must be non-existing or entirely empty
     """
-    ensure_empty_existing_dir(target_dir)
-    
     # order artifacts
     artifacts = run_job.stable_topological_sort(artifacts)
 

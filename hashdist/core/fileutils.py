@@ -31,8 +31,18 @@ def rmtree_up_to(path, parent, silent=False):
     if not path.startswith(parent):
         raise ValueError('must have path.startswith(parent)')
     shutil.rmtree(path, ignore_errors=True)
+    path, child = os.path.split(path)
+    rmdir_empty_up_to(path, parent)
+
+def rmdir_empty_up_to(path, parent):
+    """Removes the directory `path` and any empty parent directories
+    up until and excluding parent.
+    """
+    if not os.path.isabs(path):
+        raise ValueError('only absolute paths supported')
+    if not path.startswith(parent):
+        raise valueError('must have part.startswith(parent)')
     while path != parent:
-        path, child = os.path.split(path)
         if path == parent:
             break
         try:
@@ -41,6 +51,7 @@ def rmtree_up_to(path, parent, silent=False):
             if e.errno != errno.ENOTEMPTY:
                 raise
             break
+        path, child = os.path.split(path)
 
 def gzip_compress(source_filename, dest_filename):
     chunk_size = 16 * 1024

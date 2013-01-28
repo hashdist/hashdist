@@ -77,13 +77,15 @@ def fixture(short_hash_len=SHORT_ARTIFACT_ID_LEN, dir_pattern='{name}/{shorthash
                 os.makedirs(pjoin(tempdir, 'db'))
 
                 config = {
-                    'sourcecache/sources': pjoin(tempdir, 'src')
+                    'sourcecache/sources': pjoin(tempdir, 'src'),
+                    'builder/artifacts': pjoin(tempdir, 'opt'),
+                    'builder/build-temp': pjoin(tempdir, 'bld'),
+                    'global/db': pjoin(tempdir, 'db'),
+                    'builder/artifact-dir-pattern': dir_pattern,
                     }
                 
-                sc = source_cache.SourceCache(pjoin(tempdir, 'src'))
-                bldr = build_store.BuildStore(pjoin(tempdir, 'bld'), pjoin(tempdir, 'db'),
-                                              pjoin(tempdir, 'opt'), dir_pattern, logger,
-                                              short_hash_len=short_hash_len)
+                sc = source_cache.SourceCache.create_from_config(config, logger)
+                bldr = build_store.BuildStore.create_from_config(config, logger)
                 return func(tempdir, sc, bldr, config)
             finally:
                 shutil.rmtree(tempdir)

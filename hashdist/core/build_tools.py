@@ -4,6 +4,9 @@ import json
 from string import Template
 
 from .common import json_formatting_options
+from .build_store import BuildStore
+from .profile import make_profile
+from .fileutils import rmdir_empty_up_to
 
 def execute_files_dsl(files, env):
     """
@@ -32,7 +35,6 @@ def execute_files_dsl(files, env):
             os.makedirs(dirname)
 
         if sum(['text' in file_spec, 'object' in file_spec]) != 1:
-            print file_spec
             raise ValueError('objects in files section must contain either "text" or "object"')
         if 'object' in file_spec and 'expandvars' in file_spec:
             raise NotImplementedError('"expandvars" only supported for "text" currently')
@@ -64,3 +66,31 @@ def build_whitelist(build_store, artifact_ids, stream):
         stream.write('%s\n' % pjoin(path, '**'))
         #with open(pjoin(path, 'artifact.json')) as f:
         #    doc = json.load(f)
+
+def recursive_list_files(dir):
+    result = set()
+    for root, dirs, files in os.walk(dir):
+        for fname in files:
+            result.add(pjoin(root, fname))
+    return result
+
+def push_build_profile(config, logger, virtuals, buildspec_filename, manifest_filename, target_dir):
+    files_before_profile = recursive_list_files(target_dir)
+    
+    with open(buildspec_filename) as f:
+        imports = json.load(f).get('build', {}).get('import', [])
+    build_store = BuildStore.create_from_config(config, logger)
+    make_profile(logger, build_store, imports, target_dir, virtuals, config)
+
+    files_after_profile = recursive_list_files(target_dir)
+    installed_files = files_after_profile.difference(files_before_profile)
+    with open(manifest_filename, 'w') as f:
+        json.dump({'installed-files': sorted(list(installed_files))}, f)
+
+def pop_build_profile(manifest_filename, root):
+    with open(manifest_filename) as f:
+        installed_files = json.load(f)['installed-files']
+    for fname in installed_files:
+        os.unlink(fname)
+        rmdir_empty_up_to(os.path.dirname(fname), root)
+
