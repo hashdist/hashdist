@@ -265,7 +265,7 @@ class InvalidJobSpecError(ValueError):
 class JobFailedError(RuntimeError):
     pass
 
-def run_job(logger, build_store, job_spec, env, virtuals, cwd, config):
+def run_job(logger, build_store, job_spec, override_env, virtuals, cwd, config):
     """Runs a job in a controlled environment, according to rules documented above.
 
     Parameters
@@ -279,9 +279,9 @@ def run_job(logger, build_store, job_spec, env, virtuals, cwd, config):
     job_spec : document
         See above
 
-    env : dict
-        Initial environment variables; entries from the job spec may
-        overwrite these.
+    override_env : dict
+        Extra environment variables not present in job_spec, these will be added
+        last and overwrite existing ones.
 
     virtuals : dict
         Maps virtual artifact to real artifact IDs.
@@ -305,10 +305,10 @@ def run_job(logger, build_store, job_spec, env, virtuals, cwd, config):
         discarded).
     """
     job_spec = canonicalize_job_spec(job_spec)
-    env = dict(env)
+    env = get_imports_env(build_store, virtuals, job_spec['import'])
     env.update(job_spec['env'])
     env.update(job_spec['env_nohash'])
-    env.update(get_imports_env(build_store, virtuals, job_spec['import']))
+    env.update(override_env)
     env['HDIST_VIRTUALS'] = pack_virtuals_envvar(virtuals)
     env['HDIST_CONFIG'] = json.dumps(config, separators=(',', ':'))
     executor = ScriptExecution(logger)
@@ -441,7 +441,10 @@ def pack_virtuals_envvar(virtuals):
     return ';'.join('%s=%s' % tup for tup in sorted(virtuals.items()))
 
 def unpack_virtuals_envvar(x):
-    return dict(tuple(tup.split('=')) for tup in x.split(';'))
+    if not x:
+        return {}
+    else:
+        return dict(tuple(tup.split('=')) for tup in x.split(';'))
 
 
 def stable_topological_sort(problem):
@@ -555,6 +558,8 @@ class ScriptExecution(object):
         """
         env = dict(env)
         for script_line in script:
+            if not isinstance(script_line, list):
+                raise TypeError("expected a list but got %r: %r" % (type(script_line), script_line))
             if len(script_line) == 0:
                 continue
             if isinstance(script_line[0], list):
