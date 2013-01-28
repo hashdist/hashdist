@@ -8,3 +8,4 @@ from .profile import make_profile
 from .hdist_recipe import hdist_cli_build_spec, HDIST_CLI_ARTIFACT_NAME, HDIST_CLI_ARTIFACT_VERSION
 from .cache import DiskCache, null_cache, cached_method
 from .run_job import InvalidJobSpecError, JobFailedError
+from .fileutils import atomic_symlink

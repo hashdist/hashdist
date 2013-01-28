@@ -10,7 +10,7 @@ import tempfile
 from ..hdist_logging import Logger, DEBUG, INFO
 
 from ..core import (load_configuration_from_inifile, SourceCache, DEFAULT_CONFIG_FILENAME,
-                    DiskCache, BuildStore)
+                    DiskCache, BuildStore, atomic_symlink)
 from .recipes import build_recipes
 
 __all__ = ['stack_script_cli']
@@ -67,14 +67,7 @@ def stack_script_cli(root_recipe):
         return
 
     if args.target:
-        # create-&-rename in order to force-create symlink
-        templink = args.target + '-temp-%d' % os.getpid()
-        os.symlink(artifact_dir, templink)
-        try:
-            os.rename(templink, args.target)
-        except:
-            os.unlink(templink)
-            raise
+        atomic_symlink(artifact_dir, args.target)
         logger.info('Created "%s" -> "%s"' % (args.target, artifact_dir))
     else:
         logger.info('Results in %s' % artifact_dir)

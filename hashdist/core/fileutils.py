@@ -50,3 +50,26 @@ def gzip_compress(source_filename, dest_filename):
                 chunk = src.read(chunk_size)
                 if not chunk: break
                 dst.write(chunk)
+
+def atomic_symlink(source, dest):
+    """Overwrites a destination symlink atomically without raising error
+    if target exists (by first creating link to `source`, then renaming it to `dest`)
+    """
+    # create-&-rename in order to force-create symlink
+    i = 0
+    while True:
+        try:
+            templink = dest + '-%d' % i
+            os.symlink(source, templink)
+        except OSError, e:
+            if e.errno == errno.EEXIST:
+                i += 1
+            else:
+                raise
+        else:
+            break
+    try:
+        os.rename(templink, dest)
+    except:
+        os.unlink(templink)
+        raise
