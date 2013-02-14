@@ -1,25 +1,30 @@
+import sys
 import os
 from os.path import join as pjoin
+import subprocess
 
 from nose.tools import eq_, ok_
 
 
 from ...core.test import utils
-from ...deps import sh
 
 from ...core.test.test_build_store import fixture
 
 
-oldpath = None
-
 def setup():
-    global oldpath
-    oldpath = os.environ['PATH']
-    bindir = os.path.realpath(pjoin(os.path.dirname(__file__), '..', '..', '..', 'bin'))
-    os.environ['PATH'] = bindir + os.pathsep + os.environ['PATH']
+    global hdist_script, projdir
+    projdir = os.path.realpath(pjoin(os.path.dirname(__file__), '..', '..', '..'))
+    hdist_script = pjoin(projdir, 'bin', 'hdist')
 
-def teardown():
-    os.environ['PATH'] = oldpath
+def hdist(*args, **kw):
+    env = dict(kw['env'])
+    env['PYTHONPATH'] = projdir
+    p = subprocess.Popen([sys.executable, hdist_script] + list(args), env=env,
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    r = p.communicate()
+    if p.wait() != 0:
+        assert False
+    return r
 
 def test_symlinks():
     with utils.temp_working_dir() as d:
@@ -36,7 +41,7 @@ def test_symlinks():
             ''')
         env = dict(os.environ)
         env['FOO'] = 'foo'
-        sh.hdist('create-links', '--key=section1/section2', 'build.json', _env=env)
+        hdist('create-links', '--key=section1/section2', 'build.json', env=env)
         assert os.path.realpath('foo') == '/bin/ls'
         assert os.path.realpath('bar/bin/ls') == '/bin/ls'
 
