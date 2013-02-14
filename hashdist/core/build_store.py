@@ -333,6 +333,17 @@ class BuildStore(object):
             for d in [self.temp_build_dir, self.ba_db_dir, self.artifact_root]:
                 silent_makedirs(d)
 
+    @staticmethod
+    def create_from_config(config, logger, **kw):
+        """Creates a SourceCache from the settings in the configuration
+        """
+        return BuildStore(config['builder/build-temp'],
+                          config['global/db'],
+                          config['builder/artifacts'],
+                          config['builder/artifact-dir-pattern'],
+                          logger,
+                          **kw)
+
     def get_build_dir(self):
         return self.temp_build_dir
 
@@ -360,17 +371,6 @@ class BuildStore(object):
 
         for x in os.listdir(self.temp_build_dir):
             shutil.rmtree(pjoin(self.temp_build_dir, x))
-
-    @staticmethod
-    def create_from_config(config, logger, create_dirs=False):
-        """Creates a SourceCache from the settings in the configuration
-        """
-        return BuildStore(config['builder/build-temp'],
-                          config['global/db'],
-                          config['builder/artifacts'],
-                          config['builder/artifact-dir-pattern'],
-                          logger,
-                          create_dirs)
 
     def _get_artifact_link(self, artifact_id):
         name, digest = artifact_id.split('/')

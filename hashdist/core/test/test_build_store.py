@@ -85,7 +85,8 @@ def fixture(short_hash_len=SHORT_ARTIFACT_ID_LEN, dir_pattern='{name}/{shorthash
                     }
                 
                 sc = source_cache.SourceCache.create_from_config(config, logger)
-                bldr = build_store.BuildStore.create_from_config(config, logger)
+                bldr = build_store.BuildStore.create_from_config(config, logger,
+                                                                 short_hash_len=short_hash_len)
                 return func(tempdir, sc, bldr, config)
             finally:
                 shutil.rmtree(tempdir)

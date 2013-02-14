@@ -43,14 +43,16 @@ def test_run_job_environment(tempdir, sc, build_store, cfg):
                               tempdir, cfg)
     assert 'HDIST_CONFIG' in ret_env
     del ret_env['HDIST_CONFIG']
-    assert ret_env == {
+    expected = {
         'PATH': '',
         'HDIST_LDFLAGS': '',
         'HDIST_CFLAGS': '',
+        'HDIST_IMPORT': '',
         'HDIST_VIRTUALS': 'virtual:bash=bash/ljnq7g35h6h4qtb456h5r35ku3dq25nl',
         'BAR': '$bar',
         'FOO': 'foo',
         'BAZ': 'BAZ'}
+    eq_(expected, ret_env)
     lines = filter_out(logger.lines)
     eq_(["FOO='foo'", "BAR='foox'", "HI='hi'", "FOO='foo'", "BAR='$bar'", 'HI=None', "PATH=''"],
         lines)
