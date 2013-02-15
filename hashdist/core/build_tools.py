@@ -94,3 +94,49 @@ def pop_build_profile(manifest_filename, root):
         os.unlink(fname)
         rmdir_empty_up_to(os.path.dirname(fname), root)
 
+
+#
+# Tools to use on individual files for postprocessing
+#
+
+def postprocess_launcher_shebangs(filename, launcher_program):
+    if not os.path.isfile(filename):
+        return
+    
+    mode = os.stat(filename).st_mode
+    if mode | 0o111:
+        with open(filename) as f:
+            is_script = (f.read(2) == '#!')
+            if is_script:
+                script_no_hashexclam = f.read()
+
+    if is_script:
+        script_filename = filename + '.real'
+        dirname = os.path.dirname(filename)
+        rel_launcher = os.path.relpath(launcher_program, dirname)
+        # Set up:
+        #   thescript      # symlink to ../../path/to/launcher
+        #   thescript.real # non-executable script with modified shebang
+        lines = script_no_hashexclam.splitlines(True) # keepends=True
+        cmd = lines[0].split()
+        interpreters = '${PROFILE_BIN_DIR}/%s:${ORIGIN}/%s' % (
+            os.path.basename(cmd[0]), os.path.relpath(cmd[0], dirname))
+        cmd[0] = interpreters
+        lines[0] = '#!%s\n' % ' '.join(cmd)
+        with open(script_filename, 'w') as f:
+            f.write(''.join(lines))
+        write_protect(script_filename)
+        os.unlink(filename)
+        os.symlink(rel_launcher, filename)
+
+def write_protect(filename):
+    """
+    Write protect files. Leave directories alone because the inability
+    to rm -rf is very annoying.
+    """
+    if not os.path.isfile(filename):
+        return
+    
+    mode = os.stat(filename).st_mode
+    os.chmod(filename, mode & ~0o222)
+

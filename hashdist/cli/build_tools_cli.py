@@ -2,6 +2,7 @@ import sys
 import os
 from os.path import join as pjoin
 import json
+from functools import partial
 
 from .main import register_subcommand
 from .utils import fetch_parameters_from_json
@@ -216,3 +217,62 @@ class BuildProfile(object):
             pop_build_profile(manifest, ctx.env['ARTIFACT'])
         else:
             assert False
+
+@register_subcommand
+class BuildPostprocess(object):
+    """
+    Walks through build artifact directories to perform the actions
+    given by flags (to be used after the build process).
+
+    --launcher-shebangs:
+
+        All scripts (executables starting with #!)  are re-wired so
+        that launching will happen using the Hashdist 'launcher' tool,
+        and a relative shebang will be used. Looks for the path to the
+        'launcher' artifact in the LAUNCHER environment variable.
+
+    --write-protect:
+
+        Remove all 'w' mode bits.
+    """
+    command = 'build-postprocess'
+
+    @staticmethod
+    def setup(ap):
+        ap.add_argument('--launcher-shebangs', action='store_true')
+        ap.add_argument('--write-protect', action='store_true')
+
+    @staticmethod
+    def run(ctx, args):
+        from ..core import build_tools
+        handlers = []
+        
+        if args.launcher_shebangs:
+            try:
+                launcher = pjoin(ctx.env['LAUNCHER'], 'bin', 'launcher')
+            except KeyError:
+                ctx.logger.error('LAUNCHER environment variable not set')
+                raise
+            if not os.path.exists(launcher):
+                ctx.logger.error('%s does not exist' % launcher)
+                raise Exception("%s does not exist" % launcher)
+            handlers.append(partial(build_tools.postprocess_launcher_shebangs,
+                                    launcher_program=launcher))
+
+        if args.write_protect:
+            handlers.append(build_tools.write_protect)
+
+        try:
+            artifact = ctx.env['ARTIFACT']
+        except KeyError:
+            ctx.logger.error('ARTIFACT environment variable not set')
+            raise
+
+        # we traverse post-order so that write-protection of
+        # directories happens very last.  (Although, currently only
+        # files are write-protected so that rm -rf works.)
+        for dirpath, dirnames, filenames in os.walk(artifact, topdown=False):
+            for filename in filenames + [dirpath]:
+                for handler in handlers:
+                    handler(pjoin(dirpath, filename))
+        
