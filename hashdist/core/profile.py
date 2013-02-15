@@ -88,6 +88,11 @@ def make_profile(logger, build_store, artifacts, target_dir, virtuals, cfg):
         json.dump(doc, f, **json_formatting_options)
         f.write('\n')
 
+    # touch bin/is-profile
+    if os.path.exists(pjoin(target_dir, 'bin')):
+        with file(pjoin(target_dir, 'bin', 'is-profile'), 'w') as f:
+            pass
+
 def install_artifact_into_profile(logger, build_store, artifact_id, target_dir, virtuals, cfg):
     target_dir = os.path.abspath(target_dir)
     artifact_dir = build_store.resolve(artifact_id)
