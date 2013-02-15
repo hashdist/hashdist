@@ -11,9 +11,9 @@ from os.path import join as pjoin
 
 from glob import glob
 
-def glob_files(pattern, cwd=''):
+def ant_iglob(pattern, cwd='', include_dirs=True):
     """
-    Generator that iterates over files matching the pattern.
+    Generator that iterates over files/directories matching the pattern.
 
     The syntax is ant-glob-inspired but currently only a small subset
     is implemented.
@@ -48,8 +48,17 @@ def glob_files(pattern, cwd=''):
         the former will emit 'rel/path/to/file' while the latter './rel/path/to/file'.
         (This added complexity is present in order to be able to reliably match
         prefixes by string value).
+
+    include_dirs : bool
+        Whether to include directories, or only glob files.
     
     """
+    def should_include(fname):
+        if include_dirs:
+            return True
+        else:
+            return os.path.isfile(fname)
+        
     if isinstance(pattern, (str, unicode)):
         if pattern.startswith('/'):
             pattern = pattern[1:]
@@ -82,7 +91,7 @@ def glob_files(pattern, cwd=''):
                 else:
                     assert dirpath[:2] == './'
                     dirpath = dirpath[2:]
-            for x in glob_files(parts[1:], dirpath):
+            for x in ant_iglob(parts[1:], dirpath, include_dirs):
                 yield x
     elif '**' in part:
         raise NotImplementedError('mixing ** and other strings in same path component not supported')
@@ -94,12 +103,12 @@ def glob_files(pattern, cwd=''):
         if is_last:
             for name in os.listdir(cwd):
                 path = pjoin(ret_cwd, name)
-                if part_re.match(name) and os.path.isfile(path):
+                if part_re.match(name) and should_include(path):
                     yield path
         else:
             for name in os.listdir(cwd):
                 path = pjoin(ret_cwd, name)
                 if part_re.match(name) and os.path.isdir(path):
-                    for x in glob_files(parts[1:], path):
+                    for x in ant_iglob(parts[1:], path, include_dirs):
                         yield x
         

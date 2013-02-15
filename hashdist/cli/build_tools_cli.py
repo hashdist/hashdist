@@ -38,6 +38,9 @@ class CreateLinks(object):
 
     See :mod:`hashdist.core.links` for more information on the rules
     one can use.
+
+    If the 'launcher' action is used, then the 'LAUNCHER' environment
+    variable should be set; the launcher will be found in $LAUNCHER/bin/launcher.
     """
 
     command = 'create-links'
@@ -50,9 +53,11 @@ class CreateLinks(object):
     @staticmethod
     def run(ctx, args):
         from ..core.links import execute_links_dsl
-        
+
+        launcher_prefix = ctx.env.get('LAUNCHER', None)
+        launcher = None if launcher_prefix is None else pjoin(launcher_prefix, 'bin', 'launcher')
         doc = fetch_parameters_from_json(args.input, args.key)
-        execute_links_dsl(doc, ctx.env, logger=ctx.logger)
+        execute_links_dsl(doc, ctx.env, launcher, logger=ctx.logger)
 
 @register_subcommand
 class BuildUnpackSources(object):

@@ -3,6 +3,29 @@ import errno
 import shutil
 import gzip
 
+def silent_copy(src, dst):
+    try:
+        shutil.copy(src, dst)
+    except OSError, e:
+        if e.errno != errno.EEXIST:
+            raise
+
+def silent_relative_symlink(src, dst):
+    dstdir = os.path.dirname(dst)
+    rel_src = os.path.relpath(src, dstdir)
+    try:
+        os.symlink(rel_src, dst)
+    except OSError, e:
+        if e.errno != errno.EEXIST:
+            raise
+
+def silent_absolute_symlink(src, dst):
+    try:
+        os.symlink(os.path.abspath(src), dst)
+    except OSError, e:
+        if e.errno != errno.EEXIST:
+            raise
+
 def silent_makedirs(path):
     """like os.makedirs, but does not raise error in the event that the directory already exists"""
     try:
