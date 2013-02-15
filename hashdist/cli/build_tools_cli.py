@@ -265,7 +265,7 @@ class BuildPostprocess(object):
                                     launcher_program=launcher))
 
         if args.write_protect:
-            handlers.append(build_tools.write_protect)
+            handlers.append(build_tools.postprocess_write_protect)
 
         try:
             artifact = ctx.env['ARTIFACT']

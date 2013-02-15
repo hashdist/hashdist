@@ -193,7 +193,7 @@ from .hasher import Hasher
 from .common import (InvalidBuildSpecError, BuildFailedError,
                      json_formatting_options, SHORT_ARTIFACT_ID_LEN,
                      working_directory)
-from .fileutils import silent_unlink, rmtree_up_to, silent_makedirs, gzip_compress
+from .fileutils import silent_unlink, rmtree_up_to, silent_makedirs, gzip_compress, write_protect
 from . import run_job
 
 
@@ -538,9 +538,11 @@ class ArtifactBuilder(object):
         return artifact_dir
 
     def serialize_build_spec(self, d):
-        with file(pjoin(d, 'build.json'), 'w') as f:
+        fname = pjoin(d, 'build.json')
+        with file(fname, 'w') as f:
             json.dump(self.build_spec.doc, f, **json_formatting_options)
             f.write('\n')
+        write_protect(fname)
 
     def run_build_commands(self, build_dir, artifact_dir, env, config):
         artifact_display_name = self.build_spec.digest[:SHORT_ARTIFACT_ID_LEN] + '..'
@@ -568,5 +570,7 @@ class ArtifactBuilder(object):
                 raise BuildFailedError("%s: %s" % (exc_type.__name__, exc_value), build_dir), None, exc_tb
             finally:
                 logger.pop_stream()
-        gzip_compress(pjoin(build_dir, 'build.log'), pjoin(artifact_dir, 'build.log.gz'))
+        log_gz_filename = pjoin(artifact_dir, 'build.log.gz')
+        gzip_compress(pjoin(build_dir, 'build.log'), log_gz_filename)
+        write_protect(log_gz_filename)
 

@@ -107,3 +107,7 @@ def atomic_symlink(source, dest):
     except:
         os.unlink(templink)
         raise
+
+def write_protect(filename):
+    mode = os.stat(filename).st_mode
+    os.chmod(filename, mode & ~0o222)

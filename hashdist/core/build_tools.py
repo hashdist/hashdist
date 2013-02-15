@@ -6,7 +6,7 @@ from string import Template
 from .common import json_formatting_options
 from .build_store import BuildStore
 from .profile import make_profile
-from .fileutils import rmdir_empty_up_to
+from .fileutils import rmdir_empty_up_to, write_protect
 
 def execute_files_dsl(files, env):
     """
@@ -129,14 +129,11 @@ def postprocess_launcher_shebangs(filename, launcher_program):
         os.unlink(filename)
         os.symlink(rel_launcher, filename)
 
-def write_protect(filename):
+def postprocess_write_protect(filename):
     """
     Write protect files. Leave directories alone because the inability
     to rm -rf is very annoying.
     """
     if not os.path.isfile(filename):
         return
-    
-    mode = os.stat(filename).st_mode
-    os.chmod(filename, mode & ~0o222)
-
+    write_protect(filename)
