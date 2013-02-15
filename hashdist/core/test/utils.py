@@ -41,6 +41,11 @@ def working_directory(path):
 
 def eqsorted_(a, b):
     eq_(sorted(a), sorted(b))
+
+def cat(filename):
+    with open(filename) as f:
+        return f.read()
+
 #
 # Logger to use during unit-testing
 #

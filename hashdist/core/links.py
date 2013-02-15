@@ -31,7 +31,7 @@ more easily with the `force` flag)::
 Rules are applied in order.
 
 **action**:
-  One of "symlink", "copy", "exclude". Other types may be added
+  One of "symlink", "copy", "exclude", "launcher". Other types may be added
   later.
 
 **select**, **prefix**:
@@ -59,6 +59,7 @@ Rules are applied in order.
 
 """
 
+import sys
 import os
 from os.path import join as pjoin
 import shutil
@@ -74,7 +75,18 @@ from .ant_glob import glob_files
 def expandtemplate(s, env):
     return Template(s).substitute(env)
 
-_ACTIONS = {'symlink': os.symlink, 'copy': shutil.copyfile}
+def make_launcher(src, dst, launcher_program):
+    dstdir = os.path.dirname(dst)
+    dst_launcher = pjoin(dstdir, 'launcher')
+    if not os.path.exists(dst_launcher):
+        shutil.copyfile(launcher_program, dst_launcher)
+    with open(dst + '.link', 'w') as f:
+        f.write(os.path.relpath(src, dstdir))
+    os.symlink('launcher', dst)
+    
+        
+
+_ACTIONS = {'symlink': os.symlink, 'copy': shutil.copyfile, 'launcher': make_launcher}
 
 def _put_actions(makedirs_cache, action_name, force, source, dest, actions):
     path, basename = os.path.split(dest)
@@ -171,7 +183,7 @@ def dry_run_links_dsl(rules, env={}):
     return actions
 
 
-def execute_links_dsl(rules, env={}, logger=null_logger):
+def execute_links_dsl(rules, env={}, launcher_program=None, logger=null_logger):
     """Executes the links DSL for linking/copying files
     
     The input is a set of rules which will be applied in order. The
@@ -186,16 +198,25 @@ def execute_links_dsl(rules, env={}, logger=null_logger):
     env : dict
         Environment to use for variable substitution.
 
+    launcher_program : str or None
+        If the 'launcher' action is used, the path to the launcher executable
+        must be provided.
+
     logger : Logger
+
     """
     for action in dry_run_links_dsl(rules, env):
         action_desc = "%s%r" % (action[0].__name__, action[1:])
         try:
-            action[0](*action[1:])
+            if action[0] is make_launcher:
+                make_launcher(*action[1:], launcher_program=launcher_program)
+            else:
+                action[0](*action[1:])
             logger.debug(action_desc)
         except OSError, e:
             # improve error message to include operation attempted
             msg = str(e) + " in " + action_desc
             logger.error(msg)
-            raise OSError(e.errno, msg)
+            exc_type, exc_val, exc_tb = sys.exc_info()
+            raise OSError, OSError(e.errno, msg), exc_tb
 

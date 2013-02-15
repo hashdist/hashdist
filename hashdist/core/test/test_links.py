@@ -7,7 +7,7 @@ import shutil
 
 from nose.tools import assert_raises
 
-from .utils import temp_working_dir, temp_dir, working_directory, eqsorted_
+from .utils import temp_working_dir, temp_dir, working_directory, eqsorted_, cat
 from .test_ant_glob import makefiles
 
 from .. import links
@@ -120,3 +120,16 @@ def test_force():
         shutil.rmtree('foo')
         links.execute_links_dsl(rules, env)
         
+def test_launcher():
+    # we just use the /bin/cp program as a mock and check that the structure is correct
+    rules = [dict(action='launcher', select=['a', 'b'], target='foo', prefix='')]
+    with temp_working_dir() as d:
+        makefiles(['a', 'b'])
+        links.execute_links_dsl(rules, {}, launcher_program='/bin/cp')
+        os.chdir('foo')
+        assert os.path.exists('launcher')
+        assert os.stat('launcher').st_mode | 0o111
+        assert os.readlink('a') == 'launcher'
+        assert os.readlink('b') == 'launcher'
+        assert cat('a.link') == '../a'
+        assert cat('b.link') == '../b'

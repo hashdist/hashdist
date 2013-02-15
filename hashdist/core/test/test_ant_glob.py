@@ -10,7 +10,7 @@ def makefiles(lst):
     for x in lst:
         x = x.strip()
         dirname, basename = os.path.split(x)
-        if not os.path.exists(dirname):
+        if dirname != '' and not os.path.exists(dirname):
             os.makedirs(dirname)
         with file(x, 'w') as f:
             pass
