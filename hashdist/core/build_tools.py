@@ -42,9 +42,9 @@ def execute_files_dsl(files, env):
         # IIUC in Python 3.3+ one can do exclusive creation with the 'x'
         # file mode, but need to do it ourselves currently
         if file_spec.get('executable', False):
-            mode = 0o700
+            mode = 0o755
         else:
-            mode = 0o600
+            mode = 0o644
         fd = os.open(pjoin(dirname, basename), os.O_EXCL | os.O_CREAT | os.O_WRONLY, mode)
         with os.fdopen(fd, 'w') as f:
             if 'text' in file_spec:
