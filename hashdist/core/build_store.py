@@ -166,14 +166,6 @@ explicit error.
 Reference
 ---------
 
-.. automodule:: hashdist.core.build_store.build_store
-    :members:
-
-.. automodule:: hashdist.core.build_store.build_spec
-    :members:
-
-.. automodule:: hashdist.core.build_store.builder
-    :members:
 
 
 """
