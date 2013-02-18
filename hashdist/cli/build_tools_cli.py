@@ -226,8 +226,9 @@ class BuildProfile(object):
 @register_subcommand
 class BuildPostprocess(object):
     """
-    Walks through build artifact directories to perform the actions
-    given by flags (to be used after the build process).
+    Walks through directories to perform the actions given by flags
+    (to be used after the build process). Default pat is the one
+    given by ``$ARTIFACT``.
 
     --shebang=$technique:
 
@@ -245,6 +246,7 @@ class BuildPostprocess(object):
     --write-protect:
 
         Remove all 'w' mode bits.
+
     """
     command = 'build-postprocess'
 
@@ -252,6 +254,9 @@ class BuildPostprocess(object):
     def setup(ap):
         ap.add_argument('--shebang', choices=['multiline', 'launcher', 'none'], default='none')
         ap.add_argument('--write-protect', action='store_true')
+        ap.add_argument('--pyc', action='store_true')
+        ap.add_argument('path', nargs='?', help='dir/file to post-process (dirs are handled '
+                        'recursively)')
 
     @staticmethod
     def run(ctx, args):
@@ -275,17 +280,22 @@ class BuildPostprocess(object):
         if args.write_protect:
             handlers.append(build_tools.postprocess_write_protect)
 
-        try:
-            artifact = ctx.env['ARTIFACT']
-        except KeyError:
-            ctx.logger.error('ARTIFACT environment variable not set')
-            raise
+        if args.path is None:
+            try:
+                args.path = ctx.env['ARTIFACT']
+            except KeyError:
+                ctx.logger.error('path not given and ARTIFACT environment variable not set')
+                raise
 
         # we traverse post-order so that write-protection of
         # directories happens very last.  (Although, currently only
         # files are write-protected so that rm -rf works.)
-        for dirpath, dirnames, filenames in os.walk(artifact, topdown=False):
-            for filename in filenames + [dirpath]:
-                for handler in handlers:
-                    handler(pjoin(dirpath, filename))
+        if os.path.isfile(args.path):
+            for handler in handlers:
+                handler(args.path)
+        else:
+            for dirpath, dirnames, filenames in os.walk(args.path, topdown=False):
+                for filename in filenames + [dirpath]:
+                    for handler in handlers:
+                        handler(pjoin(dirpath, filename))
         

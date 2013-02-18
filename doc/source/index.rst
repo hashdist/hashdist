@@ -43,9 +43,11 @@ User's guide
 
    tutorial
    faq
+   building
 
-Power-user's reference
+Hashdist API reference
 ----------------------
+
 
 Important concepts
 ''''''''''''''''''
@@ -67,15 +69,4 @@ Support code
    core/hasher
    core/links
    core/ant_glob
-
-Other
-'''''
-
-.. toctree::
-   :maxdepth: 1
-
-   mess
-
-
-
 
