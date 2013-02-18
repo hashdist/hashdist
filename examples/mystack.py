@@ -18,13 +18,13 @@ szip = hr.ConfigureMakeInstall('szip', '2.1',
                                configure_flags=['--with-pic'],
                                unix=unix, gcc=gcc)
 
-hdf5 = hr.ConfigureMakeInstall('hdf5', '1.8.10',
-                               'http://www.hdfgroup.org/ftp/HDF5/current/src/hdf5-1.8.10.tar.bz2',
-                               'tar.bz2:7jxgwn5xs5xnvsdaomvypridodr35or2',
+hdf5 = hr.ConfigureMakeInstall('hdf5', '1.8.10p1',
+                               'http://www.hdfgroup.org/ftp/HDF5/current/src/hdf5-1.8.10-patch1.tar.bz2',
+                               'tar.bz2:fevpwnqvvwpgr5gv2ghlwepeu47sv3hd',
                                configure_flags=['--with-szlib', '--with-pic'],
                                zlib=zlib, szip=szip, unix=unix, gcc=gcc)
 
-profile = hr.Profile([szip])
+profile = hr.Profile([zlib])
 
 hr.cli.stack_script_cli(profile)
 
