@@ -54,6 +54,7 @@ import json
 
 from .build_store import shorten_artifact_id
 from .common import json_formatting_options
+from .fileutils import write_protect, touch
 from . import run_job
 
 def make_profile(logger, build_store, artifacts, target_dir, virtuals, cfg):
@@ -84,14 +85,16 @@ def make_profile(logger, build_store, artifacts, target_dir, virtuals, cfg):
 
     # make profile.json
     doc = {'artifacts': artifacts}
-    with file(pjoin(target_dir, 'profile.json'), 'w') as f:
+    profile_json = pjoin(target_dir, 'profile.json')
+    with open(profile_json, 'w') as f:
         json.dump(doc, f, **json_formatting_options)
         f.write('\n')
+    write_protect(profile_json)
 
-    # touch bin/is-profile
+    # marker file for use by launcher
     if os.path.exists(pjoin(target_dir, 'bin')):
-        with file(pjoin(target_dir, 'bin', 'is-profile'), 'w') as f:
-            pass
+        touch(pjoin(target_dir, 'bin', 'is-profile-bin'), readonly=True)
+
 
 def install_artifact_into_profile(logger, build_store, artifact_id, target_dir, virtuals, cfg):
     target_dir = os.path.abspath(target_dir)

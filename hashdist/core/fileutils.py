@@ -111,3 +111,10 @@ def atomic_symlink(source, dest):
 def write_protect(filename):
     mode = os.stat(filename).st_mode
     os.chmod(filename, mode & ~0o222)
+
+def touch(filename, readonly=False):
+    with open(filename, 'w') as f:
+        pass
+    if readonly:
+        write_protect(filename)
+

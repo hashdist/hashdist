@@ -46,6 +46,13 @@ def cat(filename):
     with open(filename) as f:
         return f.read()
 
+def temp_working_dir_fixture(func):
+    @functools.wraps(func)
+    def replacement():
+        with temp_working_dir() as d:
+            func(d)
+    return replacement
+
 #
 # Logger to use during unit-testing
 #

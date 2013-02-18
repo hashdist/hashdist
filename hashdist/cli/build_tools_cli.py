@@ -229,12 +229,18 @@ class BuildPostprocess(object):
     Walks through build artifact directories to perform the actions
     given by flags (to be used after the build process).
 
-    --launcher-shebangs:
+    --shebang=$technique:
 
-        All scripts (executables starting with #!)  are re-wired so
-        that launching will happen using the Hashdist 'launcher' tool,
-        and a relative shebang will be used. Looks for the path to the
-        'launcher' artifact in the LAUNCHER environment variable.
+        All scripts (executables starting with #!) are re-wired to
+        a) if within a profile, launch the interpreter of the profile,
+        b) if not in a profile, launch the interpreter using a relative
+        path instead of absolute one to make the artifact relocateable.
+
+        The technique used depends on the value; multiline will use a
+        polyglot script fragment to insert a 'multi-line shebang',
+        while 'launcher' will use the Hashdist 'launcher' tool. The
+        latter looks for the path to the 'launcher' artifact in the
+        LAUNCHER environment variable.
 
     --write-protect:
 
@@ -244,7 +250,7 @@ class BuildPostprocess(object):
 
     @staticmethod
     def setup(ap):
-        ap.add_argument('--launcher-shebangs', action='store_true')
+        ap.add_argument('--shebang', choices=['multiline', 'launcher', 'none'], default='none')
         ap.add_argument('--write-protect', action='store_true')
 
     @staticmethod
@@ -252,7 +258,7 @@ class BuildPostprocess(object):
         from ..core import build_tools
         handlers = []
         
-        if args.launcher_shebangs:
+        if args.shebang == 'launcher':
             try:
                 launcher = pjoin(ctx.env['LAUNCHER'], 'bin', 'launcher')
             except KeyError:
@@ -263,6 +269,8 @@ class BuildPostprocess(object):
                 raise Exception("%s does not exist" % launcher)
             handlers.append(partial(build_tools.postprocess_launcher_shebangs,
                                     launcher_program=launcher))
+        elif args.shebang == 'multiline':
+            handlers.append(build_tools.postprocess_multiline_shebang)
 
         if args.write_protect:
             handlers.append(build_tools.postprocess_write_protect)

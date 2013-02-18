@@ -1,9 +1,15 @@
+import sys
 import os
 from os.path import join as pjoin
 import json
+import shutil
+from os import makedirs
+from textwrap import dedent
 
-from nose.tools import assert_raises
-from .utils import temp_working_dir
+from nose.tools import assert_raises, eq_, ok_
+from .utils import (temp_working_dir, temp_working_dir_fixture,
+                    cat)
+from ..fileutils import touch
 
 from .. import build_tools
 
@@ -59,4 +65,57 @@ def test_execute_files_dsl():
         build_tools.execute_files_dsl(doc, {})
         with file(pjoin('plainfile')) as f:
             assert f.read() == 'bar'
+
+
+@temp_working_dir_fixture
+def test_python_shebang(d):
+    from subprocess import Popen, PIPE
+
+    makedirs(pjoin(d, 'my-python', 'bin'))
+    makedirs(pjoin(d, 'profile', 'bin'))
+    
+    abs_interpreter = pjoin(d, 'my-python', 'bin', 'python')
+    script_file = pjoin(d, 'profile', 'bin', 'myscript')
+    os.symlink(sys.executable, abs_interpreter)
+    os.symlink(abs_interpreter, pjoin(d, 'profile', 'bin', 'python'))
+
+    script = dedent('''\
+    #! %s
+    
+    # This is a comment
+    # """
+    
+    u"""A test script
+    """
+    import sys
+    print sys.executable
+    print ':'.join(sys.argv)
+    ''') % abs_interpreter
+    script = ''.join(build_tools.make_relative_multiline_shebang(script_file,
+                                                                 script.splitlines(True)))
+
+    with open(script_file, 'w') as f:
+        f.write(script)
+        
+    os.chmod(script_file, 0o755)
+    os.symlink('profile/bin/myscript', 'scriptlink')
+
+    def runit(entry_point):
+        p = Popen([entry_point, "a1 a2", "b "], stdout=PIPE)
+        out, _ = p.communicate()
+        outlines = out.splitlines()
+        assert p.wait() == 0
+        eq_("%s:a1 a2:b " % entry_point, outlines[1])
+        return outlines[0]
+
+    for relative in ['./scriptlink', 'profile/bin/myscript']:
+        for entry_point in [relative, os.path.realpath(relative)]:
+            touch(pjoin(d, 'profile', 'profile.json'))
+            #print cat(entry_point)
+            intp = runit(entry_point)
+            eq_("%s/profile/bin/python" % d, intp)
+
+            os.unlink(pjoin(d, 'profile', 'profile.json'))
+            intp = runit(entry_point)
+            assert "%s/my-python/bin/python" % d == intp
 
