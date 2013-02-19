@@ -524,7 +524,7 @@ class ArchiveSourceCache(object):
         mode = self.archive_types[type][2]
         if not is_tarball(temp_path, mode):
             self.logger.error("File downloaded from '%s' is not a valid archive" % url)
-            raise SourceNotFoundError("File downloaded from '%s'" % url)
+            raise SourceNotFoundError("File downloaded from '%s' is not a valid archive" % url)
 
         return temp_path, format_digest(tee)
 
