@@ -10,6 +10,6 @@ matrix:
     - python: 3.2
     - python: 3.3
 script:
-  - nosetests
+  - nosetests -v
 notifications:
   email: false
