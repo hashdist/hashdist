@@ -457,8 +457,8 @@ class ArchiveSourceCache(object):
     chunk_size = 16 * 1024
 
     archive_types = {
-        'tar.gz' :  (('application/x-tar', 'gzip'), ('tar', 'xz')),
-        'tar.bz2' : (('application/x-tar', 'bzip2'), ('tar', 'xj')),
+        'tar.gz' :  (('application/x-tar', 'gzip'), ('tar', 'xz'), 'r:gz'),
+        'tar.bz2' : (('application/x-tar', 'bzip2'), ('tar', 'xj'), 'r:bz2'),
         }
 
     mime_to_ext = dict((value[0], key) for key, value in archive_types.iteritems())
@@ -474,7 +474,7 @@ class ArchiveSourceCache(object):
         mkdir_if_not_exists(type_dir)
         return pjoin(type_dir, hash)
 
-    def _download_and_hash(self, url):
+    def _download_and_hash(self, url, type):
         """Downloads file at url to a temporary location and hashes it
 
         Returns
@@ -521,16 +521,8 @@ class ArchiveSourceCache(object):
             raise
 
         # Test that we have downloaded a valid archive
-        def is_archive(path, mode):
-            try:
-                with tarfile.open(path, mode) as archive:
-                    # Just in case, make sure we can actually read the archive:
-                    members = archive.getmembers()
-                return True
-            except tarfile.ReadError:
-                return False
-        if not (is_archive(temp_path, 'r:gz') or \
-                is_archive(temp_path, 'r:bz2')):
+        mode = self.archive_types[type][2]
+        if not is_tarball(temp_path, mode):
             self.logger.error("File downloaded from '%s' is not a valid archive" % url)
             raise SourceNotFoundError("File downloaded from '%s'" % url)
 
@@ -563,7 +555,7 @@ class ArchiveSourceCache(object):
                 return '%s:%s' % (type, expected_hash)
         
         type = self._ensure_type(url, type)
-        temp_file, hash = self._download_and_hash(url)
+        temp_file, hash = self._download_and_hash(url, type)
         try:
             if expected_hash is not None and expected_hash != hash:
                 raise RuntimeError('File downloaded from "%s" has hash %s but expected %s' %
@@ -761,3 +753,12 @@ def silent_unlink(path):
         os.unlink(temp_file)
     except:
         pass
+
+def is_tarball(path, mode):
+    try:
+        with tarfile.open(path, mode) as archive:
+            # Just in case, make sure we can actually read the archive:
+            members = archive.getmembers()
+        return True
+    except tarfile.ReadError:
+        return False
