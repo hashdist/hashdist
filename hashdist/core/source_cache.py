@@ -97,6 +97,7 @@ import hashlib
 import struct
 import errno
 import stat
+import tarfile
 
 from ..deps import sh
 from .hasher import Hasher, format_digest, HashingReadStream, HashingWriteStream
@@ -515,6 +516,20 @@ class ArchiveSourceCache(object):
             # Remove temporary file if there was a failure
             os.unlink(temp_path)
             raise
+
+        # Test that we have downloaded a valid archive
+        def is_archive(path, mode):
+            try:
+                with tarfile.open(path, mode) as archive:
+                    # Just in case, make sure we can actually read the archive:
+                    members = archive.getmembers()
+                return True
+            except tarfile.ReadError:
+                return False
+        if not (is_archive(temp_path, 'r:gz') or \
+                is_archive(temp_path, 'r:bz2')):
+            raise SourceNotFoundError("File downloaded from '%s'" % url)
+
         return temp_path, format_digest(tee)
 
     def _ensure_type(self, url, type):
