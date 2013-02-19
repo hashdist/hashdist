@@ -139,14 +139,15 @@ class SourceCache(object):
     """
     """
 
-    def __init__(self, cache_path, create_dirs=False):
+    def __init__(self, cache_path, logger, create_dirs=False):
         if not os.path.isdir(cache_path):
             if create_dirs:
                 silent_makedirs(cache_path)
             else:
                 raise ValueError('"%s" is not an existing directory' % cache_path)
         self.cache_path = os.path.realpath(cache_path)
-        
+        self.logger = logger
+
 
     def _ensure_subdir(self, name):
         path = pjoin(self.cache_path, name)
@@ -161,7 +162,7 @@ class SourceCache(object):
     def create_from_config(config, logger, create_dirs=False):
         """Creates a SourceCache from the settings in the configuration
         """
-        return SourceCache(config['sourcecache/sources'], create_dirs)
+        return SourceCache(config['sourcecache/sources'], logger, create_dirs)
 
     def fetch_git(self, repository, rev):
         """Fetches source code from git repository
@@ -466,6 +467,7 @@ class ArchiveSourceCache(object):
         assert not isinstance(source_cache, str)
         self.source_cache = source_cache
         self.packs_path = source_cache._ensure_subdir(PACKS_DIRNAME)
+        self.logger = self.source_cache.logger
 
     def get_pack_filename(self, type, hash):
         type_dir = pjoin(self.packs_path, type)
@@ -494,6 +496,7 @@ class ArchiveSourceCache(object):
         
         # Download file to a temporary file within self.packs_path, while hashing
         # it.
+        self.logger.info("Downloading '%s'" % url)
         temp_fd, temp_path = tempfile.mkstemp(prefix='downloading-', dir=self.packs_path)
         try:
             f = os.fdopen(temp_fd, 'wb')
@@ -528,6 +531,7 @@ class ArchiveSourceCache(object):
                 return False
         if not (is_archive(temp_path, 'r:gz') or \
                 is_archive(temp_path, 'r:bz2')):
+            self.logger.error("File downloaded from '%s' is not a valid archive" % url)
             raise SourceNotFoundError("File downloaded from '%s'" % url)
 
         return temp_path, format_digest(tee)

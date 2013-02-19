@@ -17,7 +17,7 @@ from ..source_cache import (ArchiveSourceCache, SourceCache,
         KeyNotFoundError, SourceNotFoundError)
 from ..hasher import Hasher, format_digest
 
-from .utils import temp_dir, working_directory, VERBOSE
+from .utils import temp_dir, working_directory, VERBOSE, logger
 from . import utils
 
 #
@@ -35,7 +35,7 @@ mock_git_commit = None
 def temp_source_cache():
     tempdir = tempfile.mkdtemp()
     try:
-        yield SourceCache(tempdir)
+        yield SourceCache(tempdir, logger)
     finally:
         shutil.rmtree(tempdir)    
 
