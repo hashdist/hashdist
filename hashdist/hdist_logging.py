@@ -95,7 +95,7 @@ class Logger(object):
         the only thing that changes is adding a newline "\n" for each
         call.
     """
-    def __init__(self, level=INFO, names=(), streams=None):
+    def __init__(self, level=INFO, names=(), streams=None, parent_logger=None):
         if streams is None:
             streams = [(sys.stderr, False)]
         if isinstance(names, str):
@@ -104,15 +104,27 @@ class Logger(object):
         self.heading = ':'.join(names) if names else ''
         self.level = level
         self.streams = streams
+        self.parent_logger = parent_logger
+        if self.parent_logger:
+            self.error_occured = self.parent_logger.error_occured
+        else:
+            self.error_occured = False
 
     def get_sub_logger(self, name):
-        return Logger(self.level, self.names + (name,), self.streams)
+        return Logger(self.level, self.names + (name,), self.streams, self)
 
     def push_stream(self, stream, raw=False):
         self.streams.append((stream, raw))
 
     def pop_stream(self):
         self.streams.pop()
+
+    def set_error_occured(self, value):
+        self.error_occured = value
+        a = self
+        while a.parent_logger:
+            a = a.parent_logger
+            a.error_occured = value
 
     def log(self, level, msg, *args):
         if args:
@@ -130,6 +142,8 @@ class Logger(object):
                 stream.write(msg + "\n")
             elif level >= self.level:
                 stream.write('%s%s\n' % (heading, msg))
+        if level == ERROR or level == CRITICAL:
+            self.set_error_occured(True)
 
     def debug(self, msg, *args):
         self.log(DEBUG, msg, *args)
