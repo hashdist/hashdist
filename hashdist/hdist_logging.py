@@ -106,9 +106,9 @@ class Logger(object):
         self.streams = streams
         self.parent_logger = parent_logger
         if self.parent_logger:
-            self.error_occured = self.parent_logger.error_occured
+            self.error_occurred = self.parent_logger.error_occurred
         else:
-            self.error_occured = False
+            self.error_occurred = False
 
     def get_sub_logger(self, name):
         return Logger(self.level, self.names + (name,), self.streams, self)
@@ -119,12 +119,12 @@ class Logger(object):
     def pop_stream(self):
         self.streams.pop()
 
-    def set_error_occured(self, value):
-        self.error_occured = value
+    def set_error_occurred(self, value):
+        self.error_occurred = value
         a = self
         while a.parent_logger:
             a = a.parent_logger
-            a.error_occured = value
+            a.error_occurred = value
 
     def log(self, level, msg, *args):
         if args:
@@ -142,8 +142,8 @@ class Logger(object):
                 stream.write(msg + "\n")
             elif level >= self.level:
                 stream.write('%s%s\n' % (heading, msg))
-        if level == ERROR or level == CRITICAL:
-            self.set_error_occured(True)
+        if level >= ERROR:
+            self.set_error_occurred(True)
 
     def debug(self, msg, *args):
         self.log(DEBUG, msg, *args)
