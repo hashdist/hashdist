@@ -12,8 +12,9 @@ pjoin = os.path.join
 
 from nose.tools import assert_raises
 
-from ..source_cache import (ArchiveSourceCache, SourceCache, CorruptSourceCacheError,
-                            hdist_pack, hdist_unpack, scatter_files, KeyNotFoundError)
+from ..source_cache import (ArchiveSourceCache, SourceCache,
+        CorruptSourceCacheError, hdist_pack, hdist_unpack, scatter_files,
+        KeyNotFoundError, SourceNotFoundError)
 from ..hasher import Hasher, format_digest
 
 from .utils import temp_dir, working_directory, VERBOSE
@@ -257,3 +258,17 @@ def test_scatter_files():
             assert e.errno == errno.EEXIST
         else:
             assert False
+
+def test_corrupt_archive():
+    with temp_dir() as d:
+        archive_path1 = pjoin(d, 'foo.tar.gz')
+        with open(archive_path1, "w") as f:
+            f.write('foo') # definitely not a tar.gz archive
+        archive_path2 = pjoin(d, 'foo.tar.bz2')
+        with open(archive_path2, "w") as f:
+            f.write('foo') # definitely not a tar.gz archive
+        with temp_source_cache() as sc:
+            with assert_raises(SourceNotFoundError):
+                sc.fetch_archive('file:' + archive_path1)
+            with assert_raises(SourceNotFoundError):
+                sc.fetch_archive('file:' + archive_path2)
