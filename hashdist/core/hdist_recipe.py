@@ -73,8 +73,8 @@ def hdist_cli_build_spec(python=None, package=None):
         },
         "build": {
             "script": [
-                ["hdist", "build-write-files"],
-                ["hdist", "create-links", "--key=parameters/links", "build.json"]
+                {"hdist": ["build-write-files"]},
+                {"hdist": ["create-links", "--key=parameters/links", "build.json"]}
             ]
         }
     }

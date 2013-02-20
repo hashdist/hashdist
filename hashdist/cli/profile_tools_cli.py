@@ -21,7 +21,7 @@ class CreateProfile(object):
 
         {
           ...
-          "commands": [["hdist", "create-profile", "--key=parameters/profile", "build.json", "$ARTIFACT"]],
+          "commands": [{"hdist": "create-profile", "--key=parameters/profile", "build.json", "$ARTIFACT"]}],
           "parameters" : {
             "profile" : [
               {"id": "zlib/1.2.7/fXHu+8dcqmREfXaz+ixMkh2LQbvIKlHf+rtl5HEfgmU"},

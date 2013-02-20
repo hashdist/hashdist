@@ -53,14 +53,16 @@ def test_build_profile(tempdir, sc, bldr, cfg):
         'name': 'corelib',
         'version': 'n',
         'build': {
-            'script': [['hdist', 'build-write-files']]
+            'script': [{'hdist': ['build-write-files']}]
             },
         'files': [
             {
                 'target': '$ARTIFACT/artifact.json',
                 "object": {
                     "install": {
-                        "script": [["@hdist", "create-links", "--key=install/links", "artifact.json"]],
+                        "script": [
+                            {"hdist": ["create-links", "--key=install/links", "artifact.json"]}
+                            ],
                         "links": [{"action": "symlink",
                                    "select": "$ARTIFACT/*/**/*",
                                    "prefix": "$ARTIFACT",
@@ -92,11 +94,11 @@ def test_build_profile(tempdir, sc, bldr, cfg):
         "build": {
             "import": [{"id": corelib_id}],
             "script": [
-                ["/bin/echo>$ARTIFACT/hello", "hello world"], # must not be removed by pop
-                ["hdist", "build-profile", "push"],
-                ["/bin/echo>$ARTIFACT/share/foo", "hello world"], # preserve "share" dir
-                ["/bin/readlink>$ARTIFACT/result", "$ARTIFACT/should-be-removed/hello"],
-                ["hdist", "build-profile", "pop"],
+                {"cmd": ["/bin/echo", "hello world"], "append_to_file": "$ARTIFACT/hello"}, # must not be removed by pop
+                {"hdist": ["build-profile", "push"]},
+                {"cmd": ["/bin/echo", "hello world"], "append_to_file": "$ARTIFACT/share/foo"}, # preserve "share" dir
+                {"cmd": ["/bin/readlink", "$ARTIFACT/should-be-removed/hello"], "append_to_file": "$ARTIFACT/result"},
+                {"hdist": ["build-profile", "pop"]},
                 ]
             }
         }

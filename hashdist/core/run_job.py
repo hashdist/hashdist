@@ -562,6 +562,9 @@ class ScriptExecution(object):
             The environment as modified by the script.
         """
         for line in script:
+            if not isinstance(line, dict):
+                print line
+                raise TypeError('script must be a list of dicts (using old script syntax?)')
             if sum(['cmd' in line, 'hdist' in line, 'scope' in line]) != 1:
                 raise ValueError("Each script line should have exactly one of the 'cmd', 'hdist', 'scope' keys")
             if sum(['to_var' in line, 'stdout_to_file' in line]) > 1:
@@ -584,11 +587,15 @@ class ScriptExecution(object):
 
             if 'cmd' in line or 'hdist' in line:
                 if 'cmd' in line:
+                    key = 'cmd'
                     args = line['cmd']
                     func = self.run_cmd
                 else:
+                    key = 'hdist'
                     args = line['hdist']
                     func = self.run_hdist
+                if not isinstance(args, list):
+                    raise TypeError("'%s' arguments must be a list, got %r" % (key, args))
                 args = [self.substitute(x, line_env) for x in args]
 
                 if 'to_var' in line:
