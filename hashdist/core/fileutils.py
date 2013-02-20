@@ -2,6 +2,7 @@ import os
 import errno
 import shutil
 import gzip
+from contextlib import closing
 
 def silent_copy(src, dst):
     try:
@@ -79,7 +80,7 @@ def rmdir_empty_up_to(path, parent):
 def gzip_compress(source_filename, dest_filename):
     chunk_size = 16 * 1024
     with file(source_filename, 'rb') as src:
-        with gzip.open(dest_filename, 'wb') as dst:
+        with closing(gzip.open(dest_filename, 'wb')) as dst:
             while True:
                 chunk = src.read(chunk_size)
                 if not chunk: break
