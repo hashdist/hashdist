@@ -353,15 +353,9 @@ class GitSourceCache(object):
         p = self.checked_git('ls-remote', repository, rev)
         lines = str(p).splitlines()
         if len(lines) == 0:
-            if len(rev) != 40:
-                raise SourceNotFoundError("no rev '%s'; note that when using a git "
-                                          "SHA1 commit hash one needs to use all 40 "
-                                          "characters" % rev)
-                # If not, one could risk getting another commit
-                # returned transparently with the current
-                # implementation; resolving the hash in only the
-                # fetched repo would perhaps work...
-            commit = rev
+            msg = "no remote head '%s' found in git repo %s" % (rev, repository)
+            self.logger.error(msg)
+            raise SourceNotFoundError(msg)
         elif len(lines) == 1:
             # Use the hash for the rev instead
             commit = lines[0].split('\t')[0]
@@ -422,10 +416,8 @@ class GitSourceCache(object):
             try:
                 self.git_interactive('fetch', repository, rev)
             except subprocess.CalledProcessError:
-                if len(rev) == 40:
-                    raise ValueError('The rev/branch name can not be a commit hash')
-                else:
-                    raise
+                self.logger.error('failed command: git fetch %s %s' % (repository, rev))
+                raise
         else:
             # when rev is None, fetch all the remote heads; seems like one must
             # do a separate ls-remote...
