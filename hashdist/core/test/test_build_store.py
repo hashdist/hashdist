@@ -8,10 +8,10 @@ from pprint import pprint
 import gzip
 import json
 
-from nose.tools import assert_raises, eq_
+from nose.tools import eq_
 from nose import SkipTest
 
-from .utils import logger, temp_dir, temp_working_dir
+from .utils import logger, temp_dir, temp_working_dir, assert_raises
 from . import utils
 
 from .. import source_cache, build_store, InvalidBuildSpecError, BuildFailedError, InvalidJobSpecError

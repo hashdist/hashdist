@@ -6,8 +6,8 @@ import shutil
 from os import makedirs
 from textwrap import dedent
 
-from nose.tools import assert_raises, eq_, ok_
-from .utils import (temp_working_dir, temp_working_dir_fixture,
+from nose.tools import eq_, ok_
+from .utils import (temp_working_dir, temp_working_dir_fixture, assert_raises,
                     cat)
 from ..fileutils import touch
 
