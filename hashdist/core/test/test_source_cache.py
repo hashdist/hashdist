@@ -10,14 +10,12 @@ import errno
 
 pjoin = os.path.join
 
-from nose.tools import assert_raises
-
 from ..source_cache import (ArchiveSourceCache, SourceCache,
         CorruptSourceCacheError, hdist_pack, hdist_unpack, scatter_files,
         KeyNotFoundError, SourceNotFoundError)
 from ..hasher import Hasher, format_digest
 
-from .utils import temp_dir, working_directory, VERBOSE, logger
+from .utils import temp_dir, working_directory, VERBOSE, logger, assert_raises
 from . import utils
 
 #

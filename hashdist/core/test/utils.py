@@ -13,6 +13,19 @@ from logging import getLevelName
 
 from os.path import join as pjoin
 
+try:
+    # Create assert_raises() using unittest2 on Python 2.6
+    import unittest2
+    class Dummy(unittest2.TestCase):
+        def nop():
+            pass
+    _t = Dummy('nop')
+    assert_raises = _t.assertRaises
+except ImportError:
+    # On Python > 2.6, we can just use assert_raises from nose.tools which uses
+    # unittest:
+    from nose.tools import assert_raises
+
 @contextlib.contextmanager
 def temp_dir():
     tempdir = tempfile.mkdtemp()

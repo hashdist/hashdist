@@ -98,6 +98,7 @@ import struct
 import errno
 import stat
 import tarfile
+from contextlib import closing
 
 from ..deps import sh
 from .hasher import Hasher, format_digest, HashingReadStream, HashingWriteStream
@@ -756,7 +757,7 @@ def silent_unlink(path):
 
 def is_tarball(path, mode):
     try:
-        with tarfile.open(path, mode) as archive:
+        with closing(tarfile.open(path, mode)) as archive:
             # Just in case, make sure we can actually read the archive:
             members = archive.getmembers()
         return True

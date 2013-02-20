@@ -3,9 +3,7 @@ import os
 import glob
 from os.path import join as pjoin
 
-from nose.tools import assert_raises
-
-from .utils import temp_dir
+from .utils import temp_dir, assert_raises
 from ..cache import DiskCache
 
 def fixture():

@@ -4,9 +4,8 @@ from os.path import join as pjoin
 import os
 import shutil
 
-from nose.tools import assert_raises
-
-from .utils import temp_working_dir, temp_dir, working_directory, eqsorted_, cat
+from .utils import (temp_working_dir, temp_dir, working_directory, eqsorted_,
+        cat, assert_raises)
 from .test_ant_glob import makefiles
 
 from .. import links
