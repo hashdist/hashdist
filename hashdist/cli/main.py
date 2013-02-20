@@ -126,8 +126,7 @@ def main(unparsed_argv, env, logger=None):
                 stack trace.
                 """
                 print(textwrap.fill(textwrap.dedent(text), width=78), file=sys.stderr)
-            sys.exit(127)
-
+            retcode = 127
 
     return retcode
 
