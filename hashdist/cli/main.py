@@ -4,13 +4,16 @@ Other ``hashdist.cmd.*`` modules register their sub-commands using the
 :func:`subcommand` and :func:`subcommand_args` decorators.
 """
 
+from __future__ import print_function
+
 import functools
 import argparse
 import sys
 import textwrap
 import os
 import json
-        
+import traceback
+
 from ..core import load_configuration_from_inifile, DEFAULT_CONFIG_FILENAME
 from ..hdist_logging import Logger, DEBUG, INFO
 
@@ -107,9 +110,23 @@ def main(unparsed_argv, env, logger=None):
             logger = Logger(DEBUG)
         ctx = HashdistCommandContext(parser, subcmd_parsers, sys.stdout, config, env, logger)
 
-        retcode = args.subcommand_handler(ctx, args)
-        if retcode is None:
-            retcode = 0
+        try:
+            retcode = args.subcommand_handler(ctx, args)
+            if retcode is None:
+                retcode = 0
+        except:
+            if not ctx.logger.error_occurred:
+                print("Uncaught exception:", file=sys.stderr)
+                traceback.print_exc(file=sys.stderr)
+                print(file=sys.stderr)
+                text = """\
+                This exception has not been translated to a human-friendly error
+                message, please file an issue at
+                https://github.com/hashdist/hashdist/issues pasting this
+                stack trace.
+                """
+                print(textwrap.fill(textwrap.dedent(text), width=78), file=sys.stderr)
+            retcode = 127
 
     return retcode
 
