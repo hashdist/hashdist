@@ -4,6 +4,7 @@ from os.path import join as pjoin
 from nose.tools import eq_
 from pprint import pprint
 from textwrap import dedent
+from subprocess import CalledProcessError
 
 from .. import run_job
 from .test_build_store import fixture as build_store_fixture
@@ -25,17 +26,18 @@ def test_run_job_environment(tempdir, sc, build_store, cfg):
         "env": {"FOO": "foo"},
         "env_nohash": {"BAR": "$bar"},
         "script": [
-            [
-                ["BAR=${FOO}x"],
-                ["HI=hi"],
-                env_to_stderr + ["FOO"],
-                env_to_stderr + ["BAR"],
-                env_to_stderr + ["HI"],
-            ],
-            env_to_stderr + ["FOO"],
-            env_to_stderr + ["BAR"],
-            env_to_stderr + ["HI"],
-            env_to_stderr + ["PATH"]
+            {
+                "env": {"BAR": "${FOO}x", "HI": "hi"},
+                "scope": [
+                    {"cmd": env_to_stderr + ["FOO"]},
+                    {"cmd": env_to_stderr + ["BAR"]},
+                    {"cmd": env_to_stderr + ["HI"]},
+                    ],
+            },
+            {"cmd": env_to_stderr + ["FOO"]},
+            {"cmd": env_to_stderr + ["BAR"]},
+            {"cmd": env_to_stderr + ["HI"]},
+            {"cmd": env_to_stderr + ["PATH"]}
         ]}
     logger = MemoryLogger()
     ret_env = run_job.run_job(logger, build_store, job_spec, {"BAZ": "BAZ"},
@@ -58,11 +60,11 @@ def test_run_job_environment(tempdir, sc, build_store, cfg):
         lines)
 
 @build_store_fixture()
-def test_script_dollar_paren(tempdir, sc, build_store, cfg):
+def test_capture_stdout(tempdir, sc, build_store, cfg):
     job_spec = {
         "script": [
-            ["HI=$($echo", "  a  b   \n\n\n ", ")"],
-            env_to_stderr + ["HI"]
+            {"cmd": ["$echo", "  a  b   \n\n\n "], "to_var": "HI"},
+            {"cmd": env_to_stderr + ["HI"]}
         ]}
     logger = MemoryLogger()
     run_job.run_job(logger, build_store, job_spec, {"echo": "/bin/echo"}, {}, tempdir, cfg)
@@ -72,10 +74,10 @@ def test_script_dollar_paren(tempdir, sc, build_store, cfg):
 def test_script_redirect(tempdir, sc, build_store, cfg):
     job_spec = {
         "script": [
-            ["$echo>$foo", "hi"]
+            {"cmd": ["$echo", "hi"], "append_to_file": "$foo", "env": {"foo": "foo"}}
         ]}
     run_job.run_job(test_logger, build_store, job_spec,
-                    {"echo": "/bin/echo", "foo": "foo"}, {}, tempdir, cfg)
+                    {"echo": "/bin/echo"}, {}, tempdir, cfg)
     with file(pjoin(tempdir, 'foo')) as f:
         assert f.read() == 'hi\n'
 
@@ -85,12 +87,22 @@ def test_attach_log(tempdir, sc, build_store, cfg):
         f.write('hello from pipe')
     job_spec = {
         "script": [
-            ["LOG=$(hdist", "logpipe", "mylog", "WARNING", ")"],
-            ["/bin/dd", "if=hello", "of=$LOG"],
+            {"hdist": ["logpipe", "mylog", "WARNING"], "to_var": "LOG"},
+            {"cmd": ["/bin/dd", "if=hello", "of=$LOG"]},
         ]}
     logger = MemoryLogger()
     run_job.run_job(logger, build_store, job_spec, {}, {}, tempdir, cfg)
     assert 'WARNING:mylog:hello from pipe' in logger.lines
+
+@build_store_fixture()
+def test_error_exit(tempdir, sc, build_store, cfg):
+    job_spec = {
+        "script": [
+            {"cmd": ["/bin/false"]},
+        ]}
+    logger = MemoryLogger()
+    with assert_raises(CalledProcessError):
+        run_job.run_job(logger, build_store, job_spec, {}, {}, tempdir, cfg)
 
 @build_store_fixture()
 def test_log_pipe_stress(tempdir, sc, build_store, cfg):
@@ -130,8 +142,8 @@ def test_log_pipe_stress(tempdir, sc, build_store, cfg):
 
     job_spec = {
         "script": [
-            ["LOG=$(hdist", "logpipe", "mylog", "WARNING", ")"],
-            [sys.executable, pjoin(tempdir, 'launcher.py'), pjoin(tempdir, 'client.py'), str(NJOBS), str(NMSGS)],
+            {"hdist": ["logpipe", "mylog", "WARNING"], "to_var": "LOG"},
+            {"cmd": [sys.executable, pjoin(tempdir, 'launcher.py'), pjoin(tempdir, 'client.py'), str(NJOBS), str(NMSGS)]},
         ]}
     logger = MemoryLogger()
     old = run_job.LOG_PIPE_BUFSIZE
@@ -168,12 +180,32 @@ def test_log_pipe_stress(tempdir, sc, build_store, cfg):
 def test_notimplemented_redirection(tempdir, sc, build_store, cfg):
     job_spec = {
         "script": [
-            ["LOG=$(hdist", "logpipe", "mylog", "WARNING", ")"],
-            ["/bin/echo>$LOG", "my warning"]
+            {"hdist": ["logpipe", "mylog", "WARNING"], "to_var": "log"},
+            {"cmd": ["/bin/echo", "my warning"], "append_to_file": "$log"}
         ]}
     with assert_raises(NotImplementedError):
         logger = MemoryLogger()
         run_job.run_job(logger, build_store, job_spec, {}, {}, tempdir, cfg)
+
+@build_store_fixture()
+def test_script_cwd(tempdir, sc, build_store, cfg):
+    os.makedirs(pjoin(tempdir, 'a', 'b', 'c'))
+    job_spec = {
+        "script": [
+            {"cwd": "a",
+             "scope": [
+                 {"cwd": "b",
+                  "scope": [
+                      {"cwd": "c",
+                       "scope": [
+                          {"cmd": ["/bin/pwd"], "append_to_file": "out", "cwd": ".."}
+                           ]}]}]}]}
+    logger = MemoryLogger()
+    run_job.run_job(logger, build_store, job_spec, {}, {}, tempdir, cfg)
+    assert os.path.exists(pjoin(tempdir, 'a', 'b', 'out'))
+    with open(pjoin(tempdir, 'a', 'b', 'out')) as f:
+        assert f.read().strip() == pjoin(tempdir, 'a', 'b')
+
 
 def test_substitute():
     env = {"A": "a", "B": "b"}

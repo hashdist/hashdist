@@ -112,9 +112,9 @@ def test_basic(tempdir, sc, bldr, config):
         "build": {
             "env": {"BAR": "bar"},
             "script": [
-                ["hdist", "build-unpack-sources"],
-                ["hdist", "build-write-files"],
-                ["/bin/bash", "build.sh"]
+                {"hdist": ["build-unpack-sources"]},
+                {"hdist": ["build-write-files"]},
+                {"cmd": ["/bin/bash", "build.sh"]}
             ]
         }
     }
@@ -148,11 +148,11 @@ def test_failing_build_and_multiple_commands(tempdir, sc, bldr, config):
     spec = {"name": "foo", "version": "na",
             "build": {
                 "script": [
-                    ["/bin/echo>foo", "test"],
-                    ["/bin/true"],
-                    ["/bin/false"]],
-                }
-           }
+                    {"cmd": ["/bin/echo", "test"], "append_to_file": "foo"},
+                    {"cmd": ["/bin/true"]},
+                    {"cmd": ["/bin/false"]},
+                ]
+           }}
     try:
         bldr.ensure_present(spec, config, keep_build='error')
     except BuildFailedError, e_first:
@@ -191,7 +191,7 @@ def test_hash_prefix_collision(tempdir, sc, bldr, config):
         for k in range(15):
             spec = {"name": "foo", "version": "na",
                     "build": {
-                        "script": [["/bin/echo", "hello", str(k)]]
+                        "script": [{"cmd": ["/bin/echo", "hello", str(k)]}]
                         }
                     }
             artifact_id, path = bldr.ensure_present(spec, config)
@@ -228,9 +228,9 @@ def test_source_unpack_options(tempdir, sc, bldr, config):
                 ],
             "build": {
                 "script": [
-                    ["hdist", "build-unpack-sources"],
-                    ["/bin/cp", "subdir/coolproject-2.3/README", "$ARTIFACT/a"],
-                    ["/bin/cp", "README", "$ARTIFACT/b"],
+                    {"hdist": ["build-unpack-sources"]},
+                    {"cmd": ["/bin/cp", "subdir/coolproject-2.3/README", "$ARTIFACT/a"]},
+                    {"cmd": ["/bin/cp", "README", "$ARTIFACT/b"]},
                 ]
             },
            }
@@ -262,9 +262,9 @@ def build_mock_packages(builder, config, packages, virtuals={}, name_to_artifact
                     "import": [{"ref": dep.name, "id": name_to_artifact[dep.name][0]}
                                for dep in pkg.deps],
                     "script": [
-                        ["hdist", "build-write-files"],
-                        ["/bin/bash", "build.sh"]
-                    ]
+                        {"hdist": ["build-write-files"]},
+                        {"cmd": ["/bin/bash", "build.sh"]}
+                        ]
                     },
                 }
         artifact, path = builder.ensure_present(spec, config, virtuals=virtuals)

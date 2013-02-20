@@ -67,9 +67,9 @@ An example build spec:
                  {"ref": "gcc", "id": "gcc/host-4.6.3/q0VSL7JmzH1P17meqITYc4kMbnIjIexrWPdlAlqPn3s", "before": ["virtual:unix"]},
              ],
              "script" : [
-                 ["hdist", "build-unpack-sources"],
-                 ["hdist", "build-write-files"],
-                 ["bash", "build.sh"]
+                 {"hdist", ["build-unpack-sources"]},
+                 {"hdist", ["build-write-files"]},
+                 {"cmd": ["bash", "build.sh"]}
              ],
          },
          "sources" : [

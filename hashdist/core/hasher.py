@@ -123,6 +123,8 @@ class DocumentSerializer(object):
             w.update(x_type)
             w.update('%d:' % len(h))
             w.update(h)
+        elif isinstance(x, set):
+            raise TypeError('sets not supported') # more friendly error
         else:
             # treated same as first case, but we can only fall back to
             # acquiring the buffer interface after we've tried the

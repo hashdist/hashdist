@@ -57,7 +57,7 @@ Important concepts
 
    core/source_cache
    core/build_store
-   core/sandbox
+   core/run_job
    core/profile
 
 Support code

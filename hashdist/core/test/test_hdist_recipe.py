@@ -19,7 +19,7 @@ def test_hdist_cli_artifact(tempdir, sc, bldr, config):
              "name": "foo", "version": "na",
              "dependencies": [{"ref": "hdist", "id": "virtual:hdist"}],
              "build": {
-                 "script": [["hdist", "create-links", "--key=parameters/links", "build.json"]]
+                "script": [{"hdist": ["create-links", "--key=parameters/links", "build.json"]}]
              },
              "parameters": {
                "links": [
