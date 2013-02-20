@@ -14,8 +14,8 @@ of files) is identified by a secure hash. The generic API in :meth:`SourceCache.
 and unpacking methods are determined by the key prefix::
 
     sc.fetch('http://python.org/ftp/python/2.7.3/Python-2.7.3.tar.bz2',
-             'tar.bz2:cmRX4RyxU63D9Ciq8ZAfxWGjdMMOXn2mdCwHQqM4Zjw')
-    sc.unpack('tar.bz2:cmRX4RyxU63D9Ciq8ZAfxWGjdMMOXn2mdCwHQqM4Zjw', '/your/location/here')
+             'tar.bz2:ttjyphyfwphjdc563imtvhnn4x4pluh5')
+    sc.unpack('tar.bz2:ttjyphyfwphjdc563imtvhnn4x4pluh5', '/your/location/here')
 
     sc.fetch('https://github.com/numpy/numpy.git',
              'git:35dc14b0a59cf16be8ebdac04f7269ac455d5e43')
