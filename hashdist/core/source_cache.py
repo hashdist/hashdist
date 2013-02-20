@@ -320,6 +320,7 @@ class GitSourceCache(object):
         self._git_env = dict(os.environ)
         self._git_env['GIT_DIR'] = self.repo_path
         self._ensure_repo()
+        self.logger = source_cache.logger
 
     def git_interactive(self, *args):
         # Inherit stdin/stdout in order to interact with user about any passwords
@@ -365,8 +366,12 @@ class GitSourceCache(object):
             # Use the hash for the rev instead
             commit = lines[0].split('\t')[0]
         else:
-            raise SourceNotFoundError('"%s" resolves to multiple branches/tags in "%s"' %
-                                      (rev, repository))
+            msg = '"%s" resolves to multiple heads in "%s"' % (rev, repository)
+            self.logger.error(msg + ':')
+            for line in lines:
+                self.logger.error(line.replace('\t', '    '))
+            self.logger.error('Please specify the head by full name')
+            raise SourceNotFoundError(msg)
         return commit
 
     def _does_branch_exist(self, branch):
