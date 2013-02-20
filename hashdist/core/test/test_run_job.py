@@ -1,16 +1,6 @@
 import sys
 import os
 from os.path import join as pjoin
-try:
-    # Create assert_raises() using unittest2 on Python 2.6
-    import unittest2
-    class Dummy(unittest2.TestCase):
-        def nop():
-            pass
-    _t = Dummy('nop')
-    assert_raises = _t.assertRaises
-except ImportError:
-    from nose.tools import assert_raises
 from nose.tools import eq_
 from pprint import pprint
 from textwrap import dedent
@@ -19,7 +9,7 @@ from .. import run_job
 from .test_build_store import fixture as build_store_fixture
 
 
-from .utils import MemoryLogger, logger as test_logger
+from .utils import MemoryLogger, logger as test_logger, assert_raises
 
 env_to_stderr = [sys.executable, '-c',
                  "import os, sys; sys.stderr.write("
