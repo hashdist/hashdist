@@ -64,9 +64,11 @@ def _parse_docstring(doc):
     description = description.replace('::\n', ':\n').replace('``', '"')
     return help, description
 
-def main(unparsed_argv, env, logger=None):
+def main(unparsed_argv, env, logger=None, default_config_filename=None):
     """The main ``hdist`` command-line entry point
     """
+    if default_config_filename is None:
+        default_config_filename = os.path.expanduser(DEFAULT_CONFIG_FILENAME)
 
     description = textwrap.dedent('''
     Entry-point for various Hashdist command-line tools
@@ -75,7 +77,7 @@ def main(unparsed_argv, env, logger=None):
     parser = argparse.ArgumentParser(description=description,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--config-file',
-                        help='Location of hashdist configuration file (default: %s)' % DEFAULT_CONFIG_FILENAME,
+                        help='Location of hashdist configuration file (default: %s)' % default_config_filename,
                         default=None)
     subparser_group = parser.add_subparsers(title='subcommands')
 
@@ -103,7 +105,7 @@ def main(unparsed_argv, env, logger=None):
             config = json.loads(env['HDIST_CONFIG'])
         else:
             if args.config_file is None:
-                args.config_file = os.path.expanduser(DEFAULT_CONFIG_FILENAME)
+                args.config_file = default_config_filename
             config = load_configuration_from_inifile(args.config_file)
         
         if logger is None:
