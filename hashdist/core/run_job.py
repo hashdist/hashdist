@@ -806,7 +806,9 @@ class ScriptExecution(object):
 
         retcode = proc.wait()
         if retcode != 0:
-            raise subprocess.CalledProcessError(retcode, command_lst)
+            exc = subprocess.CalledProcessError(retcode, args)
+            self.logger.error(str(exc))
+            raise exc
 
     def create_log_pipe(self, sublogger_name, level_str):
         level = dict(CRITICAL=CRITICAL, ERROR=ERROR, WARNING=WARNING, INFO=INFO, DEBUG=DEBUG)[level_str]

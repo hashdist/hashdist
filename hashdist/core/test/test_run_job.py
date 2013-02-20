@@ -4,6 +4,7 @@ from os.path import join as pjoin
 from nose.tools import eq_
 from pprint import pprint
 from textwrap import dedent
+from subprocess import CalledProcessError
 
 from .. import run_job
 from .test_build_store import fixture as build_store_fixture
@@ -92,6 +93,16 @@ def test_attach_log(tempdir, sc, build_store, cfg):
     logger = MemoryLogger()
     run_job.run_job(logger, build_store, job_spec, {}, {}, tempdir, cfg)
     assert 'WARNING:mylog:hello from pipe' in logger.lines
+
+@build_store_fixture()
+def test_error_exit(tempdir, sc, build_store, cfg):
+    job_spec = {
+        "script": [
+            {"cmd": ["/bin/false"]},
+        ]}
+    logger = MemoryLogger()
+    with assert_raises(CalledProcessError):
+        run_job.run_job(logger, build_store, job_spec, {}, {}, tempdir, cfg)
 
 @build_store_fixture()
 def test_log_pipe_stress(tempdir, sc, build_store, cfg):
