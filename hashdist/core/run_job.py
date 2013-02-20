@@ -564,8 +564,7 @@ class ScriptExecution(object):
         """
         for line in script:
             if not isinstance(line, dict):
-                print line
-                raise TypeError('script must be a list of dicts (using old script syntax?)')
+                raise TypeError('script must be a list of dicts (using old script syntax?); got %r' % line)
             if sum(['cmd' in line, 'hdist' in line, 'scope' in line]) != 1:
                 raise ValueError("Each script line should have exactly one of the 'cmd', 'hdist', 'scope' keys")
             if sum(['to_var' in line, 'stdout_to_file' in line]) > 1:
@@ -580,7 +579,7 @@ class ScriptExecution(object):
 
             # Process common options
             if 'cwd' in line:
-                cwd = pjoin(line_cwd, line['cwd'])
+                line_cwd = pjoin(line_cwd, line['cwd'])
             if 'env' in line:
                 for key, value in line['env'].items():
                     # note: subst. using parent env to make sure order doesn't matter
@@ -608,7 +607,7 @@ class ScriptExecution(object):
                 elif 'append_to_file' in line:
                     stdout_filename = self.substitute(line['append_to_file'], line_env)
                     if not os.path.isabs(stdout_filename):
-                        stdout_filename = pjoin(cwd, stdout_filename)
+                        stdout_filename = pjoin(line_cwd, stdout_filename)
                     stdout_filename = os.path.realpath(stdout_filename)
                     if stdout_filename.startswith(self.rpc_dir):
                         raise NotImplementedError("Cannot currently use stream re-direction to write to "

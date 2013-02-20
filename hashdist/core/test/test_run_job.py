@@ -187,6 +187,26 @@ def test_notimplemented_redirection(tempdir, sc, build_store, cfg):
         logger = MemoryLogger()
         run_job.run_job(logger, build_store, job_spec, {}, {}, tempdir, cfg)
 
+@build_store_fixture()
+def test_script_cwd(tempdir, sc, build_store, cfg):
+    os.makedirs(pjoin(tempdir, 'a', 'b', 'c'))
+    job_spec = {
+        "script": [
+            {"cwd": "a",
+             "scope": [
+                 {"cwd": "b",
+                  "scope": [
+                      {"cwd": "c",
+                       "scope": [
+                          {"cmd": ["/bin/pwd"], "append_to_file": "out", "cwd": ".."}
+                           ]}]}]}]}
+    logger = MemoryLogger()
+    run_job.run_job(logger, build_store, job_spec, {}, {}, tempdir, cfg)
+    assert os.path.exists(pjoin(tempdir, 'a', 'b', 'out'))
+    with open(pjoin(tempdir, 'a', 'b', 'out')) as f:
+        assert f.read().strip() == pjoin(tempdir, 'a', 'b')
+
+
 def test_substitute():
     env = {"A": "a", "B": "b"}
     def check(want, x):
