@@ -7,6 +7,7 @@ from textwrap import dedent
 from pprint import pprint
 import gzip
 import json
+from contextlib import closing
 
 from nose.tools import eq_
 from nose import SkipTest
@@ -131,7 +132,7 @@ def test_basic(tempdir, sc, bldr, config):
         ./subdir
         ./subdir/build.sh
         ''')
-    with gzip.open(pjoin(path, 'build.log.gz')) as f:
+    with closing(gzip.open(pjoin(path, 'build.log.gz'))) as f:
         s = f.read()
         assert 'hi stdout path=[]' in s
         assert 'hi stderr' in s
