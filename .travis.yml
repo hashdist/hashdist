@@ -17,5 +17,8 @@ before_install:
     fi
 script:
   - nosetests -v -s
+branches:
+  only:
+    - master
 notifications:
   email: false
