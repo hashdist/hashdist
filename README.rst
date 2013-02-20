@@ -20,7 +20,8 @@ The ``stable`` branch contains the latest release (currently 0.1).
 **Authors:**
     Dag Sverre Seljebotn,
     Ondrej Certik,
-    Chris Kees
+    Chris Kees,
+    Fernando Perez
 
 **Funding:**
     Hashdist is partially funded by the International Research Office,
