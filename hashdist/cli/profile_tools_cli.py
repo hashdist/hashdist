@@ -6,7 +6,7 @@ class CreateProfile(object):
     '''
     Creates a profile (a "prefix directory") from the artifacts given.
     The resulting directory contains ``bin``, ``lib``, etc., and can
-    be used in a shell environment by calling ``source < (hdist env
+    be used in a shell environment by calling ``source < (hit env
     /path/to/profile)``.
 
     Profile building happens by reading ``profile.json`` in each of
@@ -21,7 +21,7 @@ class CreateProfile(object):
 
         {
           ...
-          "commands": [{"hdist": "create-profile", "--key=parameters/profile", "build.json", "$ARTIFACT"]}],
+          "commands": [{"hit": "create-profile", "--key=parameters/profile", "build.json", "$ARTIFACT"]}],
           "parameters" : {
             "profile" : [
               {"id": "zlib/1.2.7/fXHu+8dcqmREfXaz+ixMkh2LQbvIKlHf+rtl5HEfgmU"},

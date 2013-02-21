@@ -10,16 +10,16 @@ from ..hdist_recipe import ensure_hdist_cli_artifact
 def test_hdist_cli_artifact(tempdir, sc, bldr, config):
     hdist_id, hdist_path = ensure_hdist_cli_artifact(bldr, config)
     assert sorted(os.listdir(hdist_path)) == ['bin', 'build.json', 'build.log.gz', 'pypkg']
-    with file(pjoin(hdist_path, 'bin', 'hdist')) as f:
+    with file(pjoin(hdist_path, 'bin', 'hit')) as f:
         hdist_bin = f.read()
     assert hdist_bin.startswith('#!' + sys.executable)
 
     # Try to use it
     spec = {
              "name": "foo", "version": "na",
-             "dependencies": [{"ref": "hdist", "id": "virtual:hdist"}],
+             "dependencies": [{"ref": "hit", "id": "virtual:hit"}],
              "build": {
-                "script": [{"hdist": ["create-links", "--key=parameters/links", "build.json"]}]
+                "script": [{"hit": ["create-links", "--key=parameters/links", "build.json"]}]
              },
              "parameters": {
                "links": [
@@ -27,7 +27,7 @@ def test_hdist_cli_artifact(tempdir, sc, bldr, config):
                 ]
              }
            }
-    virtuals = {'virtual:hdist': hdist_id}
+    virtuals = {'virtual:hit': hdist_id}
     artifact_id, path = bldr.ensure_present(spec, config, virtuals)
     assert os.path.realpath(pjoin(path, 'bin', 'cp')) == '/bin/cp'
 

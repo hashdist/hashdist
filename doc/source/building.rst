@@ -39,20 +39,20 @@ as ``../../../python/34ssdf32/lib/..`` remain valid.
     a possibility for splitting up build artifact repositories would
     be to symlink between them at the individual artifact level, say::
 
-        /site/hdist/zlib/afda/...
-        /site/hdist/python/fdas/...
+        /site/hit/zlib/afda/...
+        /site/hit/python/fdas/...
     
     And then another artifact directory could contain::
 
-        /home/dagss/.hdist/opt/zlib/afda -> /site/hdist/zlib/afda
-        /home/dagss/.hdist/opt/python/fdas -> /site/hdist/python/fdas
-        /home/dagss/.hdist/opt/pymypackage/3dfs/...
+        /home/dagss/.hit/opt/zlib/afda -> /site/hit/zlib/afda
+        /home/dagss/.hit/opt/python/fdas -> /site/hit/python/fdas
+        /home/dagss/.hit/opt/pymypackage/3dfs/...
     
     Because artifacts should be a DAG this should work well.  This
     could be naturally implemented as whenever a cached build artifact
     is found on a locally available filesystem, symlink to it.
 
-    Of course, now ``/site/hdist`` is *not* relocateable, but mere
+    Of course, now ``/site/hit`` is *not* relocateable, but mere
     rewriting of those symlinks, always at the same level in the
     filesystem, is a lot more transparent than full post-processing of
     artifacts.
@@ -80,7 +80,7 @@ We want to search for interpreters for scripts as follows:
 
 **Example**: The command::
 
-    $ hdist build-postprocess --shebang=multiline path-or-script
+    $ hit build-postprocess --shebang=multiline path-or-script
 
 applies the multiline shebang. Test scrpt::
 

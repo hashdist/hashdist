@@ -19,20 +19,20 @@ an aspect that will be very different for different userbases.
 Here's how to fetch some sources; the last line output (only one to ``stdout``)
 is the resulting key::
     
-    $ hdist fetch http://python.org/ftp/python/2.7.3/Python-2.7.3.tar.bz2
+    $ hit fetch http://python.org/ftp/python/2.7.3/Python-2.7.3.tar.bz2
     Downloading... progress indicator ...
     Done
     targz:mheIiqyFVX61qnGc53ZhR-uqVsY
 
-    $ hdist fetch git://github.com/numpy/numpy.git master
+    $ hit fetch git://github.com/numpy/numpy.git master
     Fetching ...
     Done
     git:c5ccca92c5f136833ad85614feb2aa4f5bd8b7c3
 
 One can then unpack results later only by using the key::
 
-    $ hdist unpack targz:mheIiqyFVX61qnGc53ZhR-uqVsY src/python
-    $ hdist unpack git:c5ccca92c5f136833ad85614feb2aa4f5bd8b7c3 numpy
+    $ hit unpack targz:mheIiqyFVX61qnGc53ZhR-uqVsY src/python
+    $ hit unpack git:c5ccca92c5f136833ad85614feb2aa4f5bd8b7c3 numpy
 
 While ``targz:`` and ``git:`` is part of the key, this is simply to
 indicate (mostly to humans) where the sources originally came from,
@@ -46,7 +46,7 @@ local repository).
 Re-fetching sources that are in cache already are not downloaded and
 results in the same hash::
 
-    $ hdist fetch http://python.org/ftp/python/2.7.3/Python-2.7.3.tar.bz2
+    $ hit fetch http://python.org/ftp/python/2.7.3/Python-2.7.3.tar.bz2
     targz:mheIiqyFVX61qnGc53ZhR-uqVsY
 
 It's assumed that the content under the URL will not change (at least by
@@ -56,9 +56,9 @@ source.
 
 Finally it's possible to store files from the local filesystem::
 
-    $ hdist fetch /home/dagss/code/fooproject
+    $ hit fetch /home/dagss/code/fooproject
     dir:lkQYr_eQ13Sra5EYoXTg3c8msXs
-    $ hdist fetch -ttransient /home/dagss/code/buildfoo.sh
+    $ hit fetch -ttransient /home/dagss/code/buildfoo.sh
     file:tMwPj0cxhQVsA1pncZKcwCMgVbU
 
 This simply copies files from local drive (mainly to make sure a copy
@@ -90,7 +90,7 @@ conditions:
 
 Invoking a build::
 
-    $ hdist build < buildspec.json
+    $ hit build < buildspec.json
     Not present in store, need to build. Follow log with
     
         tail -f /home/dagss/.hashdist/artifacts/numpy/2.6/_build0/build.log
@@ -98,7 +98,7 @@ Invoking a build::
     Done building, artifact name:
     numpy-2.6-Ymm0C_HRoH0HxNM9snC3lvcIkMo
 
-    $ hdist resolve numpy-2.6-Ymm0C_HRoH0HxNM9snC3lvcIkMo
+    $ hit resolve numpy-2.6-Ymm0C_HRoH0HxNM9snC3lvcIkMo
     /home/dagss/.hashdist/artifacts/numpy/2.6/Ymm0C_HRoH0HxNM9snC3lvcIkMo
 
 The build specification may look like this for a build::
@@ -148,7 +148,7 @@ What happens:
 
  #. ``chdir`` to that directory, redirect all output to ``build.log``,
     and store the build spec as ``build.json``.  Unpack the sources
-    listed using the equivalent of ``hdist unpack``. The result in
+    listed using the equivalent of ``hit unpack``. The result in
     this case is a ``numpy`` subdirectory with the git checkout, and a
     ``build.sh`` script.
 
@@ -166,7 +166,7 @@ What happens:
 
  #. Execute the given command. The command **must** start with a
     variable substitution of one of the dependencies listed, unless it
-    is ``hdist``.  (The bootstrapping problem this creates should be
+    is ``hit``.  (The bootstrapping problem this creates should be
     treated in another section.)
 
 
@@ -175,7 +175,7 @@ Build policy
 
 It's impossible to control everything, and one needs to trust the builds
 that are being run that they will produce the same output given the same
-input. The ``hdist build`` tool is supposed to be a useful part in bigger
+input. The ``hit build`` tool is supposed to be a useful part in bigger
 stack, and that bigger stack is what needs to make the tradeoffs between
 fidelity and practicality.
 
@@ -208,7 +208,7 @@ consider that a too high cost to pay.)
 Temporary build profiles
 ''''''''''''''''''''''''
 
-If one calls ``hdist makebuildprofile build.json``, then
+If one calls ``hit makebuildprofile build.json``, then
 ``build.json`` is parsed and a profile environment created containing
 all build dependencies, whose path is then printed to standard
 output. Thus one can hand a single set of paths to ones scripts
@@ -228,7 +228,7 @@ Hashdist store, except through symlinks), which would indicate that
 the build reaches out to pull stuff it shouldn't. The Grand Unified
 Builder (GUB) takes this approach.
 
-We may provide a ``hdist sandbox`` command to do this.  One may either
+We may provide a ``hit sandbox`` command to do this.  One may either
 want to turn that one for debugging, or all the time. One may have to
 create wrappers scripts around ``gcc`` etc. to set up sandboxing since
 some build tools like waf and scons like to control all the
@@ -240,7 +240,7 @@ Scheduler
 
 To do many build artifacts in the right order (and in parallel in the
 right way), we should include a basic job scheduler for doing downloading
-and building. Say, ``hdist runtasks tasks.json``, with ``tasks.json`` thus::
+and building. Say, ``hit runtasks tasks.json``, with ``tasks.json`` thus::
 
     {
         "numpysources" : {
@@ -282,7 +282,7 @@ links *all* the software in a given software stack/profile.
 
 Creating a profile is done by::
         
-    hdist makeprofile /home/dagss/profiles/myprofile numpy-2.6-Ymm0C_HRoH0HxNM9snC3lvcIkMo ...
+    hit makeprofile /home/dagss/profiles/myprofile numpy-2.6-Ymm0C_HRoH0HxNM9snC3lvcIkMo ...
 
 The command takes a list of artifacts, and reads ``install.json`` in
 each one and use the information to generate the profile.  While the
@@ -293,14 +293,14 @@ below.
 Profiles are used as follows::
 
     # Simply print environment changes needed for my current shell
-    $ hdist env /home/dagss/profiles/myprofile
+    $ hit env /home/dagss/profiles/myprofile
     export PATH="/home/dagss/profiles/myprofile/bin:$PATH"
 
     # Start new shell of the default type with profile
-    $ hdist shell /home/dagss/profiles/myprofile
+    $ hit shell /home/dagss/profiles/myprofile
 
     # Import settings to my current shell
-    $ source <(hdist env /home/dagss/profiles/myprofile)
+    $ source <(hit env /home/dagss/profiles/myprofile)
 
 Of course, power users will put commands using these in their
 ``~/.bashrc`` or similar.
@@ -322,7 +322,7 @@ profile:
    creation time
 
 The reason for the strong recommendation is that as part of the build,
-a lot of temporary build profiles may be created (``hdist
+a lot of temporary build profiles may be created (``hit
 makebuildprofile``).  Also, there's the question of disk
 usage. However, distributions that are careful about constructing
 builds with full dependency injection may more easily go for the
@@ -336,7 +336,7 @@ The recommended use of ``install.json`` is::
             "python" : "python-2.7-io-lizHjC4h8z5e2Q00Ag9xUvus",
             "numpy" : "numpy-2.6-Ymm0C_HRoH0HxNM9snC3lvcIkMo"
         },
-        "command" : ["hdist", "install-artifact"],
+        "command" : ["hit", "install-artifact"],
         "profile-env-vars" : {
             "FOO_SOFT_TYPE" : "FROBNIFICATOR",
         },
@@ -366,12 +366,12 @@ discouraged version::
 
 More points:
 
- * The `runtime-dependencies` are used during the ``hdist makeprofile`` process
+ * The `runtime-dependencies` are used during the ``hit makeprofile`` process
    to recursively include dependencies in the profile.
 
- * The `profile-env-vars` are exported in the ``hdist env``. This
+ * The `profile-env-vars` are exported in the ``hit env``. This
    happens through a ``profile.json`` that is written to the profile
-   directory by ``hdist makeprofile``. This can be used to, e.g., set up
+   directory by ``hit makeprofile``. This can be used to, e.g., set up
    ``PYTHONPATH`` to point directly to artifacts rather than
    symlinking them into the final profile.
 
@@ -389,14 +389,14 @@ the profile itself is cached::
         "build-dependencies" : {
              "numpy" : "numpy-2.6-Ymm0C_HRoH0HxNM9snC3lvcIkMo",
          },
-         "command" : ["hdist", "makeprofile", "$numpy"],
+         "command" : ["hit", "makeprofile", "$numpy"],
     }
 
 Then, one force-symlinks to the resulting profile::
 
-    $ hdist build < profile.json
+    $ hit build < profile.json
     profile-Z8GcCVzYOOH97n-ZC6qhfQhciCI
-    $ ln -sf $(hdist resolve profile-Z8GcCVzYOOH97n-ZC6qhfQhciCI) /home/dagss/profiles/default
+    $ ln -sf $(hit resolve profile-Z8GcCVzYOOH97n-ZC6qhfQhciCI) /home/dagss/profiles/default
 
 This allows atomic upgrades of a user's profile, and leaves the possibility of
 instant rollback to the old profile.
@@ -404,15 +404,15 @@ instant rollback to the old profile.
 However, it is possible to just create a profile directly.
 This works especially well together with the ``--no-artifact-symlinks`` flag::
     
-    $ hdist makeprofile --no-artifact-symlinks /path/to/profile artifact-ids...
+    $ hit makeprofile --no-artifact-symlinks /path/to/profile artifact-ids...
 
 Then one gets a more traditional fully editable profile, at the cost
 of some extra disk usage. One particular usage simply clones a profile
 that has been built as an artifact::
 
-    $ hdist makeprofile --no-artifact-symlinks /path/to/profile profile-Z8GcCVzYOOH97n-ZC6qhfQhciCI
+    $ hit makeprofile --no-artifact-symlinks /path/to/profile profile-Z8GcCVzYOOH97n-ZC6qhfQhciCI
 
-This works because ``hdist makeprofile`` emits an ``install.json``
+This works because ``hit makeprofile`` emits an ``install.json``
 that repeats the process of creating itself (profile creation is
 idempotent, sort of).
 
@@ -421,7 +421,7 @@ The shared profile manager
 ''''''''''''''''''''''''''
 
 To use a profile located in the current directory,
-``./myprofile`` must be used. Calling ``hdist env myprofile`` instead
+``./myprofile`` must be used. Calling ``hit env myprofile`` instead
 looks up a central list of profile nicknames. In ``~/.hashdistconfig``::
 
     [hashdist]
@@ -439,8 +439,8 @@ looks up a central list of profile nicknames. In ``~/.hashdistconfig``::
 distribution). Distributions are encouraged to make use of this
 feature so that one can do::
 
-    $ hdist shell sage
-    $ hdist shell qsnake
+    $ hit shell sage
+    $ hit shell qsnake
 
 ...and so on. The intention is to slightly blur the line between different
 distributions; software distributions simply become mechanisms to build profiles.

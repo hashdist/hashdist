@@ -112,8 +112,8 @@ def test_basic(tempdir, sc, bldr, config):
         "build": {
             "env": {"BAR": "bar"},
             "script": [
-                {"hdist": ["build-unpack-sources"]},
-                {"hdist": ["build-write-files"]},
+                {"hit": ["build-unpack-sources"]},
+                {"hit": ["build-write-files"]},
                 {"cmd": ["/bin/bash", "build.sh"]}
             ]
         }
@@ -228,7 +228,7 @@ def test_source_unpack_options(tempdir, sc, bldr, config):
                 ],
             "build": {
                 "script": [
-                    {"hdist": ["build-unpack-sources"]},
+                    {"hit": ["build-unpack-sources"]},
                     {"cmd": ["/bin/cp", "subdir/coolproject-2.3/README", "$ARTIFACT/a"]},
                     {"cmd": ["/bin/cp", "README", "$ARTIFACT/b"]},
                 ]
@@ -262,7 +262,7 @@ def build_mock_packages(builder, config, packages, virtuals={}, name_to_artifact
                     "import": [{"ref": dep.name, "id": name_to_artifact[dep.name][0]}
                                for dep in pkg.deps],
                     "script": [
-                        {"hdist": ["build-write-files"]},
+                        {"hit": ["build-write-files"]},
                         {"cmd": ["/bin/bash", "build.sh"]}
                         ]
                     },

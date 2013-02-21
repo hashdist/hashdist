@@ -60,7 +60,7 @@ Tarballs/archives:
 Git commits:
     Identified by their (SHA-1) commits prefixed with ``git:``.
 
-Individual files or directories ("hdist-pack"):
+Individual files or directories ("hit-pack"):
     A tarball hash is not deterministic from the file
     contents alone (there's metadata, compression, etc.). In order to
     hash build scripts etc. with hashes based on the contents alone, we
@@ -631,7 +631,7 @@ class ArchiveSourceCache(object):
 
 
     #
-    # hdist packs
+    # hit packs
     #
     def _extract_hdist_pack(self, f, key, target_dir):
         files = hdist_unpack(f, key)
@@ -642,7 +642,7 @@ supported_source_archive_types = sorted(ArchiveSourceCache.archive_types.keys())
 
 def hdist_pack(files, stream=None):
     """
-    Packs the given files in the "hdist-pack" format documented above,
+    Packs the given files in the "hit-pack" format documented above,
     and returns the resulting key. This is
     useful to hash a set of files solely by their contents, not
     metadata, except the filename.
@@ -676,7 +676,7 @@ def hdist_pack(files, stream=None):
 
 def hdist_unpack(stream, key):
     """
-    Unpacks the files in the "hdist-pack" format documented above,
+    Unpacks the files in the "hit-pack" format documented above,
     verifies that it matches the given key, and returns the contents
     (in memory).
 
@@ -701,7 +701,7 @@ def hdist_unpack(stream, key):
     digest = key[len('files:'):]
     tee = HashingReadStream(hashlib.sha256(), stream)
     if tee.read(8) != 'HDSTPCK1':
-        raise CorruptSourceCacheError('Not an hdist-pack')
+        raise CorruptSourceCacheError('Not an hit-pack')
     files = []
     while True:
         buf = tee.read(8)
@@ -712,7 +712,7 @@ def hdist_unpack(stream, key):
         contents = tee.read(contents_len)
         files.append((filename, contents))
     if digest != format_digest(tee):
-        raise CorruptSourceCacheError('hdist-pack does not match key "%s"' % key)
+        raise CorruptSourceCacheError('hit-pack does not match key "%s"' % key)
     return files
         
 def scatter_files(files, target_dir):

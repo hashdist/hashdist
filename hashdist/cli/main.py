@@ -24,7 +24,7 @@ from ..hdist_logging import Logger, DEBUG, INFO
 _subcommands = {}
 
 def register_subcommand(cls, command=None):
-    """Register a subcommand for the ``hdist`` command-line tool
+    """Register a subcommand for the ``hit`` command-line tool
 
     The provided `cls` should provide the following (see :cls:`Help` below
     for an example):
@@ -65,7 +65,7 @@ def _parse_docstring(doc):
     return help, description
 
 def main(unparsed_argv, env, logger=None, default_config_filename=None):
-    """The main ``hdist`` command-line entry point
+    """The main ``hit`` command-line entry point
     """
     if default_config_filename is None:
         default_config_filename = os.path.expanduser(DEFAULT_CONFIG_FILENAME)

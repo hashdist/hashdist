@@ -33,12 +33,12 @@ Sage has its own Hashdist store in ``~/path/to/sage/store``.
 Managing conflicting Hashdist installations
 -------------------------------------------
 
-By default, Hashdist core tools are exposed through the ``hdist``
+By default, Hashdist core tools are exposed through the ``hit``
 command and the ``hashdist`` Python package. It is configured through
 ``~/.hashdistconfig``::
 
     [hashdist]
-        hdist = ~/.hashdist/bin/hdist
+        hit = ~/.hashdist/bin/hit
         python2-path = ~/.hashdist/lib/python2
 
     [sources]
@@ -50,29 +50,29 @@ command and the ``hashdist`` Python package. It is configured through
     <...>
 
 If a software distribution bundles its own isolated Hashdist
-environment then the ``hdist`` command should be rebranded (e.g.,
-``qsnake-hdist``), and it should read a different configuration
+environment then the ``hit`` command should be rebranded (e.g.,
+``qsnake-hit``), and it should read a different configuration
 file. Similarly, the Python package should be rebranded (e.g.,
 ``qsnake.hashdist``).
 
-The command ``hdist`` should *always* read ``~/.hashdistconfig`` (or
+The command ``hit`` should *always* read ``~/.hashdistconfig`` (or
 the configuration file specified on the command line) and launch the
-command found there under the `hdist` key. Similarly, ``import
+command found there under the `hit` key. Similarly, ``import
 hashdist`` should add the package from the location specified in the
 configuration file to ``sys.path`` and then do ``from hashdistlib
 import *``.  The reason is simply that the paths mentioned in that
 file are managed by a particular version of hashdist, and we want an
-upgrade path. Essentially, the ``hdist`` command-line tool and the
+upgrade path. Essentially, the ``hit`` command-line tool and the
 ``hashdist`` Python package are not part of the software stack the
 distribution provides (unless rebranded).  If you put an old, outdated
-profile in ``$PATH``, the ``hdist`` command found in it will simply
+profile in ``$PATH``, the ``hit`` command found in it will simply
 read ``~/.hashdistconfig`` and then launch a newer version of
-``hdist``. (However, ``qsnake-hdist`` is free to behave however it
+``hit``. (However, ``qsnake-hit`` is free to behave however it
 likes.)
 
 The best way of distributing Hashdist is in fact to get it through the
-operating system package manager. In that case, the `hdist` key in ``~/.hashdistconfig``
-will point to ``/usr/bin/hdist``. Alternatively, a
+operating system package manager. In that case, the `hit` key in ``~/.hashdistconfig``
+will point to ``/usr/bin/hit``. Alternatively, a
 bootstrapping solution is provided and recommended which make sure that each
 distribution using a non-rebranded Hashdist use the same one.
 

@@ -122,7 +122,7 @@ are affected:
 **HDIST_VIRTUALS**:
     The mapping of virtual artifacts to concrete artifact IDs that has
     been used. Format by example:
-    ``virtual:unix=unix/r0/KALiap2<...>;virtual:hdist=hdist/r0/sLt4Zc<...>``
+    ``virtual:unix=unix/r0/KALiap2<...>;virtual:hit=hit/r0/sLt4Zc<...>``
 
 Mini script language
 --------------------
@@ -147,7 +147,7 @@ It may seem insane to invent another script language. Rationalization:
 Example script::
 
     "script" : [
-        {"hdist": ["unpack-sources"]},
+        {"hit": ["unpack-sources"]},
         { "env": {"LIB": "foo"},
           "cwd": "src",
           "scope": [
@@ -161,7 +161,7 @@ Example script::
 
 Rules:
 
- * Every item in the script is either a `cmd` or a `scope` or a `hdist`, i.e.
+ * Every item in the script is either a `cmd` or a `scope` or a `hit`, i.e.
    those keys are mutually exclusive.
 
  * In the case of scope, variable changes only take affect within the scope (above,
@@ -171,7 +171,7 @@ Rules:
  * The `cmd` list is passed straight to :func:`subprocess.Popen` as is
    (after variable substiution). I.e., no quoting needed, no globbing.
 
- * The `hdist` executes the `hdist` tool *in-process*. It acts like `cmd` otherwise,
+ * The `hit` executes the `hit` tool *in-process*. It acts like `cmd` otherwise,
    e.g., `to_var` works.
 
  * `env` and `cwd` modifies env-vars/working directory for the command in question,
@@ -190,11 +190,11 @@ Rules:
    (but ``\`` not followed by ``$`` is not currently an escape).
 
 
-For the `hdist` tool, in addition to what is listed in ``hdist
+For the `hit` tool, in addition to what is listed in ``hit
 --help``, the following special command is available for interacting
 with the job runner:
 
- * ``hdist logpipe HEADING LEVEL``: Creates a new Unix FIFO and prints
+ * ``hit logpipe HEADING LEVEL``: Creates a new Unix FIFO and prints
    its name to standard output (it will be removed once the job
    terminates). The job runner will poll the pipe and print
    anything written to it nicely formatted to the log with the given
@@ -203,9 +203,9 @@ with the job runner:
 
 .. note::
 
-    ``hdist`` is not automatically available in the environment in general
+    ``hit`` is not automatically available in the environment in general
     (in launched scripts etc.), for that, see :mod:`hashdist.core.hdist_recipe`.
-    ``hdist logpipe`` is currently not supported outside of the job script
+    ``hit logpipe`` is currently not supported outside of the job script
     at all (this could be supported through RPC with the job runner, but the
     gain seems very slight).
 
@@ -292,7 +292,7 @@ def run_job(logger, build_store, job_spec, override_env, virtuals, cwd, config):
     config : dict
         Configuration from :mod:`hashdist.core.config`. This will be
         serialied and put into the HDIST_CONFIG environment variable
-        for use by ``hdist``.
+        for use by ``hit``.
 
     Returns
     -------
@@ -521,13 +521,13 @@ class ScriptExecution(object):
 
     rpc_dir : str
         A temporary directory on a local filesystem. Currently used for creating
-        pipes with the "hdist logpipe" command.
+        pipes with the "hit logpipe" command.
     """
     
     def __init__(self, logger):
         self.logger = logger
         self.log_fifo_filenames = {}
-        self.rpc_dir = tempfile.mkdtemp(prefix='hdist-sandbox-')
+        self.rpc_dir = tempfile.mkdtemp(prefix='hit-sandbox-')
 
     def close(self):
         """Removes log FIFOs; should always be called when one is done
@@ -565,8 +565,8 @@ class ScriptExecution(object):
         for line in script:
             if not isinstance(line, dict):
                 raise TypeError('script must be a list of dicts (using old script syntax?); got %r' % line)
-            if sum(['cmd' in line, 'hdist' in line, 'scope' in line]) != 1:
-                raise ValueError("Each script line should have exactly one of the 'cmd', 'hdist', 'scope' keys")
+            if sum(['cmd' in line, 'hit' in line, 'scope' in line]) != 1:
+                raise ValueError("Each script line should have exactly one of the 'cmd', 'hit', 'scope' keys")
             if sum(['to_var' in line, 'stdout_to_file' in line]) > 1:
                 raise ValueError("Can only have one of to_var, stdout_to_file")
             if 'scope' in line and ('append_to_file' in line or 'to_var' in line):
@@ -585,14 +585,14 @@ class ScriptExecution(object):
                     # note: subst. using parent env to make sure order doesn't matter
                     line_env[key] = self.substitute(value, env)
 
-            if 'cmd' in line or 'hdist' in line:
+            if 'cmd' in line or 'hit' in line:
                 if 'cmd' in line:
                     key = 'cmd'
                     args = line['cmd']
                     func = self.run_cmd
                 else:
-                    key = 'hdist'
-                    args = line['hdist']
+                    key = 'hit'
+                    args = line['hit']
                     func = self.run_hdist
                 if not isinstance(args, list):
                     raise TypeError("'%s' arguments must be a list, got %r" % (key, args))
@@ -641,7 +641,7 @@ class ScriptExecution(object):
             raise
 
     def run_hdist(self, args, env, cwd, stdout_to=None):
-        args = ['hdist'] + args
+        args = ['hit'] + args
         logger = self.logger
         logger.debug('running %r' % args)
         # run it in the same process, but do not emit
@@ -656,7 +656,7 @@ class ScriptExecution(object):
 
             if len(args) >= 2 and args[1] == 'logpipe':
                 if len(args) != 4:
-                    raise ValueError('wrong number of arguments to "hdist logpipe"')
+                    raise ValueError('wrong number of arguments to "hit logpipe"')
                 sublogger_name, level = args[2:]
                 self.create_log_pipe(sublogger_name, level)
             else:
@@ -664,7 +664,7 @@ class ScriptExecution(object):
                 with working_directory(cwd):
                     cli_main(args, env, logger)
         except:
-            logger.error("hdist command failed")
+            logger.error("hit command failed")
             raise
         finally:
             logger.level = old_level

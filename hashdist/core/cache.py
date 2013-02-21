@@ -5,7 +5,7 @@
 Building artifact descriptions can be time-consuming if it involves,
 e.g., probing the host system for information and so on. This is
 simply a key-value store stored in a central location for Hashdist
-(typically ``~/.hdist/cache``). Anything in the cache can be removed
+(typically ``~/.hit/cache``). Anything in the cache can be removed
 without further notice.
 """
 

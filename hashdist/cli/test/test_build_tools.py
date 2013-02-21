@@ -14,9 +14,9 @@ from ...core.test.test_build_store import fixture
 def setup():
     global hdist_script, projdir
     projdir = os.path.realpath(pjoin(os.path.dirname(__file__), '..', '..', '..'))
-    hdist_script = pjoin(projdir, 'bin', 'hdist')
+    hdist_script = pjoin(projdir, 'bin', 'hit')
 
-def hdist(*args, **kw):
+def hit(*args, **kw):
     env = dict(kw['env'])
     env['PYTHONPATH'] = projdir
     p = subprocess.Popen([sys.executable, hdist_script] + list(args), env=env,
@@ -41,7 +41,7 @@ def test_symlinks():
             ''')
         env = dict(os.environ)
         env['FOO'] = 'foo'
-        hdist('create-links', '--key=section1/section2', 'build.json', env=env)
+        hit('create-links', '--key=section1/section2', 'build.json', env=env)
         assert os.path.realpath('foo') == '/bin/ls'
         assert os.path.realpath('bar/bin/ls') == '/bin/ls'
 
@@ -53,7 +53,7 @@ def test_build_profile(tempdir, sc, bldr, cfg):
         'name': 'corelib',
         'version': 'n',
         'build': {
-            'script': [{'hdist': ['build-write-files']}]
+            'script': [{'hit': ['build-write-files']}]
             },
         'files': [
             {
@@ -61,7 +61,7 @@ def test_build_profile(tempdir, sc, bldr, cfg):
                 "object": {
                     "install": {
                         "script": [
-                            {"hdist": ["create-links", "--key=install/links", "artifact.json"]}
+                            {"hit": ["create-links", "--key=install/links", "artifact.json"]}
                             ],
                         "links": [{"action": "symlink",
                                    "select": "$ARTIFACT/*/**/*",
@@ -95,10 +95,10 @@ def test_build_profile(tempdir, sc, bldr, cfg):
             "import": [{"id": corelib_id}],
             "script": [
                 {"cmd": ["/bin/echo", "hello world"], "append_to_file": "$ARTIFACT/hello"}, # must not be removed by pop
-                {"hdist": ["build-profile", "push"]},
+                {"hit": ["build-profile", "push"]},
                 {"cmd": ["/bin/echo", "hello world"], "append_to_file": "$ARTIFACT/share/foo"}, # preserve "share" dir
                 {"cmd": ["/bin/readlink", "$ARTIFACT/should-be-removed/hello"], "append_to_file": "$ARTIFACT/result"},
-                {"hdist": ["build-profile", "pop"]},
+                {"hit": ["build-profile", "pop"]},
                 ]
             }
         }

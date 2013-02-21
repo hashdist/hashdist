@@ -87,7 +87,7 @@ def test_attach_log(tempdir, sc, build_store, cfg):
         f.write('hello from pipe')
     job_spec = {
         "script": [
-            {"hdist": ["logpipe", "mylog", "WARNING"], "to_var": "LOG"},
+            {"hit": ["logpipe", "mylog", "WARNING"], "to_var": "LOG"},
             {"cmd": ["/bin/dd", "if=hello", "of=$LOG"]},
         ]}
     logger = MemoryLogger()
@@ -142,7 +142,7 @@ def test_log_pipe_stress(tempdir, sc, build_store, cfg):
 
     job_spec = {
         "script": [
-            {"hdist": ["logpipe", "mylog", "WARNING"], "to_var": "LOG"},
+            {"hit": ["logpipe", "mylog", "WARNING"], "to_var": "LOG"},
             {"cmd": [sys.executable, pjoin(tempdir, 'launcher.py'), pjoin(tempdir, 'client.py'), str(NJOBS), str(NMSGS)]},
         ]}
     logger = MemoryLogger()
@@ -180,7 +180,7 @@ def test_log_pipe_stress(tempdir, sc, build_store, cfg):
 def test_notimplemented_redirection(tempdir, sc, build_store, cfg):
     job_spec = {
         "script": [
-            {"hdist": ["logpipe", "mylog", "WARNING"], "to_var": "log"},
+            {"hit": ["logpipe", "mylog", "WARNING"], "to_var": "log"},
             {"cmd": ["/bin/echo", "my warning"], "append_to_file": "$log"}
         ]}
     with assert_raises(NotImplementedError):

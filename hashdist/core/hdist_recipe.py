@@ -1,5 +1,5 @@
 """
-A recipe for making the ``hdist`` command reliably available in an
+A recipe for making the ``hit`` command reliably available in an
 environment.
 """
 
@@ -9,12 +9,12 @@ import sys
 
 from .build_store import BuildSpec
 
-HDIST_CLI_ARTIFACT_NAME = "hdist-cli"
+HDIST_CLI_ARTIFACT_NAME = "hit-cli"
 HDIST_CLI_ARTIFACT_VERSION = "r0"
 
 def hdist_cli_build_spec(python=None, package=None):
     """Build-spec to creates a 'bin'-dir containing only a launcher
-    for the 'hdist' command.
+    for the 'hit' command.
 
     The recipe simply emits executable files directly to ``$ARTIFACT``,
     without executing commands.
@@ -48,7 +48,7 @@ def hdist_cli_build_spec(python=None, package=None):
         "version": HDIST_CLI_ARTIFACT_VERSION,
         "files": [
             {
-                "target": "$ARTIFACT/bin/hdist",
+                "target": "$ARTIFACT/bin/hit",
                 "executable": True,
                 "expandvars": True,
                 "text": [
@@ -73,8 +73,8 @@ def hdist_cli_build_spec(python=None, package=None):
         },
         "build": {
             "script": [
-                {"hdist": ["build-write-files"]},
-                {"hdist": ["create-links", "--key=parameters/links", "build.json"]}
+                {"hit": ["build-write-files"]},
+                {"hit": ["create-links", "--key=parameters/links", "build.json"]}
             ]
         }
     }
@@ -82,7 +82,7 @@ def hdist_cli_build_spec(python=None, package=None):
     
 def ensure_hdist_cli_artifact(build_store, config):
     """
-    Builds an artifact which executes the 'hdist' command using the current
+    Builds an artifact which executes the 'hit' command using the current
     Python interpreter and current Hashdist package.
 
     Note: The current Hashdist package is merely symlinked to, the
@@ -90,7 +90,7 @@ def ensure_hdist_cli_artifact(build_store, config):
     running process to inject a CLI into the build environment.
 
     In other words, this artifact should almost always be provided
-    as a "virtual:hdist", not as a concrete artifact.
+    as a "virtual:hit", not as a concrete artifact.
     """
     spec = hdist_cli_build_spec()
     return build_store.ensure_present(spec, config)
