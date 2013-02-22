@@ -67,7 +67,6 @@ An example build spec:
                  {"ref": "gcc", "id": "gcc/host-4.6.3/q0VSL7JmzH1P17meqITYc4kMbnIjIexrWPdlAlqPn3s", "before": ["virtual:unix"]},
              ],
              "commands" : [
-                 {"hit", ["build-unpack-sources"]},
                  {"hit", ["build-write-files"]},
                  {"cmd": ["bash", "build.sh"]}
              ],
@@ -112,10 +111,8 @@ An example build spec:
 **import_modify_env**:
     Copied to `$ARTIFACT/artifact.json` before the build.
 
-
-In addition, extra keys can be added at will to use for input to
-commands executed in the build. In the example above, the `sources`
-key is read by the ``hit build-unpack-sources`` command.
+**sources**:
+    Sources are unpacked; documentation for now in 'hit unpack-sources'
 
 The build environment
 ---------------------
@@ -188,13 +185,13 @@ import errno
 import json
 from logging import DEBUG
 
+from .source_cache import SourceCache
 from .hasher import Hasher
 from .common import (InvalidBuildSpecError, BuildFailedError,
                      json_formatting_options, SHORT_ARTIFACT_ID_LEN,
                      working_directory)
 from .fileutils import silent_unlink, rmtree_up_to, silent_makedirs, gzip_compress, write_protect
 from . import run_job
-
 
 
 class BuildSpec(object):
@@ -525,6 +522,11 @@ class ArtifactBuilder(object):
             env['BUILD'] = build_dir
             self.serialize_build_spec(build_dir)
 
+            source_cache = SourceCache.create_from_config(config, self.logger)
+            unpack_sources(self.logger, source_cache,
+                           self.build_spec.doc.get('sources', []),
+                           build_dir)
+
             should_keep = (keep_build == 'always')
             try:
                 self.run_build_commands(build_dir, artifact_dir, env, config)
@@ -586,4 +588,16 @@ class ArtifactBuilder(object):
         log_gz_filename = pjoin(artifact_dir, 'build.log.gz')
         gzip_compress(pjoin(build_dir, 'build.log'), log_gz_filename)
         write_protect(log_gz_filename)
+
+
+def unpack_sources(logger, source_cache, doc, target_dir):
+    """
+    Executes source unpacking from 'sources' section in build.json
+    """
+    for source_item in doc:
+        key = source_item['key']
+        target = pjoin(target_dir, source_item.get('target', '.'))
+        strip = source_item.get('strip', 0)
+        logger.info('Unpacking sources %s' % key)
+        source_cache.unpack(key, target, unsafe_mode=True, strip=strip)
 

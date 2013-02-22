@@ -101,14 +101,10 @@ class BuildUnpackSources(object):
 
     @staticmethod
     def run(ctx, args):
-        from ..core.links import execute_links_dsl
+        from ..core.build_store import unpack_sources
         source_cache = SourceCache.create_from_config(ctx.config, ctx.logger)
         doc = fetch_parameters_from_json(args.input, args.key)
-        for source_item in doc:
-            key = source_item['key']
-            target = source_item.get('target', '.')
-            strip = source_item.get('strip', 0)
-            source_cache.unpack(key, target, unsafe_mode=True, strip=strip)
+        unpack_sources(ctx.logger, source_cache, doc, '.')
 
 @register_subcommand
 class BuildWriteFiles(object):
