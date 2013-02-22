@@ -47,7 +47,6 @@ def test_canonical_build_spec():
               {'before': [], 'id': 'b', 'in_env': True, 'ref': None},
               {'before': [], 'id': 'c', 'in_env': False, 'ref': "the_c"},
             ],
-            "script": [],
             "env": {},
             "env_nohash": {},
           },
@@ -111,7 +110,7 @@ def test_basic(tempdir, sc, bldr, config):
         "files" : [{"target": "$ARTIFACT/$BAR/foo", "text": ["foo${BAR}foo"], "expandvars": True}],
         "build": {
             "env": {"BAR": "bar"},
-            "script": [
+            "commands": [
                 {"hit": ["build-unpack-sources"]},
                 {"hit": ["build-write-files"]},
                 {"cmd": ["/bin/bash", "build.sh"]}
@@ -147,7 +146,7 @@ def test_basic(tempdir, sc, bldr, config):
 def test_failing_build_and_multiple_commands(tempdir, sc, bldr, config):
     spec = {"name": "foo", "version": "na",
             "build": {
-                "script": [
+                "commands": [
                     {"cmd": ["/bin/echo", "test"], "append_to_file": "foo"},
                     {"cmd": ["/bin/true"]},
                     {"cmd": ["/bin/false"]},
@@ -191,7 +190,7 @@ def test_hash_prefix_collision(tempdir, sc, bldr, config):
         for k in range(15):
             spec = {"name": "foo", "version": "na",
                     "build": {
-                        "script": [{"cmd": ["/bin/echo", "hello", str(k)]}]
+                        "commands": [{"cmd": ["/bin/echo", "hello", str(k)]}]
                         }
                     }
             artifact_id, path = bldr.ensure_present(spec, config)
@@ -227,7 +226,7 @@ def test_source_unpack_options(tempdir, sc, bldr, config):
                 {"target": "subdir", "key": tarball_key, "strip": 0},
                 ],
             "build": {
-                "script": [
+                "commands": [
                     {"hit": ["build-unpack-sources"]},
                     {"cmd": ["/bin/cp", "subdir/coolproject-2.3/README", "$ARTIFACT/a"]},
                     {"cmd": ["/bin/cp", "README", "$ARTIFACT/b"]},
@@ -261,7 +260,7 @@ def build_mock_packages(builder, config, packages, virtuals={}, name_to_artifact
                 "build": {
                     "import": [{"ref": dep.name, "id": name_to_artifact[dep.name][0]}
                                for dep in pkg.deps],
-                    "script": [
+                    "commands": [
                         {"hit": ["build-write-files"]},
                         {"cmd": ["/bin/bash", "build.sh"]}
                         ]

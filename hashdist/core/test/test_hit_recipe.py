@@ -19,7 +19,7 @@ def test_hit_cli_artifact(tempdir, sc, bldr, config):
              "name": "foo", "version": "na",
              "dependencies": [{"ref": "hit", "id": "virtual:hit"}],
              "build": {
-                "script": [{"hit": ["create-links", "--key=parameters/links", "build.json"]}]
+                "commands": [{"hit": ["create-links", "--key=parameters/links", "build.json"]}]
              },
              "parameters": {
                "links": [

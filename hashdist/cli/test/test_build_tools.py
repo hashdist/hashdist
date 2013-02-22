@@ -53,14 +53,14 @@ def test_build_profile(tempdir, sc, bldr, cfg):
         'name': 'corelib',
         'version': 'n',
         'build': {
-            'script': [{'hit': ['build-write-files']}]
+            'commands': [{'hit': ['build-write-files']}]
             },
         'files': [
             {
                 'target': '$ARTIFACT/artifact.json',
                 "object": {
                     "install": {
-                        "script": [
+                        "commands": [
                             {"hit": ["create-links", "--key=install/links", "artifact.json"]}
                             ],
                         "links": [{"action": "symlink",
@@ -93,7 +93,7 @@ def test_build_profile(tempdir, sc, bldr, cfg):
         "version": "n",
         "build": {
             "import": [{"id": corelib_id}],
-            "script": [
+            "commands": [
                 {"cmd": ["/bin/echo", "hello world"], "append_to_file": "$ARTIFACT/hello"}, # must not be removed by pop
                 {"hit": ["build-profile", "push"]},
                 {"cmd": ["/bin/echo", "hello world"], "append_to_file": "$ARTIFACT/share/foo"}, # preserve "share" dir

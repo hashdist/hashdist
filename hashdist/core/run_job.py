@@ -303,7 +303,6 @@ def canonicalize_job_spec(job_spec):
     result['import'].sort(key=lambda item: item['id'])
     result.setdefault("env", {})
     result.setdefault("env_nohash", {})
-    result.setdefault("script", [])
     return result
     
 def substitute(x, env):
