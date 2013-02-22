@@ -1,6 +1,6 @@
 """
-:mod:`hashdist.core.run_job` --- Job/script execution in controlled environment
-===============================================================================
+:mod:`hashdist.core.run_job` --- Job execution in controlled environment
+========================================================================
 
 Executes a set of commands in a controlled environment, determined by
 a JSON job specification. This is used as the "build" section of ``build.json``,
@@ -119,7 +119,7 @@ generating a text script in a pipeline is no fun.
 
 See example above for basic script structure. Rules:
 
- * Every item in the script is either a `cmd` or a `commands` or a `hit`, i.e.
+ * Every item in the job is either a `cmd` or a `commands` or a `hit`, i.e.
    those keys are mutually exclusive and defines the node type.
 
  * `commands`: Push a new environment and current directory to stack,
@@ -170,7 +170,7 @@ with the job runner:
 
     ``hit`` is not automatically available in the environment in general
     (in launched scripts etc.), for that, see :mod:`hashdist.core.hit_recipe`.
-    ``hit logpipe`` is currently not supported outside of the job script
+    ``hit logpipe`` is currently not supported outside of the job spec
     at all (this could be supported through RPC with the job runner, but the
     gain seems very slight).
 
@@ -253,7 +253,7 @@ def run_job(logger, build_store, job_spec, override_env, virtuals, cwd, config):
         Maps virtual artifact to real artifact IDs.
 
     cwd : str
-        The starting working directory of the script. Currently this
+        The starting working directory of the job. Currently this
         cannot be changed (though a ``cd`` command may be implemented in
         the future if necesarry)
 
@@ -546,7 +546,7 @@ class ScriptExecution(object):
         return env
 
     def run_node(self, node, env, cwd, node_pos):
-        """Executes a script node
+        """Executes a command node
 
         Parameters
         ----------
@@ -573,7 +573,7 @@ class ScriptExecution(object):
             The current directory
         """
         if not isinstance(node, dict):
-            raise TypeError('script must be a list of dicts (using old script syntax?); got %r' % node)
+            raise TypeError('command node must be a dict; got %r' % node)
         if sum(['cmd' in node, 'hit' in node, 'commands' in node]) != 1:
             raise ValueError("Each script node should have exactly one of the 'cmd', 'hit', 'commands' keys")
         if sum(['to_var' in node, 'stdout_to_file' in node]) > 1:
