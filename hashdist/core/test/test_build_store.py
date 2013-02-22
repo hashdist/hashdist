@@ -113,15 +113,16 @@ def test_basic(tempdir, sc, bldr, config):
             "env": {"BAR": "bar"},
             "commands": [
                 {"hit": ["build-unpack-sources"]},
-                {"hit": ["build-write-files"]},
+                {"hit": ["build-write-files", "--key=files", "build.json"]},
                 {"cmd": ["/bin/bash", "build.sh"]}
-            ]
+                ]
+            }
         }
-    }
+
     assert not bldr.is_present(spec)
     name, path = bldr.ensure_present(spec, config)
     assert bldr.is_present(spec)
-    assert ['bar', 'build.json', 'build.log.gz', 'hello'] == sorted(os.listdir(path))
+    assert ['artifact.json', 'bar', 'build.json', 'build.log.gz', 'hello'] == sorted(os.listdir(path))
     with file(pjoin(path, 'hello')) as f:
         got = sorted(f.readlines())
         eq_(''.join(got), dedent('''\
@@ -142,6 +143,21 @@ def test_basic(tempdir, sc, bldr, config):
     assert 'foo' in os.listdir(pjoin(path, 'bar'))
     with file(pjoin(path, 'bar', 'foo')) as f:
         assert f.read() == 'foobarfoo'
+
+@fixture()
+def test_artifact_json(tempdir, sc, bldr, config):
+    artifact = {
+        "name": "fooname",
+        "version": "na",
+        "profile_install": {"foo": "bar"},
+        "import_modify_env": ["baz"],
+        }
+    spec = dict(artifact)
+    spec.update({"build":{"commands": []}})
+    name, path = bldr.ensure_present(spec, config)
+    with open(pjoin(path, 'artifact.json')) as f:
+        obj = json.load(f)
+    assert obj == artifact
 
 
 @fixture()
@@ -265,7 +281,7 @@ def build_mock_packages(builder, config, packages, virtuals={}, name_to_artifact
                     "import": [{"ref": dep.name, "id": name_to_artifact[dep.name][0]}
                                for dep in pkg.deps],
                     "commands": [
-                        {"hit": ["build-write-files"]},
+                        {"hit": ["build-write-files", "--key=files", "build.json"]},
                         {"cmd": ["/bin/bash", "build.sh"]}
                         ]
                     },

@@ -160,8 +160,8 @@ class BuildWriteFiles(object):
 
     @staticmethod
     def setup(ap):
-        ap.add_argument('--key', default="files", help='key to read from json (default: "files")')
-        ap.add_argument('--input', default="build.json", help='json parameter file (default: "build.json")')
+        ap.add_argument('--key', default="/", help='read a sub-key from json')
+        ap.add_argument('input', help='json parameter file')
 
     @staticmethod
     def run(ctx, args):

@@ -53,33 +53,31 @@ def test_build_profile(tempdir, sc, bldr, cfg):
         'name': 'corelib',
         'version': 'n',
         'build': {
-            'commands': [{'hit': ['build-write-files']}]
-            },
-        'files': [
-            {
-                'target': '$ARTIFACT/artifact.json',
-                "object": {
-                    "install": {
-                        "commands": [
-                            {"hit": ["create-links", "--key=install/links", "artifact.json"]}
-                            ],
-                        "links": [{"action": "symlink",
-                                   "select": "$ARTIFACT/*/**/*",
-                                   "prefix": "$ARTIFACT",
-                                   "target": "$PROFILE"}]
-                     }
+            'commands': [
+                {"hit": ["build-write-files", "$in0"],
+                 "inputs": [
+                     {"json": [
+                         {'target': '$ARTIFACT/should-be-removed/hello', 'text': ["Hello world!"]},
+                         # "share" should not be removed 
+                         {'target': '$ARTIFACT/share/hello', 'text': ["Hello world!"]}
+                         ],
+                      }
+                     ]
                  }
-             },
-            {
-                'target': '$ARTIFACT/should-be-removed/hello',
-                'text': ["Hello world!"]
+                ]
             },
-            {
-                'target': '$ARTIFACT/share/hello', # "share" should not be removed
-                'text': ["Hello world!"]
-            },
-           
-            ]
+        'profile_install': {
+            "commands": [
+                {"hit": ["create-links", "$in0"],
+                 "inputs": [
+                     {"json": [{"action": "symlink",
+                                "select": "$ARTIFACT/*/**/*",
+                                "prefix": "$ARTIFACT",
+                                "target": "$PROFILE"}]
+                      }]
+                 },
+                ]
+            }
         }
     corelib_id, corelib_path = bldr.ensure_present(corelib_spec, cfg)
 

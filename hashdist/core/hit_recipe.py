@@ -62,22 +62,23 @@ def hit_cli_build_spec(python=None, package=None):
                 ]
             }
         ],
-        "parameters": {
-            "links": [
-                {
-                  "action": "symlink",
-                  "source": package,
-                  "target": "$ARTIFACT/pypkg/hashdist"
-                }
-            ]
-        },
         "build": {
             "commands": [
-                {"hit": ["build-write-files"]},
-                {"hit": ["create-links", "--key=parameters/links", "build.json"]}
-            ]
+                {"hit": ["build-write-files", "--key=files", "build.json"]},
+                {"hit": ["create-links", "$in0"],
+                 "inputs": [
+                     {"json": [{
+                         "action": "symlink",
+                         "source": package,
+                         "target": "$ARTIFACT/pypkg/hashdist"
+                         }
+                               ]
+                    }
+                     ]
+                 }
+                ]
+            }
         }
-    }
     return BuildSpec(spec)
     
 def ensure_hit_cli_artifact(build_store, config):

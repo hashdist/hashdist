@@ -16,8 +16,8 @@ into the artifact, but it need not be.
 Example::
 
     {
-      "install": {
-        "dependencies": [],
+      "profile_install": {
+        "import": [],
         "env": {}
         "commands": [{"hit": ["make-symlinks", "profile.json"]}],
         "parameters": {
@@ -107,7 +107,7 @@ def install_artifact_into_profile(logger, build_store, artifact_id, target_dir, 
     else:
         with file(doc_filename) as f:
             doc = json.load(f)
-        job_spec = doc.get("install", None)
+        job_spec = doc.get("profile_install", None)
         if job_spec:
             env = {}
             env['ARTIFACT'] = artifact_dir

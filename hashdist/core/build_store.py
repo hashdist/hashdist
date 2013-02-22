@@ -106,6 +106,13 @@ An example build spec:
     A job to run to perform the build. See :mod:`hashdist.core.run_job`
     for the documentation of this sub-document.
 
+**profile_install**:
+    Copied to `$ARTIFACT/artifact.json` before the build.
+
+**import_modify_env**:
+    Copied to `$ARTIFACT/artifact.json` before the build.
+
+
 In addition, extra keys can be added at will to use for input to
 commands executed in the build. In the example above, the `sources`
 key is read by the ``hit build-unpack-sources`` command.
@@ -499,6 +506,7 @@ class ArtifactBuilder(object):
         assert isinstance(config, dict), "caller not refactored"
         artifact_dir = self.build_store.make_artifact_dir(self.build_spec)
         try:
+            self.make_artifact_json(artifact_dir)
             self.build_to(artifact_dir, config, keep_build)
         except:
             shutil.rmtree(artifact_dir)
@@ -535,6 +543,15 @@ class ArtifactBuilder(object):
             json.dump(self.build_spec.doc, f, **json_formatting_options)
             f.write('\n')
         write_protect(fname)
+
+    def make_artifact_json(self, artifact_dir):
+        fname = pjoin(artifact_dir, 'artifact.json')
+        artifact_doc = {}
+        for key in ['name', 'version', 'profile_install', 'import_modify_env']:
+            if key in self.build_spec.doc:
+                artifact_doc[key] = self.build_spec.doc[key]
+        with open(fname, 'w') as f:
+            json.dump(artifact_doc, f, **json_formatting_options)
 
     def run_build_commands(self, build_dir, artifact_dir, env, config):
         artifact_display_name = self.build_spec.digest[:SHORT_ARTIFACT_ID_LEN] + '..'
