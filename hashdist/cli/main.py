@@ -64,7 +64,7 @@ def _parse_docstring(doc):
     description = description.replace('::\n', ':\n').replace('``', '"')
     return help, description
 
-def main(unparsed_argv, env, logger=None, default_config_filename=None):
+def main(unparsed_argv, env, logger, default_config_filename=None):
     """The main ``hit`` command-line entry point
     """
     if default_config_filename is None:
@@ -108,30 +108,53 @@ def main(unparsed_argv, env, logger=None, default_config_filename=None):
                 args.config_file = default_config_filename
             config = load_configuration_from_inifile(args.config_file)
         
-        if logger is None:
-            logger = Logger(DEBUG)
         ctx = HashdistCommandContext(parser, subcmd_parsers, sys.stdout, config, env, logger)
 
-        try:
-            retcode = args.subcommand_handler(ctx, args)
-            if retcode is None:
-                retcode = 0
-        except:
-            if not ctx.logger.error_occurred:
-                print("Uncaught exception:", file=sys.stderr)
-                traceback.print_exc(file=sys.stderr)
-                print(file=sys.stderr)
+        retcode = args.subcommand_handler(ctx, args)
+        if retcode is None:
+            retcode = 0
+
+    return retcode
+
+
+def help_on_exceptions(logger, func, *args, **kw):
+    """Present exceptions in the form of a request to file an issue
+
+    Calls func (typically a "main" function), and returns the return code.
+    If an exception occurs, then a) if an error is logged to `logger`,
+    we just return with 127, or b) otherwise, dump the stack trace and
+    then return 127.
+
+    If the 'DEBUG' environment variable is set then the exception is
+    raised anyway.
+    """
+    try:
+        return func(*args, **kw)
+    except KeyboardInterrupt:
+        logger.info('Interrupted')
+        return 127
+    except SystemExit:
+        raise
+    except:
+        if len(os.environ.get('DEBUG', '')) > 0:
+            raise
+        else:
+            if not logger.error_occurred:
+                logger.error("Uncaught exception:")
+                for line in traceback.format_exc().splitlines():
+                    logger.info(line)
                 text = """\
                 This exception has not been translated to a human-friendly error
                 message, please file an issue at
                 https://github.com/hashdist/hashdist/issues pasting this
                 stack trace.
                 """
-                print(textwrap.fill(textwrap.dedent(text), width=78), file=sys.stderr)
-            retcode = 127
-
-    return retcode
-
+                text = textwrap.fill(textwrap.dedent(text), width=78)
+                logger.info('')
+                for line in text.splitlines():
+                    logger.info(line)
+            return 127
+            
 #
 # help command
 #
