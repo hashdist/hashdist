@@ -633,7 +633,7 @@ class ArchiveSourceCache(object):
     #
     # hit packs
     #
-    def _extract_hdist_pack(self, f, key, target_dir):
+    def _extract_hit_pack(self, f, key, target_dir):
         files = hit_unpack(f, key)
         scatter_files(files, target_dir)        
 
