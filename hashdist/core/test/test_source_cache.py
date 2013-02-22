@@ -11,7 +11,7 @@ import errno
 pjoin = os.path.join
 
 from ..source_cache import (ArchiveSourceCache, SourceCache,
-        CorruptSourceCacheError, hdist_pack, hdist_unpack, scatter_files,
+        CorruptSourceCacheError, hit_pack, hit_unpack, scatter_files,
         KeyNotFoundError, SourceNotFoundError)
 from ..hasher import Hasher, format_digest
 
@@ -228,11 +228,11 @@ def test_hdist_pack():
              ('a/b', 'in a subdir'),
              ('a/c', 'also in subdir')]
     stream = StringIO()
-    key = hdist_pack(files, stream)
+    key = hit_pack(files, stream)
     pack = stream.getvalue()
     assert key == 'files:ruwkpei2ot2fp77myn2n2n4ttefuabab'
-    assert hdist_pack(files[::-1]) == key
-    unpacked_files = hdist_unpack(StringIO(pack), key)
+    assert hit_pack(files[::-1]) == key
+    unpacked_files = hit_unpack(StringIO(pack), key)
     assert sorted(files) == sorted(unpacked_files)
 
 def test_scatter_files():
