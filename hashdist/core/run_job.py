@@ -2,10 +2,15 @@
 :mod:`hashdist.core.run_job` --- Job/script execution in controlled environment
 ===============================================================================
 
-Executes a set of commands in a controlled environment. This
-should usually be used to launch a real script interpreter, but
-basic support for modifying the environment and running multiple
-commands are provided through the JSON job specification.
+Executes a set of commands in a controlled environment, determined by
+a JSON job specification. This is used as the "build" section of ``build.json``,
+the "install" section of ``artifact.json``, and so on.
+
+The job spec may not completely specify the job environment because it
+is usually a building block of other specs which may imply certain
+additional environment variables. E.g., during a build, ``$ARTIFACT``
+and ``$BUILD`` are defined even if they are never mentioned here.
+
 
 Job specification
 -----------------
@@ -24,32 +29,40 @@ to reproduce a job run, and hash the job spec. Example:
             {"ref": "UNIX", "id": "virtual:unix"},
             {"ref": "GCC", "before": ["virtual:unix"], "id": "gcc/jonykztnjeqm7bxurpjuttsprphbooqt"}
          ],
-         "env" : {
-            "FOO" : "bar"
-         },
-         "env_nohash" : {
+         "nohash_params" : {
             "NCORES": "4"
          }
-         "script" : [
-              {
-                  "scope": [
-                      {"cmd": ["pkgcfg", "--cflags", "foo"], "to_var": "CFLAGS"},
-                      {"cmd": ["./configure", "--prefix=$ARTIFACT", "--foo-setting=$FOO"]}
-                  ],
-              },
-              {"cmd": ["make", "-j$NCORES"]},
-              {"cmd": ["make", "install"]}
+         "env" : {
+            "RUN_FOO": {
+              "assign": "1"
+            },
+            "PYTHONPATH": {
+              "type": "path",
+              "prepend": "$BUILD/python-tools"
+            }
+         },
+         "cwd": "src",
+         "commands" : [
+             {"cmd": ["pkg-config", "--cflags", "foo"], "to_var": "CFLAGS"},
+             {"cmd": ["./configure", "--prefix=$ARTIFACT", "--foo-setting=$FOO"]}
+             {"cmd": ["bash", "$in0"],
+              "inputs": [
+                  {"text": [
+                      "[\"$RUN_FOO\" != \"\" ] && ./foo"
+                      "make",
+                      "make install"
+                  ]}
+             }
          ],
     }
 
 
-.. note::
-   The job spec may not completely specify the job
-   environment because it is usually a building block of other specs
-   which may imply certain additional environment variables. E.g.,
-   during a build, ``$ARTIFACT`` and ``$BUILD`` are defined even if
-   they are never mentioned here.
+      
+Job spec root node
+------------------
 
+The root node is also a command node, as described below, but has two
+extra allowed keys:
 
 **import**:
     The artifacts needed in the environment for the run. After the
@@ -77,106 +90,58 @@ to reproduce a job run, and hash the job spec. Example:
       and so on). Otherwise the artifact can only be used through the
       variables ``ref`` sets up. Defaults to `True`.
 
-**script**:
-    Executed to perform the build. See below.
+**nohash_params**:
+    Initial set of environment variables that do not contribute to the
+    hash. Should only be used when one is willing to trust that the
+    value does not affect the build result in any way. E.g.,
+    parallelization flags, paths to manually downloaded binary
+    installers, etc.
 
-**env**:
-    Environment variables. The advantage to using this over just defining
-    them in the `script` section is that they are automatically unordered
-    w.r.t. hashing.
+When executing, the environment is set up as follows:
 
-**env_nohash**:
-    Same as `env` but entries here do not contribute to the hash. Should
-    only be used when one is willing to trust that the value does not
-    affect the build result in any way. E.g., parallelization flags,
-    paths to manually downloaded binary installers, etc.
+    * Environment is cleared (``os.environ`` has no effect)
+    * The initial environment provided by caller (e.g.,
+      :class:`.BuildStore` provides `$ARTIFACT` and `$BUILD`) is loaded
+    * The `nohash_params` dict (if present) is loaded into the env
+    * The `import` section is processed
+    * Commands executed (which may modify env)
 
+Command node
+------------
 
-The execution environment
--------------------------
+The command nodes is essentially a script language, but lacks any form
+of control flow. The purpose is to control the environment, and then
+quickly dispatch to a script in a real programming language.
 
-Standard output (except with "<=", see below) and error of all
-commands are both re-directed to a Logger instance passed in
-by the user. There is no stdin (it's set to a closed pipe).
+Also, the overall flow of commands to set up the build environment are
+typically generated by a pipeline from a package definition, and
+generating a text script in a pipeline is no fun.
 
-The build environment variables are wiped out and the variables in `env`
-and `env_nohash` set. Then, each of the `import`-ed artifacts are
-visited and (if `in_env` is not set to `False`) the following variables
-are affected:
+See example above for basic script structure. Rules:
 
-**PATH**:
-    Set to point to the ``bin``-sub-directories of imports.
+ * Every item in the script is either a `cmd` or a `commands` or a `hit`, i.e.
+   those keys are mutually exclusive and defines the node type.
 
-**HDIST_CFLAGS**:
-    Set to point to the ``include``-sub-directories of imports.
+ * `commands`: Push a new environment and current directory to stack,
+   execute sub-commands, and pop the stack.
 
-**HDIST_LDFLAGS**:
-    Set to point to the ``lib*``-sub-directories of imports.
+ * `cmd`: The list is passed straight to :func:`subprocess.Popen` as is
+   (after variable substiution). I.e., no quoting, no globbing.
 
-    Note that it is almost impossible to inject a relative RPATH; even
-    if one manages to escaoe $ORIGIN properly for the build system,
-    any auto-detection will tend to prepend absolute RPATHs
-    anyway. See experiences in mess.rst. If on wishes '$ORIGIN' in the
-    RPATH then ``patchelf`` should be used.
-
-**HDIST_VIRTUALS**:
-    The mapping of virtual artifacts to concrete artifact IDs that has
-    been used. Format by example:
-    ``virtual:unix=unix/r0/KALiap2<...>;virtual:hit=hit/r0/sLt4Zc<...>``
-
-Mini script language
---------------------
-
-It may seem insane to invent another script language. Rationalization:
-
-    * This is really minimal, for anything complicated (like involving control
-      flow) one should launch a real script interpreter. (But something must
-      do that launch.)
-
-    * The commands to set up the build environment are typically
-      generated by a pipeline, and generating a text script in a
-      pipeline is no fun. So if one wanted to, e.g., require Bash, one
-      would basically need to invent a syntax tree form to work with
-      anyway, and then serialize that to Bash. And that's basically
-      what we have below, except we skip the serialize to Bash part.
-
-    * It is nice to have something cross-platform without external
-      dependencies for the simplest things. And the implementation is
-      really short.
-
-Example script::
-
-    "script" : [
-        {"hit": ["unpack-sources"]},
-        { "env": {"LIB": "foo"},
-          "cwd": "src",
-          "scope": [
-            {"cmd": ["pkgcfg", "--cflags", "$LIB"], "to_var": "FOO"}
-            {"cmd": ["./configure", "--prefix=$ARTIFACT", "--foo-setting=$FOO"]},
-          ]
-        },
-        {"cmd": ["make", "-j$NCORES"], "cwd": "src"},
-        {"cmd": ["make", "install"], "cwd": "src"}
-    ]
-
-Rules:
-
- * Every item in the script is either a `cmd` or a `scope` or a `hit`, i.e.
-   those keys are mutually exclusive.
-
- * In the case of scope, variable changes only take affect within the scope (above,
-   both ``$LIB`` and ``$FOO`` are only available in the sub-scope, it acts
-   like a normal programming language stack).
-
- * The `cmd` list is passed straight to :func:`subprocess.Popen` as is
-   (after variable substiution). I.e., no quoting needed, no globbing.
-
- * The `hit` executes the `hit` tool *in-process*. It acts like `cmd` otherwise,
+ * `hit`: executes the `hit` tool *in-process*. It acts like `cmd` otherwise,
    e.g., `to_var` works.
 
  * `env` and `cwd` modifies env-vars/working directory for the command in question,
-   or the scope if it is a scope. They acts just like the regular
+   or the scope if it is a scope. The `cwd` acts just like the regular
    `cd` command, i.e., you can do things like ``"cwd": ".."``
+
+ * `files` specifies files that are dumped to temporary files and made available
+   as `$in0`, `$in1` and so on. Each file has the form ``{typestr: value}``,
+   where `typestr` means:
+   
+       * ``text``: `value` should be a list of strings which are joined by newlines
+       * ``string``: `value` is dumped verbatim to file
+       * ``json``: `value` is any JSON document, which is serialized to the file
 
  * stdout and stderr will be logged, except if `to_var` or
    `append_to_file` is present in which case the stdout is capture to
@@ -204,10 +169,13 @@ with the job runner:
 .. note::
 
     ``hit`` is not automatically available in the environment in general
-    (in launched scripts etc.), for that, see :mod:`hashdist.core.hdist_recipe`.
+    (in launched scripts etc.), for that, see :mod:`hashdist.core.hit_recipe`.
     ``hit logpipe`` is currently not supported outside of the job script
     at all (this could be supported through RPC with the job runner, but the
     gain seems very slight).
+
+
+
 
 Virtual imports
 ---------------
