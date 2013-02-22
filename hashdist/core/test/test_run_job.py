@@ -49,6 +49,7 @@ def test_run_job_environment(tempdir, sc, build_store, cfg):
         'HDIST_LDFLAGS': '',
         'HDIST_CFLAGS': '',
         'HDIST_IMPORT': '',
+        'HDIST_IMPORT_PATHS': '',
         'HDIST_VIRTUALS': 'virtual:bash=bash/ljnq7g35h6h4qtb456h5r35ku3dq25nl',
         'BAR': '$bar',
         'FOO': 'foo',

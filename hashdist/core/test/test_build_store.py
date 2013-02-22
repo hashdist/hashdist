@@ -8,6 +8,7 @@ from pprint import pprint
 import gzip
 import json
 from contextlib import closing
+import subprocess
 
 from nose.tools import eq_
 from nose import SkipTest
@@ -123,14 +124,15 @@ def test_basic(tempdir, sc, bldr, config):
     assert ['bar', 'build.json', 'build.log.gz', 'hello'] == sorted(os.listdir(path))
     with file(pjoin(path, 'hello')) as f:
         got = sorted(f.readlines())
-        assert ''.join(got) == dedent('''\
+        eq_(''.join(got), dedent('''\
         .
         ./build.json
         ./build.log
         ./build.sh
+        ./job
         ./subdir
         ./subdir/build.sh
-        ''')
+        '''))
     with closing(gzip.open(pjoin(path, 'build.log.gz'))) as f:
         s = f.read()
         assert 'hi stdout path=[]' in s
@@ -147,7 +149,7 @@ def test_failing_build_and_multiple_commands(tempdir, sc, bldr, config):
     spec = {"name": "foo", "version": "na",
             "build": {
                 "commands": [
-                    {"cmd": ["/bin/echo", "test"], "append_to_file": "foo"},
+                    {"cmd": ["/bin/echo", "test"], "append_to_file": "foo2"},
                     {"cmd": ["/bin/true"]},
                     {"cmd": ["/bin/false"]},
                 ]
@@ -155,13 +157,15 @@ def test_failing_build_and_multiple_commands(tempdir, sc, bldr, config):
     try:
         bldr.ensure_present(spec, config, keep_build='error')
     except BuildFailedError, e_first:
-        assert os.path.exists(pjoin(e_first.build_dir, 'foo'))
+        assert e_first.wrapped[0] is subprocess.CalledProcessError
+        assert os.path.exists(pjoin(e_first.build_dir, 'foo2'))
     else:
         assert False
 
     try:
         bldr.ensure_present(spec, config, keep_build='never')
     except BuildFailedError, e_second:
+        assert e_second.wrapped[0] is subprocess.CalledProcessError
         assert e_first.build_dir != e_second.build_dir
         assert not os.path.exists(pjoin(e_second.build_dir))
     else:

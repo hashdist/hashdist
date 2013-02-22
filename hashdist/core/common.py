@@ -6,9 +6,10 @@ class InvalidBuildSpecError(ValueError):
 
 
 class BuildFailedError(Exception):
-    def __init__(self, msg, build_dir):
+    def __init__(self, msg, build_dir, wrapped=None):
         Exception.__init__(self, msg)
         self.build_dir = build_dir
+        self.wrapped = wrapped
 
 json_formatting_options = dict(indent=2, separators=(', ', ' : '),
                                sort_keys=True, allow_nan=False)

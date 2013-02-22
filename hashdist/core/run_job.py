@@ -231,7 +231,7 @@ class InvalidJobSpecError(ValueError):
 class JobFailedError(RuntimeError):
     pass
 
-def run_job(logger, build_store, job_spec, override_env, virtuals, cwd, config):
+def run_job(logger, build_store, job_spec, override_env, virtuals, cwd, config, temp_dir=None):
     """Runs a job in a controlled environment, according to rules documented above.
 
     Parameters
@@ -262,6 +262,10 @@ def run_job(logger, build_store, job_spec, override_env, virtuals, cwd, config):
         serialied and put into the HDIST_CONFIG environment variable
         for use by ``hit``.
 
+    temp_dir : str (optional)
+        A temporary directory for use by the job runner. Files will be left in the
+        dir after execution.
+
     Returns
     -------
 
@@ -277,7 +281,7 @@ def run_job(logger, build_store, job_spec, override_env, virtuals, cwd, config):
     env.update(override_env)
     env['HDIST_VIRTUALS'] = pack_virtuals_envvar(virtuals)
     env['HDIST_CONFIG'] = json.dumps(config, separators=(',', ':'))
-    executor = ScriptExecution(logger)
+    executor = CommandTreeExecution(logger, temp_dir)
     try:
         executor.run_node(job_spec, env, cwd, ())
     finally:
@@ -355,6 +359,7 @@ def get_imports_env(build_store, virtuals, imports):
     HDIST_CFLAGS = []
     HDIST_LDFLAGS = []
     HDIST_IMPORT = []
+    HDIST_IMPORT_PATHS = []
     
     for dep in imports:
         dep_ref = dep['ref']
@@ -374,6 +379,7 @@ def get_imports_env(build_store, virtuals, imports):
         if dep_dir is None:
             raise InvalidJobSpecError('Dependency "%s"="%s" not already built, please build it first' %
                                         (dep_ref, dep_id))
+        HDIST_IMPORT_PATHS.append(dep_dir)
 
         if dep_ref is not None:
             env[dep_ref] = dep_dir
@@ -400,6 +406,7 @@ def get_imports_env(build_store, virtuals, imports):
     env['HDIST_CFLAGS'] = ' '.join(HDIST_CFLAGS)
     env['HDIST_LDFLAGS'] = ' '.join(HDIST_LDFLAGS)
     env['HDIST_IMPORT'] = ' '.join(HDIST_IMPORT)
+    env['HDIST_IMPORT_PATHS'] = ' '.join(HDIST_IMPORT_PATHS)
     return env
     
 def pack_virtuals_envvar(virtuals):
@@ -472,7 +479,7 @@ def stable_topological_sort(problem):
     return [id_to_obj[obj_id] for obj_id in result]
 
 
-class ScriptExecution(object):
+class CommandTreeExecution(object):
     """
     Class for maintaining state (in particular logging pipes) while
     executing script. Note that the environment is passed around as
@@ -491,16 +498,24 @@ class ScriptExecution(object):
         pipes with the "hit logpipe" command.
     """
     
-    def __init__(self, logger):
+    def __init__(self, logger, temp_dir=None):
         self.logger = logger
         self.log_fifo_filenames = {}
-        self.temp_dir = tempfile.mkdtemp(prefix='hit-sandbox-')
+        if temp_dir is None:
+            self.rm_temp_dir = True
+            temp_dir = tempfile.mkdtemp(prefix='hashdist-run-job-')
+        else:
+            if os.listdir(temp_dir) != []:
+                raise Exception('temp_dir must be an empty directory')
+            self.rm_temp_dir = False
+        self.temp_dir = temp_dir
         self.last_env, self.last_cwd = None, None
 
     def close(self):
         """Removes log FIFOs; should always be called when one is done
         """
-        shutil.rmtree(self.temp_dir)
+        if self.rm_temp_dir:
+            shutil.rmtree(self.temp_dir)
 
     def substitute(self, x, env):
         try:
