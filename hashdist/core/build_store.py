@@ -343,6 +343,9 @@ class BuildStore(object):
     def get_build_dir(self):
         return self.temp_build_dir
 
+    def is_path_in_build_store(self, d):
+        return os.path.realpath(d).startswith(self.artifact_root)
+
     def delete_all(self):
         for dirpath, dirnames, filenames in os.walk(self.ba_db_dir):
             for link in filenames:

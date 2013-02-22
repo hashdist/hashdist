@@ -257,6 +257,7 @@ class BuildPostprocess(object):
     @staticmethod
     def run(ctx, args):
         from ..core import build_tools
+        from ..core import BuildStore
         handlers = []
         
         if args.shebang == 'launcher':
@@ -271,7 +272,9 @@ class BuildPostprocess(object):
             handlers.append(partial(build_tools.postprocess_launcher_shebangs,
                                     launcher_program=launcher))
         elif args.shebang == 'multiline':
-            handlers.append(build_tools.postprocess_multiline_shebang)
+            build_store = BuildStore.create_from_config(ctx.config, ctx.logger)
+            handlers.append(partial(build_tools.postprocess_multiline_shebang,
+                                    build_store))
 
         if args.write_protect:
             handlers.append(build_tools.postprocess_write_protect)

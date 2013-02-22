@@ -66,6 +66,12 @@ def test_execute_files_dsl():
         with file(pjoin('plainfile')) as f:
             assert f.read() == 'bar'
 
+class MockBuildStore:
+    def __init__(self, is_in):
+        self.is_in = is_in
+
+    def is_path_in_build_store(self, d):
+        return self.is_in
 
 @temp_working_dir_fixture
 def test_python_shebang(d):
@@ -91,11 +97,20 @@ def test_python_shebang(d):
     print sys.executable
     print ':'.join(sys.argv)
     ''') % abs_interpreter
-    script = ''.join(build_tools.make_relative_multiline_shebang(script_file,
-                                                                 script.splitlines(True)))
+
+    # Should be no difference when path is not in build store
+    new_script = ''.join(build_tools.make_relative_multiline_shebang(MockBuildStore(False),
+                                                                     script_file,
+                                                                     script.splitlines(True)))
+    assert new_script == script
+    # Path is in build store...
+    new_script = ''.join(build_tools.make_relative_multiline_shebang(MockBuildStore(True),
+                                                                     script_file,
+                                                                     script.splitlines(True)))
+    assert new_script != script
 
     with open(script_file, 'w') as f:
-        f.write(script)
+        f.write(new_script)
         
     os.chmod(script_file, 0o755)
     os.symlink('profile/bin/myscript', 'scriptlink')

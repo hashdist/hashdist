@@ -145,7 +145,7 @@ def postprocess_launcher_shebangs(filename, launcher_program):
         os.unlink(filename)
         os.symlink(rel_launcher, filename)
 
-def postprocess_multiline_shebang(filename):
+def postprocess_multiline_shebang(build_store, filename):
     """
     Try to rewrite the shebang of scripts. This function deals with
     detecting whether the script is a shebang, and if so, rewrite it.
@@ -162,7 +162,7 @@ def postprocess_multiline_shebang(filename):
         scriptlines[0] = '#!' + scriptlines[0]
 
     try:
-        mod_scriptlines = make_relative_multiline_shebang(filename, scriptlines)
+        mod_scriptlines = make_relative_multiline_shebang(build_store, filename, scriptlines)
     except UnknownShebangError:
         # just leave unsupported scripts as is
         pass
@@ -189,8 +189,9 @@ class UnknownShebangError(NotImplementedError):
     pass
 
 
-_SYSTEM_INTERPRETER_SHEBANG_RE = re.compile(r'^#!\s+(/bin|/usr/bin)/.*')
-def make_relative_multiline_shebang(filename, scriptlines):
+# we don't patch /bin, /usr/bin, ...
+_INTERPRETER_RE = re.compile(r'^#!\s*(\S+)\s+.*')
+def make_relative_multiline_shebang(build_store, filename, scriptlines):
     """
     See module docstring for motivation.
 
@@ -201,6 +202,9 @@ def make_relative_multiline_shebang(filename, scriptlines):
 
     Parameters
     ----------
+
+    build_store : BuildStore
+        Used to identify shebangs that reference paths within Hashdist artifacts
 
     scriptlines : list of str
         List of lines in the script; each line includes terminating newline
@@ -213,7 +217,13 @@ def make_relative_multiline_shebang(filename, scriptlines):
 
     """
     shebang = scriptlines[0]
-    if _SYSTEM_INTERPRETER_SHEBANG_RE.match(shebang):
+    m = _INTERPRETER_RE.match(shebang)
+    if not m:
+        # not a shebang
+        return scriptlines
+    interpreter = m.group(1)
+    if not (os.path.isabs(interpreter) and build_store.is_path_in_build_store(interpreter)):
+        # we do not touch scripts with interpreters like #!python or #!/usr/bin/env
         return scriptlines
     elif 'python' in shebang:
         mod_scriptlines = patch_python_shebang(filename, scriptlines)
