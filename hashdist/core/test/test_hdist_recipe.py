@@ -8,9 +8,9 @@ from ..hdist_recipe import ensure_hdist_cli_artifact
 
 @fixture()
 def test_hdist_cli_artifact(tempdir, sc, bldr, config):
-    hit_id, hdist_path = ensure_hdist_cli_artifact(bldr, config)
-    assert sorted(os.listdir(hdist_path)) == ['bin', 'build.json', 'build.log.gz', 'pypkg']
-    with file(pjoin(hdist_path, 'bin', 'hit')) as f:
+    hit_id, hit_path = ensure_hdist_cli_artifact(bldr, config)
+    assert sorted(os.listdir(hit_path)) == ['bin', 'build.json', 'build.log.gz', 'pypkg']
+    with file(pjoin(hit_path, 'bin', 'hit')) as f:
         hdist_bin = f.read()
     assert hdist_bin.startswith('#!' + sys.executable)
 
