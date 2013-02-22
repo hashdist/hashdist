@@ -9,7 +9,7 @@ from .main import register_subcommand
 class InitHome(object):
     """
     Initializes the current user's home directory for Hashdist by
-    creating ~/.hdistconfig configuration file and ~/.hit directory.
+    creating ~/.hitconfig configuration file and ~/.hit directory.
     """
     
     @staticmethod
@@ -18,7 +18,7 @@ class InitHome(object):
 
     @staticmethod
     def run(ctx, args):
-        config_file = os.path.expanduser('~/.hdistconfig')
+        config_file = os.path.expanduser('~/.hitconfig')
         store_dir = os.path.expanduser('~/.hit')
         for x in [config_file, store_dir]:
             if pexists(x):

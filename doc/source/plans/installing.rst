@@ -35,7 +35,7 @@ Managing conflicting Hashdist installations
 
 By default, Hashdist core tools are exposed through the ``hit``
 command and the ``hashdist`` Python package. It is configured through
-``~/.hashdistconfig``::
+``~/.hitconfig``::
 
     [hashdist]
         hit = ~/.hashdist/bin/hit
@@ -55,7 +55,7 @@ environment then the ``hit`` command should be rebranded (e.g.,
 file. Similarly, the Python package should be rebranded (e.g.,
 ``qsnake.hashdist``).
 
-The command ``hit`` should *always* read ``~/.hashdistconfig`` (or
+The command ``hit`` should *always* read ``~/.hitconfig`` (or
 the configuration file specified on the command line) and launch the
 command found there under the `hit` key. Similarly, ``import
 hashdist`` should add the package from the location specified in the
@@ -66,12 +66,12 @@ upgrade path. Essentially, the ``hit`` command-line tool and the
 ``hashdist`` Python package are not part of the software stack the
 distribution provides (unless rebranded).  If you put an old, outdated
 profile in ``$PATH``, the ``hit`` command found in it will simply
-read ``~/.hashdistconfig`` and then launch a newer version of
+read ``~/.hitconfig`` and then launch a newer version of
 ``hit``. (However, ``qsnake-hit`` is free to behave however it
 likes.)
 
 The best way of distributing Hashdist is in fact to get it through the
-operating system package manager. In that case, the `hit` key in ``~/.hashdistconfig``
+operating system package manager. In that case, the `hit` key in ``~/.hitconfig``
 will point to ``/usr/bin/hit``. Alternatively, a
 bootstrapping solution is provided and recommended which make sure that each
 distribution using a non-rebranded Hashdist use the same one.

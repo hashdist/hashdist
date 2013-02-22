@@ -422,7 +422,7 @@ The shared profile manager
 
 To use a profile located in the current directory,
 ``./myprofile`` must be used. Calling ``hit env myprofile`` instead
-looks up a central list of profile nicknames. In ``~/.hashdistconfig``::
+looks up a central list of profile nicknames. In ``~/.hitconfig``::
 
     [hashdist]
         profiles = ~/.hashdist/profiles # this is the default
