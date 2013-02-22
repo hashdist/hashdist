@@ -266,9 +266,9 @@ def run_job(logger, build_store, job_spec, override_env, virtuals, cwd, config):
     -------
 
     out_env: dict
-        The environment with modifications done by "root scope" of
-        the script (modifications done in nested scopes are intentionally
-        discarded).
+        The environment after the last command that was run (regardless
+        of scoping/nesting).
+        
     """
     job_spec = canonicalize_job_spec(job_spec)
     env = get_imports_env(build_store, virtuals, job_spec['import'])
@@ -279,10 +279,10 @@ def run_job(logger, build_store, job_spec, override_env, virtuals, cwd, config):
     env['HDIST_CONFIG'] = json.dumps(config, separators=(',', ':'))
     executor = ScriptExecution(logger)
     try:
-        out_env = executor.run(job_spec['commands'], env, cwd, ())
+        executor.run_node(job_spec, env, cwd, ())
     finally:
         executor.close()
-    return out_env
+    return executor.last_env
 
 def canonicalize_job_spec(job_spec):
     """Returns a copy of job_spec with default values filled in.
@@ -496,6 +496,7 @@ class ScriptExecution(object):
         self.logger = logger
         self.log_fifo_filenames = {}
         self.temp_dir = tempfile.mkdtemp(prefix='hit-sandbox-')
+        self.last_env, self.last_cwd = None, None
 
     def close(self):
         """Removes log FIFOs; should always be called when one is done
@@ -545,12 +546,110 @@ class ScriptExecution(object):
             env[name] = filename
         return env
 
-    def run(self, script, env, cwd, node_pos):
-        """Executes script, given as the 'commands' part of the job spec.
+    def run_node(self, node, env, cwd, node_pos):
+        """Executes a script node
 
         Parameters
         ----------
-        script : document
+        node : dict
+            A command node
+
+        env : dict
+            The environment
+
+        cwd : str
+            Working directory
+
+        node_pos : tuple
+            Tuple of the "path" to this command node; e.g., (0, 1) for second
+            command in first group.
+
+        Returns
+        -------
+
+        ret_env : dict
+            The environment as modified by the node.
+
+        ret_cwd : str
+            The current directory
+        """
+        if not isinstance(node, dict):
+            raise TypeError('script must be a list of dicts (using old script syntax?); got %r' % node)
+        if sum(['cmd' in node, 'hit' in node, 'commands' in node]) != 1:
+            raise ValueError("Each script node should have exactly one of the 'cmd', 'hit', 'commands' keys")
+        if sum(['to_var' in node, 'stdout_to_file' in node]) > 1:
+            raise ValueError("Can only have one of to_var, stdout_to_file")
+        if 'commands' in node and ('append_to_file' in node or 'to_var' in node or 'inputs' in node):
+            raise ValueError('"commands" not compatible with to_var or append_to_file or inputs')
+
+
+        # Make scopes
+        ret_env = dict(env)
+        ret_cwd = cwd
+        
+        node_env = dict(env)
+        node_cwd = cwd
+
+        # Process common options
+        if 'cwd' in node:
+            node_cwd = pjoin(node_cwd, node['cwd'])
+        if 'env' in node:
+            for key, value in node['env'].items():
+                # note: subst. using parent env to make sure order doesn't matter
+                node_env[key] = self.substitute(value, env)
+
+        if 'cmd' in node or 'hit' in node:
+            inputs = node.get('inputs', ())
+            node_env.update(self.dump_inputs(inputs, node_pos))
+            if 'cmd' in node:
+                key = 'cmd'
+                args = node['cmd']
+                func = self.run_cmd
+            else:
+                key = 'hit'
+                args = node['hit']
+                func = self.run_hit
+            if not isinstance(args, list):
+                raise TypeError("'%s' arguments must be a list, got %r" % (key, args))
+            args = [self.substitute(x, node_env) for x in args]
+
+            if 'to_var' in node:
+                stdout = StringIO()
+                func(args, node_env, node_cwd, stdout_to=stdout)
+                # modifying ret_env, not node_env, to export change
+                ret_env[node['to_var']] = stdout.getvalue().strip()
+
+            elif 'append_to_file' in node:
+                stdout_filename = self.substitute(node['append_to_file'], node_env)
+                if not os.path.isabs(stdout_filename):
+                    stdout_filename = pjoin(node_cwd, stdout_filename)
+                stdout_filename = os.path.realpath(stdout_filename)
+                if stdout_filename.startswith(self.temp_dir):
+                    raise NotImplementedError("Cannot currently use stream re-direction to write to "
+                                              "a log-pipe (doing the write from a "
+                                              "sub-process is OK)")
+                with file(stdout_filename, 'a') as stdout:
+                    func(args, node_env, node_cwd, stdout_to=stdout)
+
+            else:
+                func(args, node_env, node_cwd)
+
+        elif 'commands' in node:
+            self.run_commands(node['commands'], node_env, node_cwd, node_pos)
+        else:
+            assert False
+
+        self.last_env, self.last_cwd = node_env, node_cwd
+
+        return ret_env, ret_cwd
+        
+
+    def run_commands(self, commands, env, cwd, node_pos):
+        """Executes 'commands' node (group of commands).
+
+        Parameters
+        ----------
+        commands : list
             The 'commands' part of the job spec
 
         env : dict
@@ -566,77 +665,15 @@ class ScriptExecution(object):
         Returns
         -------
 
-        out_env : dict
-            The environment as modified by the script.
+        ret_env : dict
+            The environment as it was on the last node
+        ret_cwd: str
+            The cwd as it was on the last node
         """
-        for i, line in enumerate(script):
+        for i, command_node in enumerate(commands):
             pos = node_pos + (i,)
-            
-            if not isinstance(line, dict):
-                raise TypeError('script must be a list of dicts (using old script syntax?); got %r' % line)
-            if sum(['cmd' in line, 'hit' in line, 'commands' in line]) != 1:
-                raise ValueError("Each script line should have exactly one of the 'cmd', 'hit', 'commands' keys")
-            if sum(['to_var' in line, 'stdout_to_file' in line]) > 1:
-                raise ValueError("Can only have one of to_var, stdout_to_file")
-            if 'commands' in line and ('append_to_file' in line or 'to_var' in line or 'inputs' in line):
-                raise ValueError('"commands" not compatible with to_var or append_to_file or inputs')
-
-
-            # Make scope for this line
-            line_env = dict(env)
-            line_cwd = cwd
-
-            # Process common options
-            if 'cwd' in line:
-                line_cwd = pjoin(line_cwd, line['cwd'])
-            if 'env' in line:
-                for key, value in line['env'].items():
-                    # note: subst. using parent env to make sure order doesn't matter
-                    line_env[key] = self.substitute(value, env)
-
-            if 'cmd' in line or 'hit' in line:
-                inputs = line.get('inputs', ())
-                line_env.update(self.dump_inputs(inputs, pos))
-                if 'cmd' in line:
-                    key = 'cmd'
-                    args = line['cmd']
-                    func = self.run_cmd
-                else:
-                    key = 'hit'
-                    args = line['hit']
-                    func = self.run_hit
-                if not isinstance(args, list):
-                    raise TypeError("'%s' arguments must be a list, got %r" % (key, args))
-                args = [self.substitute(x, line_env) for x in args]
-
-                if 'to_var' in line:
-                    stdout = StringIO()
-                    func(args, line_env, line_cwd, stdout_to=stdout)
-                    # modifying *parent* env, not line_env
-                    env[line['to_var']] = stdout.getvalue().strip()
-                    
-                elif 'append_to_file' in line:
-                    stdout_filename = self.substitute(line['append_to_file'], line_env)
-                    if not os.path.isabs(stdout_filename):
-                        stdout_filename = pjoin(line_cwd, stdout_filename)
-                    stdout_filename = os.path.realpath(stdout_filename)
-                    if stdout_filename.startswith(self.temp_dir):
-                        raise NotImplementedError("Cannot currently use stream re-direction to write to "
-                                                  "a log-pipe (doing the write from a "
-                                                  "sub-process is OK)")
-                    with file(stdout_filename, 'a') as stdout:
-                        func(args, line_env, line_cwd, stdout_to=stdout)
-                
-                else:
-                    func(args, line_env, line_cwd)
-                    
-            elif 'commands' in line:
-                self.run(line['commands'], line_env, line_cwd, pos)
-
-            else:
-                assert False
-
-        return env
+            env, cwd = self.run_node(command_node, env, cwd, pos)
+        return env, cwd
 
     def run_cmd(self, args, env, cwd, stdout_to=None):
         logger = self.logger

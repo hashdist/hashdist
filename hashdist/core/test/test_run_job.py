@@ -2,7 +2,6 @@ import sys
 import os
 from os.path import join as pjoin
 from nose.tools import eq_
-from pprint import pprint
 from textwrap import dedent
 from subprocess import CalledProcessError
 
