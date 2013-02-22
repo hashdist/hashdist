@@ -135,7 +135,7 @@ class Logger(object):
             heading += ' ' + lname
         elif lname:
             heading = lname
-        heading = '[%s] ' % heading if heading else '[hashdist] '
+        heading = '[%s] ' % heading if heading else ''
         heading = colorize(heading, get_log_color(level))
         for stream, is_raw in self.streams:
             if is_raw:

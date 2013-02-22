@@ -2,5 +2,8 @@
 
 import sys
 import os
-from hashdist.cli.main import main
-sys.exit(main(sys.argv, os.environ))
+from hashdist.hdist_logging import Logger, DEBUG
+from hashdist.cli.main import main, help_on_exceptions
+
+logger = Logger(DEBUG)
+sys.exit(help_on_exceptions(logger, main, sys.argv, os.environ, logger))
