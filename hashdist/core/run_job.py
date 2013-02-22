@@ -593,7 +593,7 @@ class ScriptExecution(object):
                 else:
                     key = 'hit'
                     args = line['hit']
-                    func = self.run_hdist
+                    func = self.run_hit
                 if not isinstance(args, list):
                     raise TypeError("'%s' arguments must be a list, got %r" % (key, args))
                 args = [self.substitute(x, line_env) for x in args]
@@ -640,7 +640,7 @@ class ScriptExecution(object):
             logger.error("command failed (code=%d); raising" % e.returncode)
             raise
 
-    def run_hdist(self, args, env, cwd, stdout_to=None):
+    def run_hit(self, args, env, cwd, stdout_to=None):
         args = ['hit'] + args
         logger = self.logger
         logger.debug('running %r' % args)
