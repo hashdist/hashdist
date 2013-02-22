@@ -60,6 +60,31 @@ def test_run_job_environment(tempdir, sc, build_store, cfg):
         lines)
 
 @build_store_fixture()
+def test_inputs(tempdir, sc, build_store, cfg):
+    job_spec = {
+        "commands": [
+            {"cmd": [sys.executable, "$in0", "$in1"],
+             "inputs": [
+                 {"text": ["import sys",
+                           "import json",
+                           "with open(sys.argv[1]) as f:"
+                           "    print json.load(f)['foo']"]},
+                 {"json": {"foo": "Hello1"}}
+                 ]
+             },
+            {"cmd": [sys.executable, "$in0"],
+             "inputs": [{"string": "import sys\nprint 'Hello2'"}]
+             },
+            ]
+        }
+    logger = MemoryLogger()
+    ret_env = run_job.run_job(logger, build_store, job_spec, {"BAZ": "BAZ"},
+                              {"virtual:bash": "bash/ljnq7g35h6h4qtb456h5r35ku3dq25nl"},
+                              tempdir, cfg)
+    assert 'DEBUG:Hello1' in logger.lines
+    assert 'DEBUG:Hello2' in logger.lines
+
+@build_store_fixture()
 def test_capture_stdout(tempdir, sc, build_store, cfg):
     job_spec = {
         "commands": [

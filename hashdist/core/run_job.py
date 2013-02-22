@@ -279,7 +279,7 @@ def run_job(logger, build_store, job_spec, override_env, virtuals, cwd, config):
     env['HDIST_CONFIG'] = json.dumps(config, separators=(',', ':'))
     executor = ScriptExecution(logger)
     try:
-        out_env = executor.run(job_spec['commands'], env, cwd)
+        out_env = executor.run(job_spec['commands'], env, cwd, ())
     finally:
         executor.close()
     return out_env
@@ -495,12 +495,12 @@ class ScriptExecution(object):
     def __init__(self, logger):
         self.logger = logger
         self.log_fifo_filenames = {}
-        self.rpc_dir = tempfile.mkdtemp(prefix='hit-sandbox-')
+        self.temp_dir = tempfile.mkdtemp(prefix='hit-sandbox-')
 
     def close(self):
         """Removes log FIFOs; should always be called when one is done
         """
-        shutil.rmtree(self.rpc_dir)
+        shutil.rmtree(self.temp_dir)
 
     def substitute(self, x, env):
         try:
@@ -510,7 +510,42 @@ class ScriptExecution(object):
             self.logger.error(msg)
             raise ValueError(msg)
 
-    def run(self, script, env, cwd):
+    def dump_inputs(self, inputs, node_pos):
+        """
+        Handles the 'inputs' attribute of a node by dumping to temporary files.
+
+        Returns
+        -------
+
+        A dict with environment variables that can be used to update `env`,
+        containing ``$in0``, ...
+        """
+        env = {}
+        for i, input in enumerate(inputs):
+            if not isinstance(input, dict):
+                raise TypeError("input entries should be dict")
+            name = 'in%d' % i
+            filename = '_'.join(str(x) for x in node_pos) + '_' + name
+            filename = pjoin(self.temp_dir, filename)
+
+            if sum(['text' in input, 'json' in input, 'string' in input]) != 1:
+                raise ValueError("Need exactly one of 'text', 'json', 'string' in %r" % input)
+            if 'text' in input:
+                value = '\n'.join(input['text'])
+            elif 'string' in input:
+                value = input['string']
+            elif 'json' in input:
+                value = json.dumps(input['json'], indent=4)
+                filename += '.json'
+            else:
+                assert False
+
+            with open(filename, 'w') as f:
+                f.write(value)
+            env[name] = filename
+        return env
+
+    def run(self, script, env, cwd, node_pos):
         """Executes script, given as the 'commands' part of the job spec.
 
         Parameters
@@ -524,21 +559,27 @@ class ScriptExecution(object):
         cwd : str
             Working directory
 
+        node_pos : tuple
+            Tuple of the "path" to this command node; e.g., (0, 1) for second
+            command in first group.
+
         Returns
         -------
 
         out_env : dict
             The environment as modified by the script.
         """
-        for line in script:
+        for i, line in enumerate(script):
+            pos = node_pos + (i,)
+            
             if not isinstance(line, dict):
                 raise TypeError('script must be a list of dicts (using old script syntax?); got %r' % line)
             if sum(['cmd' in line, 'hit' in line, 'commands' in line]) != 1:
                 raise ValueError("Each script line should have exactly one of the 'cmd', 'hit', 'commands' keys")
             if sum(['to_var' in line, 'stdout_to_file' in line]) > 1:
                 raise ValueError("Can only have one of to_var, stdout_to_file")
-            if 'commands' in line and ('append_to_file' in line or 'to_var' in line):
-                raise ValueError('"commands" not compatible with to_var or append_to_file')
+            if 'commands' in line and ('append_to_file' in line or 'to_var' in line or 'inputs' in line):
+                raise ValueError('"commands" not compatible with to_var or append_to_file or inputs')
 
 
             # Make scope for this line
@@ -554,6 +595,8 @@ class ScriptExecution(object):
                     line_env[key] = self.substitute(value, env)
 
             if 'cmd' in line or 'hit' in line:
+                inputs = line.get('inputs', ())
+                line_env.update(self.dump_inputs(inputs, pos))
                 if 'cmd' in line:
                     key = 'cmd'
                     args = line['cmd']
@@ -577,7 +620,7 @@ class ScriptExecution(object):
                     if not os.path.isabs(stdout_filename):
                         stdout_filename = pjoin(line_cwd, stdout_filename)
                     stdout_filename = os.path.realpath(stdout_filename)
-                    if stdout_filename.startswith(self.rpc_dir):
+                    if stdout_filename.startswith(self.temp_dir):
                         raise NotImplementedError("Cannot currently use stream re-direction to write to "
                                                   "a log-pipe (doing the write from a "
                                                   "sub-process is OK)")
@@ -588,7 +631,7 @@ class ScriptExecution(object):
                     func(args, line_env, line_cwd)
                     
             elif 'commands' in line:
-                self.run(line['commands'], line_env, line_cwd)
+                self.run(line['commands'], line_env, line_cwd, pos)
 
             else:
                 assert False
@@ -781,7 +824,7 @@ class ScriptExecution(object):
         level = dict(CRITICAL=CRITICAL, ERROR=ERROR, WARNING=WARNING, INFO=INFO, DEBUG=DEBUG)[level_str]
         fifo_filename = self.log_fifo_filenames.get((sublogger_name, level), None)
         if fifo_filename is None:
-            fifo_filename = pjoin(self.rpc_dir, "logpipe-%s-%s" % (sublogger_name, level_str))
+            fifo_filename = pjoin(self.temp_dir, "logpipe-%s-%s" % (sublogger_name, level_str))
             os.mkfifo(fifo_filename, 0600)
             self.log_fifo_filenames[sublogger_name, level] = fifo_filename
         sys.stdout.write(fifo_filename)
