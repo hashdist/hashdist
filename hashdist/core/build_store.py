@@ -66,7 +66,7 @@ An example build spec:
                  {"ref": "unix", "id": "virtual:unix"},
                  {"ref": "gcc", "id": "gcc/host-4.6.3/q0VSL7JmzH1P17meqITYc4kMbnIjIexrWPdlAlqPn3s", "before": ["virtual:unix"]},
              ],
-             "script" : [
+             "commands" : [
                  {"hit", ["build-unpack-sources"]},
                  {"hit", ["build-write-files"]},
                  {"cmd": ["bash", "build.sh"]}
@@ -539,6 +539,8 @@ class ArtifactBuilder(object):
     def run_build_commands(self, build_dir, artifact_dir, env, config):
         artifact_display_name = self.build_spec.digest[:SHORT_ARTIFACT_ID_LEN] + '..'
 
+        job_tmp_dir = pjoin(build_dir, 'job')
+        os.mkdir(job_tmp_dir)
         job_spec = self.build_spec.doc['build']
 
         logger = self.logger
@@ -552,14 +554,16 @@ class ArtifactBuilder(object):
             logger.push_stream(log_file, raw=True)
             try:
                 run_job.run_job(logger, self.build_store, job_spec,
-                                env, self.virtuals, build_dir, config)
+                                env, self.virtuals, cwd=build_dir, config=config,
+                                temp_dir=job_tmp_dir)
             except:
                 exc_type, exc_value, exc_tb = sys.exc_info()
                 # Python 2 'wrapped exception': We raise an exception with the same traceback
                 # but changing the type, and embedding the original type name in the message
                 # string. This is primarily done in order to communicate the build_dir to
                 # the caller
-                raise BuildFailedError("%s: %s" % (exc_type.__name__, exc_value), build_dir), None, exc_tb
+                raise BuildFailedError("%s: %s" % (exc_type.__name__, exc_value), build_dir,
+                                       (exc_type, exc_value, exc_tb)), None, exc_tb
             finally:
                 logger.pop_stream()
         log_gz_filename = pjoin(artifact_dir, 'build.log.gz')

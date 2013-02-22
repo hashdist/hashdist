@@ -8,6 +8,7 @@ from pprint import pprint
 import gzip
 import json
 from contextlib import closing
+import subprocess
 
 from nose.tools import eq_
 from nose import SkipTest
@@ -47,7 +48,6 @@ def test_canonical_build_spec():
               {'before': [], 'id': 'b', 'in_env': True, 'ref': None},
               {'before': [], 'id': 'c', 'in_env': False, 'ref': "the_c"},
             ],
-            "script": [],
             "env": {},
             "env_nohash": {},
           },
@@ -111,7 +111,7 @@ def test_basic(tempdir, sc, bldr, config):
         "files" : [{"target": "$ARTIFACT/$BAR/foo", "text": ["foo${BAR}foo"], "expandvars": True}],
         "build": {
             "env": {"BAR": "bar"},
-            "script": [
+            "commands": [
                 {"hit": ["build-unpack-sources"]},
                 {"hit": ["build-write-files"]},
                 {"cmd": ["/bin/bash", "build.sh"]}
@@ -124,14 +124,15 @@ def test_basic(tempdir, sc, bldr, config):
     assert ['bar', 'build.json', 'build.log.gz', 'hello'] == sorted(os.listdir(path))
     with file(pjoin(path, 'hello')) as f:
         got = sorted(f.readlines())
-        assert ''.join(got) == dedent('''\
+        eq_(''.join(got), dedent('''\
         .
         ./build.json
         ./build.log
         ./build.sh
+        ./job
         ./subdir
         ./subdir/build.sh
-        ''')
+        '''))
     with closing(gzip.open(pjoin(path, 'build.log.gz'))) as f:
         s = f.read()
         assert 'hi stdout path=[]' in s
@@ -147,8 +148,8 @@ def test_basic(tempdir, sc, bldr, config):
 def test_failing_build_and_multiple_commands(tempdir, sc, bldr, config):
     spec = {"name": "foo", "version": "na",
             "build": {
-                "script": [
-                    {"cmd": ["/bin/echo", "test"], "append_to_file": "foo"},
+                "commands": [
+                    {"cmd": ["/bin/echo", "test"], "append_to_file": "foo2"},
                     {"cmd": ["/bin/true"]},
                     {"cmd": ["/bin/false"]},
                 ]
@@ -156,13 +157,15 @@ def test_failing_build_and_multiple_commands(tempdir, sc, bldr, config):
     try:
         bldr.ensure_present(spec, config, keep_build='error')
     except BuildFailedError, e_first:
-        assert os.path.exists(pjoin(e_first.build_dir, 'foo'))
+        assert e_first.wrapped[0] is subprocess.CalledProcessError
+        assert os.path.exists(pjoin(e_first.build_dir, 'foo2'))
     else:
         assert False
 
     try:
         bldr.ensure_present(spec, config, keep_build='never')
     except BuildFailedError, e_second:
+        assert e_second.wrapped[0] is subprocess.CalledProcessError
         assert e_first.build_dir != e_second.build_dir
         assert not os.path.exists(pjoin(e_second.build_dir))
     else:
@@ -191,7 +194,7 @@ def test_hash_prefix_collision(tempdir, sc, bldr, config):
         for k in range(15):
             spec = {"name": "foo", "version": "na",
                     "build": {
-                        "script": [{"cmd": ["/bin/echo", "hello", str(k)]}]
+                        "commands": [{"cmd": ["/bin/echo", "hello", str(k)]}]
                         }
                     }
             artifact_id, path = bldr.ensure_present(spec, config)
@@ -227,7 +230,7 @@ def test_source_unpack_options(tempdir, sc, bldr, config):
                 {"target": "subdir", "key": tarball_key, "strip": 0},
                 ],
             "build": {
-                "script": [
+                "commands": [
                     {"hit": ["build-unpack-sources"]},
                     {"cmd": ["/bin/cp", "subdir/coolproject-2.3/README", "$ARTIFACT/a"]},
                     {"cmd": ["/bin/cp", "README", "$ARTIFACT/b"]},
@@ -261,7 +264,7 @@ def build_mock_packages(builder, config, packages, virtuals={}, name_to_artifact
                 "build": {
                     "import": [{"ref": dep.name, "id": name_to_artifact[dep.name][0]}
                                for dep in pkg.deps],
-                    "script": [
+                    "commands": [
                         {"hit": ["build-write-files"]},
                         {"cmd": ["/bin/bash", "build.sh"]}
                         ]

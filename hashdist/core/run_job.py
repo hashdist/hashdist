@@ -1,11 +1,16 @@
 """
-:mod:`hashdist.core.run_job` --- Job/script execution in controlled environment
-===============================================================================
+:mod:`hashdist.core.run_job` --- Job execution in controlled environment
+========================================================================
 
-Executes a set of commands in a controlled environment. This
-should usually be used to launch a real script interpreter, but
-basic support for modifying the environment and running multiple
-commands are provided through the JSON job specification.
+Executes a set of commands in a controlled environment, determined by
+a JSON job specification. This is used as the "build" section of ``build.json``,
+the "install" section of ``artifact.json``, and so on.
+
+The job spec may not completely specify the job environment because it
+is usually a building block of other specs which may imply certain
+additional environment variables. E.g., during a build, ``$ARTIFACT``
+and ``$BUILD`` are defined even if they are never mentioned here.
+
 
 Job specification
 -----------------
@@ -24,32 +29,40 @@ to reproduce a job run, and hash the job spec. Example:
             {"ref": "UNIX", "id": "virtual:unix"},
             {"ref": "GCC", "before": ["virtual:unix"], "id": "gcc/jonykztnjeqm7bxurpjuttsprphbooqt"}
          ],
-         "env" : {
-            "FOO" : "bar"
-         },
-         "env_nohash" : {
+         "nohash_params" : {
             "NCORES": "4"
          }
-         "script" : [
-              {
-                  "scope": [
-                      {"cmd": ["pkgcfg", "--cflags", "foo"], "to_var": "CFLAGS"},
-                      {"cmd": ["./configure", "--prefix=$ARTIFACT", "--foo-setting=$FOO"]}
-                  ],
-              },
-              {"cmd": ["make", "-j$NCORES"]},
-              {"cmd": ["make", "install"]}
+         "env" : {
+            "RUN_FOO": {
+              "assign": "1"
+            },
+            "PYTHONPATH": {
+              "type": "path",
+              "prepend": "$BUILD/python-tools"
+            }
+         },
+         "cwd": "src",
+         "commands" : [
+             {"cmd": ["pkg-config", "--cflags", "foo"], "to_var": "CFLAGS"},
+             {"cmd": ["./configure", "--prefix=$ARTIFACT", "--foo-setting=$FOO"]}
+             {"cmd": ["bash", "$in0"],
+              "inputs": [
+                  {"text": [
+                      "[\"$RUN_FOO\" != \"\" ] && ./foo"
+                      "make",
+                      "make install"
+                  ]}
+             }
          ],
     }
 
 
-.. note::
-   The job spec may not completely specify the job
-   environment because it is usually a building block of other specs
-   which may imply certain additional environment variables. E.g.,
-   during a build, ``$ARTIFACT`` and ``$BUILD`` are defined even if
-   they are never mentioned here.
+      
+Job spec root node
+------------------
 
+The root node is also a command node, as described below, but has two
+extra allowed keys:
 
 **import**:
     The artifacts needed in the environment for the run. After the
@@ -77,106 +90,58 @@ to reproduce a job run, and hash the job spec. Example:
       and so on). Otherwise the artifact can only be used through the
       variables ``ref`` sets up. Defaults to `True`.
 
-**script**:
-    Executed to perform the build. See below.
+**nohash_params**:
+    Initial set of environment variables that do not contribute to the
+    hash. Should only be used when one is willing to trust that the
+    value does not affect the build result in any way. E.g.,
+    parallelization flags, paths to manually downloaded binary
+    installers, etc.
 
-**env**:
-    Environment variables. The advantage to using this over just defining
-    them in the `script` section is that they are automatically unordered
-    w.r.t. hashing.
+When executing, the environment is set up as follows:
 
-**env_nohash**:
-    Same as `env` but entries here do not contribute to the hash. Should
-    only be used when one is willing to trust that the value does not
-    affect the build result in any way. E.g., parallelization flags,
-    paths to manually downloaded binary installers, etc.
+    * Environment is cleared (``os.environ`` has no effect)
+    * The initial environment provided by caller (e.g.,
+      :class:`.BuildStore` provides `$ARTIFACT` and `$BUILD`) is loaded
+    * The `nohash_params` dict (if present) is loaded into the env
+    * The `import` section is processed
+    * Commands executed (which may modify env)
 
+Command node
+------------
 
-The execution environment
--------------------------
+The command nodes is essentially a script language, but lacks any form
+of control flow. The purpose is to control the environment, and then
+quickly dispatch to a script in a real programming language.
 
-Standard output (except with "<=", see below) and error of all
-commands are both re-directed to a Logger instance passed in
-by the user. There is no stdin (it's set to a closed pipe).
+Also, the overall flow of commands to set up the build environment are
+typically generated by a pipeline from a package definition, and
+generating a text script in a pipeline is no fun.
 
-The build environment variables are wiped out and the variables in `env`
-and `env_nohash` set. Then, each of the `import`-ed artifacts are
-visited and (if `in_env` is not set to `False`) the following variables
-are affected:
+See example above for basic script structure. Rules:
 
-**PATH**:
-    Set to point to the ``bin``-sub-directories of imports.
+ * Every item in the job is either a `cmd` or a `commands` or a `hit`, i.e.
+   those keys are mutually exclusive and defines the node type.
 
-**HDIST_CFLAGS**:
-    Set to point to the ``include``-sub-directories of imports.
+ * `commands`: Push a new environment and current directory to stack,
+   execute sub-commands, and pop the stack.
 
-**HDIST_LDFLAGS**:
-    Set to point to the ``lib*``-sub-directories of imports.
+ * `cmd`: The list is passed straight to :func:`subprocess.Popen` as is
+   (after variable substiution). I.e., no quoting, no globbing.
 
-    Note that it is almost impossible to inject a relative RPATH; even
-    if one manages to escaoe $ORIGIN properly for the build system,
-    any auto-detection will tend to prepend absolute RPATHs
-    anyway. See experiences in mess.rst. If on wishes '$ORIGIN' in the
-    RPATH then ``patchelf`` should be used.
-
-**HDIST_VIRTUALS**:
-    The mapping of virtual artifacts to concrete artifact IDs that has
-    been used. Format by example:
-    ``virtual:unix=unix/r0/KALiap2<...>;virtual:hit=hit/r0/sLt4Zc<...>``
-
-Mini script language
---------------------
-
-It may seem insane to invent another script language. Rationalization:
-
-    * This is really minimal, for anything complicated (like involving control
-      flow) one should launch a real script interpreter. (But something must
-      do that launch.)
-
-    * The commands to set up the build environment are typically
-      generated by a pipeline, and generating a text script in a
-      pipeline is no fun. So if one wanted to, e.g., require Bash, one
-      would basically need to invent a syntax tree form to work with
-      anyway, and then serialize that to Bash. And that's basically
-      what we have below, except we skip the serialize to Bash part.
-
-    * It is nice to have something cross-platform without external
-      dependencies for the simplest things. And the implementation is
-      really short.
-
-Example script::
-
-    "script" : [
-        {"hit": ["unpack-sources"]},
-        { "env": {"LIB": "foo"},
-          "cwd": "src",
-          "scope": [
-            {"cmd": ["pkgcfg", "--cflags", "$LIB"], "to_var": "FOO"}
-            {"cmd": ["./configure", "--prefix=$ARTIFACT", "--foo-setting=$FOO"]},
-          ]
-        },
-        {"cmd": ["make", "-j$NCORES"], "cwd": "src"},
-        {"cmd": ["make", "install"], "cwd": "src"}
-    ]
-
-Rules:
-
- * Every item in the script is either a `cmd` or a `scope` or a `hit`, i.e.
-   those keys are mutually exclusive.
-
- * In the case of scope, variable changes only take affect within the scope (above,
-   both ``$LIB`` and ``$FOO`` are only available in the sub-scope, it acts
-   like a normal programming language stack).
-
- * The `cmd` list is passed straight to :func:`subprocess.Popen` as is
-   (after variable substiution). I.e., no quoting needed, no globbing.
-
- * The `hit` executes the `hit` tool *in-process*. It acts like `cmd` otherwise,
+ * `hit`: executes the `hit` tool *in-process*. It acts like `cmd` otherwise,
    e.g., `to_var` works.
 
  * `env` and `cwd` modifies env-vars/working directory for the command in question,
-   or the scope if it is a scope. They acts just like the regular
+   or the scope if it is a scope. The `cwd` acts just like the regular
    `cd` command, i.e., you can do things like ``"cwd": ".."``
+
+ * `files` specifies files that are dumped to temporary files and made available
+   as `$in0`, `$in1` and so on. Each file has the form ``{typestr: value}``,
+   where `typestr` means:
+   
+       * ``text``: `value` should be a list of strings which are joined by newlines
+       * ``string``: `value` is dumped verbatim to file
+       * ``json``: `value` is any JSON document, which is serialized to the file
 
  * stdout and stderr will be logged, except if `to_var` or
    `append_to_file` is present in which case the stdout is capture to
@@ -204,10 +169,13 @@ with the job runner:
 .. note::
 
     ``hit`` is not automatically available in the environment in general
-    (in launched scripts etc.), for that, see :mod:`hashdist.core.hdist_recipe`.
-    ``hit logpipe`` is currently not supported outside of the job script
+    (in launched scripts etc.), for that, see :mod:`hashdist.core.hit_recipe`.
+    ``hit logpipe`` is currently not supported outside of the job spec
     at all (this could be supported through RPC with the job runner, but the
     gain seems very slight).
+
+
+
 
 Virtual imports
 ---------------
@@ -263,7 +231,7 @@ class InvalidJobSpecError(ValueError):
 class JobFailedError(RuntimeError):
     pass
 
-def run_job(logger, build_store, job_spec, override_env, virtuals, cwd, config):
+def run_job(logger, build_store, job_spec, override_env, virtuals, cwd, config, temp_dir=None):
     """Runs a job in a controlled environment, according to rules documented above.
 
     Parameters
@@ -285,7 +253,7 @@ def run_job(logger, build_store, job_spec, override_env, virtuals, cwd, config):
         Maps virtual artifact to real artifact IDs.
 
     cwd : str
-        The starting working directory of the script. Currently this
+        The starting working directory of the job. Currently this
         cannot be changed (though a ``cd`` command may be implemented in
         the future if necesarry)
 
@@ -294,13 +262,17 @@ def run_job(logger, build_store, job_spec, override_env, virtuals, cwd, config):
         serialied and put into the HDIST_CONFIG environment variable
         for use by ``hit``.
 
+    temp_dir : str (optional)
+        A temporary directory for use by the job runner. Files will be left in the
+        dir after execution.
+
     Returns
     -------
 
     out_env: dict
-        The environment with modifications done by "root scope" of
-        the script (modifications done in nested scopes are intentionally
-        discarded).
+        The environment after the last command that was run (regardless
+        of scoping/nesting).
+        
     """
     job_spec = canonicalize_job_spec(job_spec)
     env = get_imports_env(build_store, virtuals, job_spec['import'])
@@ -309,12 +281,12 @@ def run_job(logger, build_store, job_spec, override_env, virtuals, cwd, config):
     env.update(override_env)
     env['HDIST_VIRTUALS'] = pack_virtuals_envvar(virtuals)
     env['HDIST_CONFIG'] = json.dumps(config, separators=(',', ':'))
-    executor = ScriptExecution(logger)
+    executor = CommandTreeExecution(logger, temp_dir)
     try:
-        out_env = executor.run(job_spec['script'], env, cwd)
+        executor.run_node(job_spec, env, cwd, ())
     finally:
         executor.close()
-    return out_env
+    return executor.last_env
 
 def canonicalize_job_spec(job_spec):
     """Returns a copy of job_spec with default values filled in.
@@ -335,7 +307,6 @@ def canonicalize_job_spec(job_spec):
     result['import'].sort(key=lambda item: item['id'])
     result.setdefault("env", {})
     result.setdefault("env_nohash", {})
-    result.setdefault("script", [])
     return result
     
 def substitute(x, env):
@@ -388,6 +359,7 @@ def get_imports_env(build_store, virtuals, imports):
     HDIST_CFLAGS = []
     HDIST_LDFLAGS = []
     HDIST_IMPORT = []
+    HDIST_IMPORT_PATHS = []
     
     for dep in imports:
         dep_ref = dep['ref']
@@ -407,6 +379,7 @@ def get_imports_env(build_store, virtuals, imports):
         if dep_dir is None:
             raise InvalidJobSpecError('Dependency "%s"="%s" not already built, please build it first' %
                                         (dep_ref, dep_id))
+        HDIST_IMPORT_PATHS.append(dep_dir)
 
         if dep_ref is not None:
             env[dep_ref] = dep_dir
@@ -433,6 +406,7 @@ def get_imports_env(build_store, virtuals, imports):
     env['HDIST_CFLAGS'] = ' '.join(HDIST_CFLAGS)
     env['HDIST_LDFLAGS'] = ' '.join(HDIST_LDFLAGS)
     env['HDIST_IMPORT'] = ' '.join(HDIST_IMPORT)
+    env['HDIST_IMPORT_PATHS'] = ' '.join(HDIST_IMPORT_PATHS)
     return env
     
 def pack_virtuals_envvar(virtuals):
@@ -505,7 +479,7 @@ def stable_topological_sort(problem):
     return [id_to_obj[obj_id] for obj_id in result]
 
 
-class ScriptExecution(object):
+class CommandTreeExecution(object):
     """
     Class for maintaining state (in particular logging pipes) while
     executing script. Note that the environment is passed around as
@@ -524,15 +498,24 @@ class ScriptExecution(object):
         pipes with the "hit logpipe" command.
     """
     
-    def __init__(self, logger):
+    def __init__(self, logger, temp_dir=None):
         self.logger = logger
         self.log_fifo_filenames = {}
-        self.rpc_dir = tempfile.mkdtemp(prefix='hit-sandbox-')
+        if temp_dir is None:
+            self.rm_temp_dir = True
+            temp_dir = tempfile.mkdtemp(prefix='hashdist-run-job-')
+        else:
+            if os.listdir(temp_dir) != []:
+                raise Exception('temp_dir must be an empty directory')
+            self.rm_temp_dir = False
+        self.temp_dir = temp_dir
+        self.last_env, self.last_cwd = None, None
 
     def close(self):
         """Removes log FIFOs; should always be called when one is done
         """
-        shutil.rmtree(self.rpc_dir)
+        if self.rm_temp_dir:
+            shutil.rmtree(self.temp_dir)
 
     def substitute(self, x, env):
         try:
@@ -542,13 +525,146 @@ class ScriptExecution(object):
             self.logger.error(msg)
             raise ValueError(msg)
 
-    def run(self, script, env, cwd):
-        """Executes script, given as the 'script' part of the job spec.
+    def dump_inputs(self, inputs, node_pos):
+        """
+        Handles the 'inputs' attribute of a node by dumping to temporary files.
+
+        Returns
+        -------
+
+        A dict with environment variables that can be used to update `env`,
+        containing ``$in0``, ...
+        """
+        env = {}
+        for i, input in enumerate(inputs):
+            if not isinstance(input, dict):
+                raise TypeError("input entries should be dict")
+            name = 'in%d' % i
+            filename = '_'.join(str(x) for x in node_pos) + '_' + name
+            filename = pjoin(self.temp_dir, filename)
+
+            if sum(['text' in input, 'json' in input, 'string' in input]) != 1:
+                raise ValueError("Need exactly one of 'text', 'json', 'string' in %r" % input)
+            if 'text' in input:
+                value = '\n'.join(input['text'])
+            elif 'string' in input:
+                value = input['string']
+            elif 'json' in input:
+                value = json.dumps(input['json'], indent=4)
+                filename += '.json'
+            else:
+                assert False
+
+            with open(filename, 'w') as f:
+                f.write(value)
+            env[name] = filename
+        return env
+
+    def run_node(self, node, env, cwd, node_pos):
+        """Executes a command node
 
         Parameters
         ----------
-        script : document
-            The 'script' part of the job spec
+        node : dict
+            A command node
+
+        env : dict
+            The environment
+
+        cwd : str
+            Working directory
+
+        node_pos : tuple
+            Tuple of the "path" to this command node; e.g., (0, 1) for second
+            command in first group.
+
+        Returns
+        -------
+
+        ret_env : dict
+            The environment as modified by the node.
+
+        ret_cwd : str
+            The current directory
+        """
+        if not isinstance(node, dict):
+            raise TypeError('command node must be a dict; got %r' % node)
+        if sum(['cmd' in node, 'hit' in node, 'commands' in node]) != 1:
+            raise ValueError("Each script node should have exactly one of the 'cmd', 'hit', 'commands' keys")
+        if sum(['to_var' in node, 'stdout_to_file' in node]) > 1:
+            raise ValueError("Can only have one of to_var, stdout_to_file")
+        if 'commands' in node and ('append_to_file' in node or 'to_var' in node or 'inputs' in node):
+            raise ValueError('"commands" not compatible with to_var or append_to_file or inputs')
+
+
+        # Make scopes
+        ret_env = dict(env)
+        ret_cwd = cwd
+        
+        node_env = dict(env)
+        node_cwd = cwd
+
+        # Process common options
+        if 'cwd' in node:
+            node_cwd = pjoin(node_cwd, node['cwd'])
+        if 'env' in node:
+            for key, value in node['env'].items():
+                # note: subst. using parent env to make sure order doesn't matter
+                node_env[key] = self.substitute(value, env)
+
+        if 'cmd' in node or 'hit' in node:
+            inputs = node.get('inputs', ())
+            node_env.update(self.dump_inputs(inputs, node_pos))
+            if 'cmd' in node:
+                key = 'cmd'
+                args = node['cmd']
+                func = self.run_cmd
+            else:
+                key = 'hit'
+                args = node['hit']
+                func = self.run_hit
+            if not isinstance(args, list):
+                raise TypeError("'%s' arguments must be a list, got %r" % (key, args))
+            args = [self.substitute(x, node_env) for x in args]
+
+            if 'to_var' in node:
+                stdout = StringIO()
+                func(args, node_env, node_cwd, stdout_to=stdout)
+                # modifying ret_env, not node_env, to export change
+                ret_env[node['to_var']] = stdout.getvalue().strip()
+
+            elif 'append_to_file' in node:
+                stdout_filename = self.substitute(node['append_to_file'], node_env)
+                if not os.path.isabs(stdout_filename):
+                    stdout_filename = pjoin(node_cwd, stdout_filename)
+                stdout_filename = os.path.realpath(stdout_filename)
+                if stdout_filename.startswith(self.temp_dir):
+                    raise NotImplementedError("Cannot currently use stream re-direction to write to "
+                                              "a log-pipe (doing the write from a "
+                                              "sub-process is OK)")
+                with file(stdout_filename, 'a') as stdout:
+                    func(args, node_env, node_cwd, stdout_to=stdout)
+
+            else:
+                func(args, node_env, node_cwd)
+
+        elif 'commands' in node:
+            self.run_commands(node['commands'], node_env, node_cwd, node_pos)
+        else:
+            assert False
+
+        self.last_env, self.last_cwd = node_env, node_cwd
+
+        return ret_env, ret_cwd
+        
+
+    def run_commands(self, commands, env, cwd, node_pos):
+        """Executes 'commands' node (group of commands).
+
+        Parameters
+        ----------
+        commands : list
+            The 'commands' part of the job spec
 
         env : dict
             The starting process environment
@@ -556,76 +672,22 @@ class ScriptExecution(object):
         cwd : str
             Working directory
 
+        node_pos : tuple
+            Tuple of the "path" to this command node; e.g., (0, 1) for second
+            command in first group.
+
         Returns
         -------
 
-        out_env : dict
-            The environment as modified by the script.
+        ret_env : dict
+            The environment as it was on the last node
+        ret_cwd: str
+            The cwd as it was on the last node
         """
-        for line in script:
-            if not isinstance(line, dict):
-                raise TypeError('script must be a list of dicts (using old script syntax?); got %r' % line)
-            if sum(['cmd' in line, 'hit' in line, 'scope' in line]) != 1:
-                raise ValueError("Each script line should have exactly one of the 'cmd', 'hit', 'scope' keys")
-            if sum(['to_var' in line, 'stdout_to_file' in line]) > 1:
-                raise ValueError("Can only have one of to_var, stdout_to_file")
-            if 'scope' in line and ('append_to_file' in line or 'to_var' in line):
-                raise ValueError('"scope" not compatible with to_var or append_to_file')
-
-
-            # Make scope for this line
-            line_env = dict(env)
-            line_cwd = cwd
-
-            # Process common options
-            if 'cwd' in line:
-                line_cwd = pjoin(line_cwd, line['cwd'])
-            if 'env' in line:
-                for key, value in line['env'].items():
-                    # note: subst. using parent env to make sure order doesn't matter
-                    line_env[key] = self.substitute(value, env)
-
-            if 'cmd' in line or 'hit' in line:
-                if 'cmd' in line:
-                    key = 'cmd'
-                    args = line['cmd']
-                    func = self.run_cmd
-                else:
-                    key = 'hit'
-                    args = line['hit']
-                    func = self.run_hdist
-                if not isinstance(args, list):
-                    raise TypeError("'%s' arguments must be a list, got %r" % (key, args))
-                args = [self.substitute(x, line_env) for x in args]
-
-                if 'to_var' in line:
-                    stdout = StringIO()
-                    func(args, line_env, line_cwd, stdout_to=stdout)
-                    # modifying *parent* env, not line_env
-                    env[line['to_var']] = stdout.getvalue().strip()
-                    
-                elif 'append_to_file' in line:
-                    stdout_filename = self.substitute(line['append_to_file'], line_env)
-                    if not os.path.isabs(stdout_filename):
-                        stdout_filename = pjoin(line_cwd, stdout_filename)
-                    stdout_filename = os.path.realpath(stdout_filename)
-                    if stdout_filename.startswith(self.rpc_dir):
-                        raise NotImplementedError("Cannot currently use stream re-direction to write to "
-                                                  "a log-pipe (doing the write from a "
-                                                  "sub-process is OK)")
-                    with file(stdout_filename, 'a') as stdout:
-                        func(args, line_env, line_cwd, stdout_to=stdout)
-                
-                else:
-                    func(args, line_env, line_cwd)
-                    
-            elif 'scope' in line:
-                self.run(line['scope'], line_env, line_cwd)
-
-            else:
-                assert False
-
-        return env
+        for i, command_node in enumerate(commands):
+            pos = node_pos + (i,)
+            env, cwd = self.run_node(command_node, env, cwd, pos)
+        return env, cwd
 
     def run_cmd(self, args, env, cwd, stdout_to=None):
         logger = self.logger
@@ -640,7 +702,7 @@ class ScriptExecution(object):
             logger.error("command failed (code=%d); raising" % e.returncode)
             raise
 
-    def run_hdist(self, args, env, cwd, stdout_to=None):
+    def run_hit(self, args, env, cwd, stdout_to=None):
         args = ['hit'] + args
         logger = self.logger
         logger.debug('running %r' % args)
@@ -813,7 +875,7 @@ class ScriptExecution(object):
         level = dict(CRITICAL=CRITICAL, ERROR=ERROR, WARNING=WARNING, INFO=INFO, DEBUG=DEBUG)[level_str]
         fifo_filename = self.log_fifo_filenames.get((sublogger_name, level), None)
         if fifo_filename is None:
-            fifo_filename = pjoin(self.rpc_dir, "logpipe-%s-%s" % (sublogger_name, level_str))
+            fifo_filename = pjoin(self.temp_dir, "logpipe-%s-%s" % (sublogger_name, level_str))
             os.mkfifo(fifo_filename, 0600)
             self.log_fifo_filenames[sublogger_name, level] = fifo_filename
         sys.stdout.write(fifo_filename)

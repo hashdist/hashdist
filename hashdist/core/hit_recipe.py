@@ -72,7 +72,7 @@ def hit_cli_build_spec(python=None, package=None):
             ]
         },
         "build": {
-            "script": [
+            "commands": [
                 {"hit": ["build-write-files"]},
                 {"hit": ["create-links", "--key=parameters/links", "build.json"]}
             ]
