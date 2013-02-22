@@ -25,10 +25,10 @@ def test_run_job_environment(tempdir, sc, build_store, cfg):
     job_spec = {
         "env": {"FOO": "foo"},
         "env_nohash": {"BAR": "$bar"},
-        "script": [
+        "commands": [
             {
                 "env": {"BAR": "${FOO}x", "HI": "hi"},
-                "scope": [
+                "commands": [
                     {"cmd": env_to_stderr + ["FOO"]},
                     {"cmd": env_to_stderr + ["BAR"]},
                     {"cmd": env_to_stderr + ["HI"]},
@@ -62,7 +62,7 @@ def test_run_job_environment(tempdir, sc, build_store, cfg):
 @build_store_fixture()
 def test_capture_stdout(tempdir, sc, build_store, cfg):
     job_spec = {
-        "script": [
+        "commands": [
             {"cmd": ["$echo", "  a  b   \n\n\n "], "to_var": "HI"},
             {"cmd": env_to_stderr + ["HI"]}
         ]}
@@ -73,7 +73,7 @@ def test_capture_stdout(tempdir, sc, build_store, cfg):
 @build_store_fixture()
 def test_script_redirect(tempdir, sc, build_store, cfg):
     job_spec = {
-        "script": [
+        "commands": [
             {"cmd": ["$echo", "hi"], "append_to_file": "$foo", "env": {"foo": "foo"}}
         ]}
     run_job.run_job(test_logger, build_store, job_spec,
@@ -86,7 +86,7 @@ def test_attach_log(tempdir, sc, build_store, cfg):
     with file(pjoin(tempdir, 'hello'), 'w') as f:
         f.write('hello from pipe')
     job_spec = {
-        "script": [
+        "commands": [
             {"hit": ["logpipe", "mylog", "WARNING"], "to_var": "LOG"},
             {"cmd": ["/bin/dd", "if=hello", "of=$LOG"]},
         ]}
@@ -97,7 +97,7 @@ def test_attach_log(tempdir, sc, build_store, cfg):
 @build_store_fixture()
 def test_error_exit(tempdir, sc, build_store, cfg):
     job_spec = {
-        "script": [
+        "commands": [
             {"cmd": ["/bin/false"]},
         ]}
     logger = MemoryLogger()
@@ -141,7 +141,7 @@ def test_log_pipe_stress(tempdir, sc, build_store, cfg):
         '''))
 
     job_spec = {
-        "script": [
+        "commands": [
             {"hit": ["logpipe", "mylog", "WARNING"], "to_var": "LOG"},
             {"cmd": [sys.executable, pjoin(tempdir, 'launcher.py'), pjoin(tempdir, 'client.py'), str(NJOBS), str(NMSGS)]},
         ]}
@@ -179,7 +179,7 @@ def test_log_pipe_stress(tempdir, sc, build_store, cfg):
 @build_store_fixture()
 def test_notimplemented_redirection(tempdir, sc, build_store, cfg):
     job_spec = {
-        "script": [
+        "commands": [
             {"hit": ["logpipe", "mylog", "WARNING"], "to_var": "log"},
             {"cmd": ["/bin/echo", "my warning"], "append_to_file": "$log"}
         ]}
@@ -191,13 +191,13 @@ def test_notimplemented_redirection(tempdir, sc, build_store, cfg):
 def test_script_cwd(tempdir, sc, build_store, cfg):
     os.makedirs(pjoin(tempdir, 'a', 'b', 'c'))
     job_spec = {
-        "script": [
+        "commands": [
             {"cwd": "a",
-             "scope": [
+             "commands": [
                  {"cwd": "b",
-                  "scope": [
+                  "commands": [
                       {"cwd": "c",
-                       "scope": [
+                       "commands": [
                           {"cmd": ["/bin/pwd"], "append_to_file": "out", "cwd": ".."}
                            ]}]}]}]}
     logger = MemoryLogger()

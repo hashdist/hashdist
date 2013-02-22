@@ -279,7 +279,7 @@ def run_job(logger, build_store, job_spec, override_env, virtuals, cwd, config):
     env['HDIST_CONFIG'] = json.dumps(config, separators=(',', ':'))
     executor = ScriptExecution(logger)
     try:
-        out_env = executor.run(job_spec['script'], env, cwd)
+        out_env = executor.run(job_spec['commands'], env, cwd)
     finally:
         executor.close()
     return out_env
@@ -511,12 +511,12 @@ class ScriptExecution(object):
             raise ValueError(msg)
 
     def run(self, script, env, cwd):
-        """Executes script, given as the 'script' part of the job spec.
+        """Executes script, given as the 'commands' part of the job spec.
 
         Parameters
         ----------
         script : document
-            The 'script' part of the job spec
+            The 'commands' part of the job spec
 
         env : dict
             The starting process environment
@@ -533,12 +533,12 @@ class ScriptExecution(object):
         for line in script:
             if not isinstance(line, dict):
                 raise TypeError('script must be a list of dicts (using old script syntax?); got %r' % line)
-            if sum(['cmd' in line, 'hit' in line, 'scope' in line]) != 1:
-                raise ValueError("Each script line should have exactly one of the 'cmd', 'hit', 'scope' keys")
+            if sum(['cmd' in line, 'hit' in line, 'commands' in line]) != 1:
+                raise ValueError("Each script line should have exactly one of the 'cmd', 'hit', 'commands' keys")
             if sum(['to_var' in line, 'stdout_to_file' in line]) > 1:
                 raise ValueError("Can only have one of to_var, stdout_to_file")
-            if 'scope' in line and ('append_to_file' in line or 'to_var' in line):
-                raise ValueError('"scope" not compatible with to_var or append_to_file')
+            if 'commands' in line and ('append_to_file' in line or 'to_var' in line):
+                raise ValueError('"commands" not compatible with to_var or append_to_file')
 
 
             # Make scope for this line
@@ -587,8 +587,8 @@ class ScriptExecution(object):
                 else:
                     func(args, line_env, line_cwd)
                     
-            elif 'scope' in line:
-                self.run(line['scope'], line_env, line_cwd)
+            elif 'commands' in line:
+                self.run(line['commands'], line_env, line_cwd)
 
             else:
                 assert False
