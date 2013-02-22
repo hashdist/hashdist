@@ -9,7 +9,7 @@ from .main import register_subcommand
 class InitHome(object):
     """
     Initializes the current user's home directory for Hashdist by
-    creating ~/.hdistconfig configuration file and ~/.hdist directory.
+    creating ~/.hitconfig configuration file and ~/.hit directory.
     """
     
     @staticmethod
@@ -18,8 +18,8 @@ class InitHome(object):
 
     @staticmethod
     def run(ctx, args):
-        config_file = os.path.expanduser('~/.hdistconfig')
-        store_dir = os.path.expanduser('~/.hdist')
+        config_file = os.path.expanduser('~/.hitconfig')
+        store_dir = os.path.expanduser('~/.hit')
         for x in [config_file, store_dir]:
             if pexists(x):
                 sys.stderr.write('%s already exists, aborting\n' % x)
@@ -30,15 +30,15 @@ class InitHome(object):
         with file(config_file, 'w') as f:
             f.write(dedent("""\
             [global]
-            cache = ~/.hdist/cache
-            db = ~/.hdist/db
+            cache = ~/.hit/cache
+            db = ~/.hit/db
             
             [sourcecache]
-            sources = ~/.hdist/src
+            sources = ~/.hit/src
 
             [builder]
-            build-temp = ~/.hdist/bld
-            artifacts = ~/.hdist/opt
+            build-temp = ~/.hit/bld
+            artifacts = ~/.hit/opt
             artifact-dir-pattern = {name}/{shorthash}
             """))
 
@@ -50,7 +50,7 @@ class ClearBuilds(object):
 
     Example::
 
-        $ hdist clearbuilds --force
+        $ hit clearbuilds --force
 
     """
 
@@ -74,7 +74,7 @@ class ClearSources(object):
 
     Example::
 
-        $ hdist clearsource --force
+        $ hit clearsource --force
 
     """
 

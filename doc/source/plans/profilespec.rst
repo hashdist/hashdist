@@ -3,13 +3,13 @@ Profile specification layer
 
 Nobody wants to use the core tools directly and copy and paste
 artifact IDs (unless they are debugging and developing packages).
-This layer is one example of an API that can be used to drive ``hdist
-fetch``, ``hdist build`` and ``hdist makeprofile``. Skipping this
+This layer is one example of an API that can be used to drive ``hit
+fetch``, ``hit build`` and ``hit makeprofile``. Skipping this
 layer is encouraged if it makes more sense for your application.
 
 **Included**: The ability to programatically define a desired software
 profile/"stack", and automatically download and build the packages
-with minimum hassle. Patterns for using the lower-level ``hdist``
+with minimum hassle. Patterns for using the lower-level ``hit``
 command (e.g., standardize on symlink-based artifact profiles).
 
 **Excluded**: Any use of package metadata or a central package
@@ -31,7 +31,7 @@ Package class
 At the basic level, we provide utilites that knows how to build packages
 and inject dependencies. Under the hood this happens by generating the
 necesarry JSON files (including the build setup, which is the hard
-part) and calling ``hdist build`` and ``hdist makeprofile``.
+part) and calling ``hit build`` and ``hit makeprofile``.
 
 .. note::
 
@@ -79,7 +79,7 @@ would be::
 This:
 
  #. Walks the dependency DAG and for each component generates a ``build.json``
-    and calls ``hdist build``, often hitting the cache
+    and calls ``hit build``, often hitting the cache
  #. Builds a profile and does ``ln -sf`` to atomically update ``~/mystack`` (which
     is a symlink).
 

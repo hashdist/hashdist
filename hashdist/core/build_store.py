@@ -38,7 +38,7 @@ For the artifact paths on disk, a shortened form (4-char hash) is used
 to make things more friendly to the human user. If there is a
 collision, the length is simply increased for the one that comes
 later. Thus, the example above could be stored on disk as
-``~/.hdist/opt/zlib/4nio``, or ``~/.hdist/opt/zlib/1.2.7/4nios``
+``~/.hit/opt/zlib/4nio``, or ``~/.hit/opt/zlib/1.2.7/4nios``
 in the (rather unlikely) case of a collision. There is a symlink
 from the full ID to the shortened form. See also Discussion below.
 
@@ -67,8 +67,8 @@ An example build spec:
                  {"ref": "gcc", "id": "gcc/host-4.6.3/q0VSL7JmzH1P17meqITYc4kMbnIjIexrWPdlAlqPn3s", "before": ["virtual:unix"]},
              ],
              "script" : [
-                 {"hdist", ["build-unpack-sources"]},
-                 {"hdist", ["build-write-files"]},
+                 {"hit", ["build-unpack-sources"]},
+                 {"hit", ["build-write-files"]},
                  {"cmd": ["bash", "build.sh"]}
              ],
          },
@@ -108,7 +108,7 @@ An example build spec:
 
 In addition, extra keys can be added at will to use for input to
 commands executed in the build. In the example above, the `sources`
-key is read by the ``hdist build-unpack-sources`` command.
+key is read by the ``hit build-unpack-sources`` command.
 
 The build environment
 ---------------------

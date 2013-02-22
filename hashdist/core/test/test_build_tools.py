@@ -16,17 +16,17 @@ from .. import build_tools
 
 def test_execute_files_dsl():
     def assertions(dirname):
-        with file(pjoin(dirname, 'bin', 'hdist')) as f:
+        with file(pjoin(dirname, 'bin', 'hit')) as f:
             x = f.read().strip()
             assert x == ("sys.path.insert(0, sys.path.join('%s', 'lib'))" % dirname)
-        assert os.stat(pjoin(dirname, 'bin', 'hdist')).st_mode & 0100
+        assert os.stat(pjoin(dirname, 'bin', 'hit')).st_mode & 0100
         with file(pjoin(dirname, 'doc.json')) as f:
             assert json.load(f) == {"foo": "bar"}
 
     with temp_working_dir() as d:
         doc = [
             {
-                "target": "$ARTIFACT/bin/hdist",
+                "target": "$ARTIFACT/bin/hit",
                 "executable": True,
                 "expandvars": True,
                 "text": [

@@ -19,7 +19,7 @@ Example::
       "install": {
         "dependencies": [],
         "env": {}
-        "commands": [{"hdist": ["make-symlinks", "profile.json"]}],
+        "commands": [{"hit": ["make-symlinks", "profile.json"]}],
         "parameters": {
             <...free-form JSON data...>
         }
@@ -34,7 +34,7 @@ Example::
     The *dependencies* need *not* be the same complete list as those found in
     ``build.json``; only the ones needed to actually do the
     installation into the profile. In the example above where only the
-    ``hdist`` tool is used, no dependencies need to be specificed.
+    ``hit`` tool is used, no dependencies need to be specificed.
 
 **commands**:
     Commands to execute during profile installation.

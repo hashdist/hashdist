@@ -13,14 +13,14 @@ class FetchGit(object):
 
     Example::
 
-        $ hdist fetchgit git://github.com/numpy/numpy.git master
+        $ hit fetchgit git://github.com/numpy/numpy.git master
         Fetching ...
         Done
         git:c5ccca92c5f136833ad85614feb2aa4f5bd8b7c3
 
     One can then unpack results later only by using the keys::
 
-        $ hdist unpack git:c5ccca92c5f136833ad85614feb2aa4f5bd8b7c3 numpy
+        $ hit unpack git:c5ccca92c5f136833ad85614feb2aa4f5bd8b7c3 numpy
     
     """
 
@@ -90,8 +90,8 @@ class Unpack(object):
 
     ::
     
-        $ hdist unpack targz:mheIiqyFVX61qnGc53ZhR-uqVsY src/python
-        $ hdist unpack git:c5ccca92c5f136833ad85614feb2aa4f5bd8b7c3 numpy
+        $ hit unpack targz:mheIiqyFVX61qnGc53ZhR-uqVsY src/python
+        $ hit unpack git:c5ccca92c5f136833ad85614feb2aa4f5bd8b7c3 numpy
 
     """
 

@@ -1,6 +1,6 @@
 """
 Handles reading the Hashdist configuration file. By default this is
-``~/.hashdistconfig``.
+``~/.hitconfig``.
 """
 
 import os
@@ -8,19 +8,19 @@ from os.path import join as pjoin
 import ConfigParser
 import json
 
-DEFAULT_CONFIG_FILENAME = '~/.hdistconfig'
+DEFAULT_CONFIG_FILENAME = '~/.hitconfig'
 
 SCHEMA = {
     'global': {
-        'cache': ('dir', '~/.hdist/cache'),
-        'db': ('dir', '~/.hdist/db'),
+        'cache': ('dir', '~/.hit/cache'),
+        'db': ('dir', '~/.hit/db'),
         },
     'sourcecache': {
-        'sources': ('dir', '~/.hdist/src'),
+        'sources': ('dir', '~/.hit/src'),
         },
     'builder': {
-        'build-temp': ('dir', '~/.hdist/bld'),
-        'artifacts': ('dir', '~/.hdist/opt'),
+        'build-temp': ('dir', '~/.hit/bld'),
+        'artifacts': ('dir', '~/.hit/opt'),
         'artifact-dir-pattern': ('str', '{name}/{shorthash}'),
         }
     }

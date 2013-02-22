@@ -19,7 +19,7 @@ class CreateLinks(object):
 
         {
           ...
-          "commands": [{"hdist": ["create-links", "--key=parameters/links", "build.json"]}],
+          "commands": [{"hit": ["create-links", "--key=parameters/links", "build.json"]}],
           "parameters" : {
             "links" : [
               {
