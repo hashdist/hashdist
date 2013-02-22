@@ -9,10 +9,10 @@ import sys
 
 from .build_store import BuildSpec
 
-HDIST_CLI_ARTIFACT_NAME = "hit-cli"
-HDIST_CLI_ARTIFACT_VERSION = "r0"
+HIT_CLI_ARTIFACT_NAME = "hit-cli"
+HIT_CLI_ARTIFACT_VERSION = "r0"
 
-def hdist_cli_build_spec(python=None, package=None):
+def hit_cli_build_spec(python=None, package=None):
     """Build-spec to creates a 'bin'-dir containing only a launcher
     for the 'hit' command.
 
@@ -44,8 +44,8 @@ def hdist_cli_build_spec(python=None, package=None):
         package = os.path.realpath(pjoin(os.path.dirname(__file__), '..', '..', 'hashdist'))
 
     spec = {
-        "name": HDIST_CLI_ARTIFACT_NAME,
-        "version": HDIST_CLI_ARTIFACT_VERSION,
+        "name": HIT_CLI_ARTIFACT_NAME,
+        "version": HIT_CLI_ARTIFACT_VERSION,
         "files": [
             {
                 "target": "$ARTIFACT/bin/hit",
@@ -80,7 +80,7 @@ def hdist_cli_build_spec(python=None, package=None):
     }
     return BuildSpec(spec)
     
-def ensure_hdist_cli_artifact(build_store, config):
+def ensure_hit_cli_artifact(build_store, config):
     """
     Builds an artifact which executes the 'hit' command using the current
     Python interpreter and current Hashdist package.
@@ -92,5 +92,5 @@ def ensure_hdist_cli_artifact(build_store, config):
     In other words, this artifact should almost always be provided
     as a "virtual:hit", not as a concrete artifact.
     """
-    spec = hdist_cli_build_spec()
+    spec = hit_cli_build_spec()
     return build_store.ensure_present(spec, config)
