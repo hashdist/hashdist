@@ -22,7 +22,8 @@ def test_run_job_environment(tempdir, sc, build_store, cfg):
     # tests that the environment gets correctly set up and that the local scope feature
     # works
     job_spec = {
-        "env": {"FOO": "foo"},
+        "env": {"LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH", ""),
+            "FOO": "foo"},
         "env_nohash": {"BAR": "$bar"},
         "commands": [
             {
@@ -53,7 +54,9 @@ def test_run_job_environment(tempdir, sc, build_store, cfg):
         'HDIST_VIRTUALS': 'virtual:bash=bash/ljnq7g35h6h4qtb456h5r35ku3dq25nl',
         'BAR': '$bar',
         'FOO': 'foo',
-        'BAZ': 'BAZ'}
+        'BAZ': 'BAZ',
+        'LD_LIBRARY_PATH': job_spec['env']['LD_LIBRARY_PATH']
+        }
     eq_(expected, ret_env)
     lines = filter_out(logger.lines)
     eq_(["FOO='foo'", "BAR='foox'", "HI='hi'", "FOO='foo'", "BAR='$bar'", 'HI=None', "PATH=''"],
@@ -63,7 +66,9 @@ def test_run_job_environment(tempdir, sc, build_store, cfg):
 def test_inputs(tempdir, sc, build_store, cfg):
     job_spec = {
         "commands": [
-            {"cmd": [sys.executable, "$in0", "$in1"],
+            {
+             "env": {"LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH", "")},
+             "cmd": [sys.executable, "$in0", "$in1"],
              "inputs": [
                  {"text": ["import sys",
                            "import json",
@@ -72,7 +77,9 @@ def test_inputs(tempdir, sc, build_store, cfg):
                  {"json": {"foo": "Hello1"}}
                  ]
              },
-            {"cmd": [sys.executable, "$in0"],
+            {
+             "env": {"LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH", "")},
+             "cmd": [sys.executable, "$in0"],
              "inputs": [{"string": "import sys\nprint 'Hello2'"}]
              },
             ]
@@ -89,7 +96,9 @@ def test_capture_stdout(tempdir, sc, build_store, cfg):
     job_spec = {
         "commands": [
             {"cmd": ["$echo", "  a  b   \n\n\n "], "to_var": "HI"},
-            {"cmd": env_to_stderr + ["HI"]}
+            {
+             "env": {"LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH", "")},
+             "cmd": env_to_stderr + ["HI"]}
         ]}
     logger = MemoryLogger()
     run_job.run_job(logger, build_store, job_spec, {"echo": "/bin/echo"}, {}, tempdir, cfg)
@@ -168,7 +177,9 @@ def test_log_pipe_stress(tempdir, sc, build_store, cfg):
     job_spec = {
         "commands": [
             {"hit": ["logpipe", "mylog", "WARNING"], "to_var": "LOG"},
-            {"cmd": [sys.executable, pjoin(tempdir, 'launcher.py'), pjoin(tempdir, 'client.py'), str(NJOBS), str(NMSGS)]},
+            {
+             "env": {"LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH", "")},
+             "cmd": [sys.executable, pjoin(tempdir, 'launcher.py'), pjoin(tempdir, 'client.py'), str(NJOBS), str(NMSGS)]},
         ]}
     logger = MemoryLogger()
     old = run_job.LOG_PIPE_BUFSIZE
