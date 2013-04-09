@@ -480,18 +480,19 @@ class ArchiveSourceCache(object):
 
         temp_file, digest
         """
-        # It's annoying to see curl for local files, so provide a special-case
-        use_curl = not SIMPLE_FILE_URL_RE.match(url)
-        if not use_curl:
+        # Provide a special case for local files
+        use_urllib = not SIMPLE_FILE_URL_RE.match(url)
+        if not use_urllib:
             stream = file(url[len('file:'):])
         else:
             # Make request.
             sys.stderr.write('Downloading %s...\n' % url)
-            curl = subprocess.Popen(['curl', '-L', url], stdout=subprocess.PIPE,
-                                    stdin=subprocess.PIPE)
-            curl.stdin.close()
-            stream = curl.stdout
-        
+            try:
+                stream = urllib2.urlopen(url)
+            except urllib2.HTTPError, e:
+                raise RuntimeError("urllib failed to download (code: %d): %s" %\
+                            (e.code, url))
+
         # Download file to a temporary file within self.packs_path, while hashing
         # it.
         self.logger.info("Downloading '%s'" % url)
@@ -507,12 +508,6 @@ class ArchiveSourceCache(object):
             finally:
                 stream.close()
                 f.close()
-            if use_curl:
-                retcode = curl.wait()
-                if retcode == 3:
-                    raise ValueError('invalid URL (did you forget "file:" prefix?)')
-                elif retcode != 0:
-                    raise RuntimeError("curl failed to download (code: %d): %s" % (retcode, url))
         except:
             # Remove temporary file if there was a failure
             os.unlink(temp_path)
