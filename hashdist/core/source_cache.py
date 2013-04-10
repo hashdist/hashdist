@@ -518,19 +518,22 @@ class ArchiveSourceCache(object):
         try:
             f = os.fdopen(temp_fd, 'wb')
             tee = HashingWriteStream(hashlib.sha256(), f)
-            progress = ProgressBar(int(stream.headers["Content-Length"]))
+            if use_urllib:
+                progress = ProgressBar(int(stream.headers["Content-Length"]))
             try:
                 n = 0
                 while True:
                     chunk = stream.read(self.chunk_size)
                     if not chunk: break
-                    n += len(chunk)
-                    progress.update(n)
+                    if use_urllib:
+                        n += len(chunk)
+                        progress.update(n)
                     tee.write(chunk)
             finally:
                 stream.close()
                 f.close()
-                progress.finish()
+                if use_urllib:
+                    progress.finish()
         except:
             # Remove temporary file if there was a failure
             os.unlink(temp_path)
