@@ -123,15 +123,23 @@ class CorruptSourceCacheError(Exception):
 
 class ProgressBar(object):
 
-    def __init__(self, maxval, bar_length=50):
-        self._maxval = maxval
+    def __init__(self, total_size, bar_length=40):
+        """
+        total_size ... the size in bytes of the file to be downloaded
+        """
+        self._total_size = total_size
         self._bar_length = bar_length
 
-    def update(self, n):
-        f1 = self._bar_length * n / self._maxval
+    def update(self, current_size):
+        """
+        actual_size ... the current size of the downloading file
+        """
+        f1 = self._bar_length * current_size / self._total_size
         f2 = self._bar_length - f1
-        percent = 100. * n / self._maxval
-        sys.stdout.write("\r[" + "="*f1 + " "*f2 + "] %4.1f%%" % percent)
+        percent = 100. * current_size / self._total_size
+        msg = "\r[" + "="*f1 + " "*f2 + "] %4.1f%% (%.1fMB of %.1fMB)" % \
+                (percent, current_size / 1024.**2, self._total_size / 1024.**2)
+        sys.stdout.write(msg)
         sys.stdout.flush()
 
     def finish(self):
