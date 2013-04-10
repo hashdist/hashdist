@@ -121,6 +121,22 @@ class KeyNotFoundError(Exception):
 class CorruptSourceCacheError(Exception):
     pass
 
+class ProgressBar(object):
+
+    def __init__(self, maxval, bar_length=50):
+        self._maxval = maxval
+        self._bar_length = bar_length
+
+    def update(self, n):
+        f1 = self._bar_length * n / self._maxval
+        f2 = self._bar_length - f1
+        percent = 100. * n / self._maxval
+        sys.stdout.write("\r[" + "="*f1 + " "*f2 + "] %4.1f%%" % percent)
+        sys.stdout.flush()
+
+    def finish(self):
+        sys.stdout.write("\n")
+
 def single_file_key(filename, contents):
     h = Hasher()
     h.update('file')
@@ -502,14 +518,19 @@ class ArchiveSourceCache(object):
         try:
             f = os.fdopen(temp_fd, 'wb')
             tee = HashingWriteStream(hashlib.sha256(), f)
+            progress = ProgressBar(int(stream.headers["Content-Length"]))
             try:
+                n = 0
                 while True:
                     chunk = stream.read(self.chunk_size)
                     if not chunk: break
+                    n += len(chunk)
+                    progress.update(n)
                     tee.write(chunk)
             finally:
                 stream.close()
                 f.close()
+                progress.finish()
         except:
             # Remove temporary file if there was a failure
             os.unlink(temp_path)
