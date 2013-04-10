@@ -98,6 +98,7 @@ import struct
 import errno
 import stat
 import tarfile
+import time
 from contextlib import closing
 
 from ..deps import sh
@@ -123,22 +124,31 @@ class CorruptSourceCacheError(Exception):
 
 class ProgressBar(object):
 
-    def __init__(self, total_size, bar_length=40):
+    def __init__(self, total_size, bar_length=30):
         """
         total_size ... the size in bytes of the file to be downloaded
         """
         self._total_size = total_size
         self._bar_length = bar_length
+        self._t1 = time.clock()
 
     def update(self, current_size):
         """
         actual_size ... the current size of the downloading file
         """
+        time_delta = time.clock() - self._t1
         f1 = self._bar_length * current_size / self._total_size
         f2 = self._bar_length - f1
         percent = 100. * current_size / self._total_size
-        msg = "\r[" + "="*f1 + " "*f2 + "] %4.1f%% (%.1fMB of %.1fMB)" % \
-                (percent, current_size / 1024.**2, self._total_size / 1024.**2)
+        if time_delta == 0:
+            rate_eta_str = ""
+        else:
+            rate = 1. * current_size / time_delta # in bytes
+            eta = (self._total_size-current_size) / rate # in seconds
+            rate_eta_str = "%.1fMB/s ETA %ds" % (rate / 1024.**2, int(eta))
+        msg = "\r[" + "="*f1 + " "*f2 + "] %4.1f%% (%.1fMB of %.1fMB) %s" % \
+                (percent, current_size / 1024.**2, self._total_size / 1024.**2,
+                        rate_eta_str)
         sys.stdout.write(msg)
         sys.stdout.flush()
 
