@@ -124,7 +124,7 @@ class CorruptSourceCacheError(Exception):
 
 class ProgressBar(object):
 
-    def __init__(self, total_size, bar_length=30):
+    def __init__(self, total_size, bar_length=25):
         """
         total_size ... the size in bytes of the file to be downloaded
         """
@@ -143,10 +143,16 @@ class ProgressBar(object):
         if time_delta == 0:
             rate_eta_str = ""
         else:
-            rate = 1. * current_size / time_delta # in bytes
+            rate = 1. * current_size / time_delta # in bytes / second
             eta = (self._total_size-current_size) / rate # in seconds
-            rate_eta_str = "%.1fMB/s ETA %ds" % (rate / 1024.**2, int(eta))
-        msg = "\r[" + "="*f1 + " "*f2 + "] %4.1f%% (%.1fMB of %.1fMB) %s" % \
+            rate_eta_str = "%.3fMB/s ETA " % (rate / 1024.**2)
+            if eta < 70:
+                rate_eta_str += "%ds" % (int(eta))
+            else:
+                minutes = int(eta / 60)
+                seconds = eta - minutes * 60
+                rate_eta_str += "%dmin %ds" % (minutes, seconds)
+        msg = "\r[" + "="*f1 + " "*f2 + "] %4.1f%% (%.1fMB of %.1fMB) %s  " % \
                 (percent, current_size / 1024.**2, self._total_size / 1024.**2,
                         rate_eta_str)
         sys.stdout.write(msg)
