@@ -98,7 +98,7 @@ import struct
 import errno
 import stat
 import tarfile
-import time
+from timeit import default_timer as clock
 from contextlib import closing
 
 from ..deps import sh
@@ -130,13 +130,13 @@ class ProgressBar(object):
         """
         self._total_size = total_size
         self._bar_length = bar_length
-        self._t1 = time.clock()
+        self._t1 = clock()
 
     def update(self, current_size):
         """
         actual_size ... the current size of the downloading file
         """
-        time_delta = time.clock() - self._t1
+        time_delta = clock() - self._t1
         f1 = self._bar_length * current_size / self._total_size
         f2 = self._bar_length - f1
         percent = 100. * current_size / self._total_size
