@@ -111,7 +111,7 @@ TAG_RE_S = r'^[a-zA-Z-_+=]+$'
 TAG_RE = re.compile(TAG_RE_S)
 
 PACKS_DIRNAME = 'packs'
-GIT_DIRNAME = 'all-git.git'
+GIT_DIRNAME = 'git'
 
 class SourceNotFoundError(Exception):
     pass
@@ -205,7 +205,7 @@ class SourceCache(object):
         """
         return SourceCache(config['sourcecache/sources'], logger, create_dirs)
 
-    def fetch_git(self, repository, rev):
+    def fetch_git(self, repository, rev, repo_name):
         """Fetches source code from git repository
 
         With this method one does not need to know a specific commit,
@@ -222,6 +222,13 @@ class SourceCache(object):
         rev : str
             The rev to download (forwarded to git)
 
+        repo_name : str
+            A unique name to use for the repository, e.g., ``numpy``.
+            This is currently required because git doesn't seem to allow
+            getting a unique ID for a remote repo; and cloning all repos
+            into the same git repo has scalability issues.
+
+
         Returns
         -------
 
@@ -230,7 +237,7 @@ class SourceCache(object):
             prepended by ``git:``.
         
         """
-        return GitSourceCache(self).fetch_git(repository, rev)
+        return GitSourceCache(self).fetch_git(repository, rev, repo_name)
 
     def fetch_archive(self, url, type=None):
         """Fetches  a tarball without knowing the key up-front.
@@ -280,7 +287,7 @@ class SourceCache(object):
             raise ValueError('does not recognize key prefix: %s' % type)
         return handler
 
-    def fetch(self, url, key):
+    def fetch(self, url, key, repo_name=None):
         """Fetch sources whose key is known.
 
         This is the method to use in automated settings. If the
@@ -299,10 +306,16 @@ class SourceCache(object):
 
         key : str
             Globally unique key for the source object.
+
+        repo_name : str or None
+            A unique ID for the source code repo; required for git and ignored
+            otherwise. This must be present because a git "project" is distributed
+            and cannot be deduced from URL (and pulling everything into the same
+            repo was way too slow). Hopefully this can be mended in the future.
         """
         type, hash = key.split(':')
         handler = self._get_handler(type)
-        handler.fetch(url, type, hash)
+        handler.fetch(url, type, hash, repo_name)
 
     def unpack(self, key, target_path, unsafe_mode=False, strip=0):
         """
@@ -357,50 +370,54 @@ class GitSourceCache(object):
 
     def __init__(self, source_cache):
         self.repo_path = pjoin(source_cache.cache_path, GIT_DIRNAME)
-        self._git_env = dict(os.environ)
-        self._git_env['GIT_DIR'] = self.repo_path
-        self._ensure_repo()
         self.logger = source_cache.logger
 
-    def git_interactive(self, *args):
+    def git_interactive(self, repo_name, *args):
         # Inherit stdin/stdout in order to interact with user about any passwords
         # required to connect to any servers and so on
-        subprocess.check_call(['git'] + list(args), env=self._git_env)
+        if args[0] == 'init':
+            env = os.environ
+        else:
+            env = self.get_repo_env(repo_name)
+        subprocess.check_call(['git'] + list(args), env=env)
 
-    def git(self, *args):
-        p = subprocess.Popen(['git'] + list(args), env=self._git_env,
+    def git(self, repo_name, *args):
+        p = subprocess.Popen(['git'] + list(args), env=self.get_repo_env(repo_name),
                              stdout=subprocess.PIPE, stdin=subprocess.PIPE,
                              stderr=subprocess.PIPE)
         out, err = p.communicate()
         return p.returncode, out, err
 
-    def checked_git(self, *args):
-        retcode, out, err = self.git(*args)
+    def checked_git(self, repo_name, *args):
+        retcode, out, err = self.git(repo_name, *args)
         # Just fetch the output
         if retcode != 0:
             raise RuntimeError('git call %r failed with code %d' % (args, retcode))
         return out
 
-
-    def _ensure_repo(self):
-        if not os.path.exists(self.repo_path):
+    def get_repo_env(self, repo_name):
+        repo_path = pjoin(self.repo_path, repo_name)
+        if not os.path.exists(repo_path):
             # TODO: This is not race-safe
-            os.makedirs(self.repo_path)
-            self.checked_git('init', '--bare', '-q', self.repo_path)
+            os.makedirs(repo_path)
+            self.checked_git(repo_name, 'init', '--bare', '-q', repo_path)
+        env = dict(os.environ)
+        env['GIT_DIR'] = repo_path
+        return env
 
-    def _resolve_remote_rev(self, repository, rev):
+    def _resolve_remote_rev(self, repo_name, repo_url, rev):
         # Resolve the rev (if it is a branch/tag) to a commit hash
-        p = self.checked_git('ls-remote', repository, rev)
+        p = self.checked_git(repo_name, 'ls-remote', repo_url, rev)
         lines = str(p).splitlines()
         if len(lines) == 0:
-            msg = "no remote head '%s' found in git repo %s" % (rev, repository)
+            msg = "no remote head '%s' found in git repo %s" % (rev, repo_url)
             self.logger.error(msg)
             raise SourceNotFoundError(msg)
         elif len(lines) == 1:
             # Use the hash for the rev instead
             commit = lines[0].split('\t')[0]
         else:
-            msg = '"%s" resolves to multiple heads in "%s"' % (rev, repository)
+            msg = '"%s" resolves to multiple heads in "%s"' % (rev, repo_url)
             self.logger.error(msg + ':')
             for line in lines:
                 self.logger.error(line.replace('\t', '    '))
@@ -408,23 +425,26 @@ class GitSourceCache(object):
             raise SourceNotFoundError(msg)
         return commit
 
-    def _does_branch_exist(self, branch):
-        retcode, out, err = self.git('show-ref', '--verify', '--quiet', 'refs/heads/%s' % branch)
+    def _does_branch_exist(self, repo_name, branch):
+        retcode, out, err = self.git(repo_name,
+                                     'show-ref', '--verify', '--quiet', 'refs/heads/%s' % branch)
         return retcode == 0        
 
-    def _mark_commit_as_in_use(self, commit):
-        retcode, out, err = self.git('branch', 'inuse/%s' % commit, commit)
+    def _mark_commit_as_in_use(self, repo_name, commit):
+        retcode, out, err = self.git(repo_name, 'branch', 'inuse/%s' % commit, commit)
         if retcode != 0:
             # Did it already exist? If so we're good (except if hashdist gc runs
             # at the same time...)
-            if not self._does_branch_exist('inuse/%s' % commit):
+            if not self._does_branch_exist(repo_name, 'inuse/%s' % commit):
                 raise RuntimeError('git branch failed with code %d: %s' % (retcode, err))
 
-    def fetch(self, url, type, commit):
+    def fetch(self, url, type, commit, repo_name):
         assert type == 'git'
-        retcode, out, err = self.git('rev-list', '-n1', '--quiet', commit)
+        if repo_name is None:
+            raise TypeError('Need to provide repo_name when fetching git archive')
+        retcode, out, err = self.git(repo_name, 'rev-list', '-n1', '--quiet', commit)
         if retcode == 0:
-            self._mark_commit_as_in_use(commit)
+            self._mark_commit_as_in_use(repo_name, commit)
         elif url is None:
             raise SourceNotFoundError('git:%s not present and repo url not provided' % commit)
         else:
@@ -436,41 +456,41 @@ class GitSourceCache(object):
                 repo, branch = terms
             else:
                 raise ValueError('Please specify git repository as "git://repo/url [branchname]"')
-            self.fetch_git(repo, branch, commit)
+            self.fetch_git(repo, branch, repo_name, commit)
 
-    def _has_commit(self, commit):
+    def _has_commit(self, repo_name, commit):
         # Assert that the commit is indeed present and is a commit hash and not a revspec
-        retcode, out, err = self.git('rev-list', '-n1', '--quiet', commit)
+        retcode, out, err = self.git(repo_name, 'rev-list', '-n1', '--quiet', commit)
         return retcode == 0
 
-    def fetch_git(self, repository, rev=None, commit=None):
+    def fetch_git(self, repo_url, rev, repo_name, commit=None):
         if commit is None and rev is None:
             raise ValueError('Either a commit or a branch/rev must be specified')
         elif commit is None:
             # It is important to resolve the rev remotely, we can't trust local
             # branch-names at all since we merge all projects encountered into the
             # same repo
-            commit = self._resolve_remote_rev(repository, rev)
+            commit = self._resolve_remote_rev(repo_name, repo_url, rev)
             
         if rev is not None:
             try:
-                self.git_interactive('fetch', repository, rev)
+                self.git_interactive(repo_name, 'fetch', repo_url, rev)
             except subprocess.CalledProcessError:
-                self.logger.error('failed command: git fetch %s %s' % (repository, rev))
+                self.logger.error('failed command: git fetch %s %s' % (repo_url, rev))
                 raise
         else:
             # when rev is None, fetch all the remote heads; seems like one must
             # do a separate ls-remote...
-            out = self.checked_git('ls-remote', '--heads', repository)
+            out = self.checked_git(repo_name, 'ls-remote', '--heads', repo_url)
             heads = [line.split()[1] for line in out.splitlines() if line.strip()]
-            self.git_interactive(*(['fetch', repository] + heads))
+            self.git_interactive(repo_name, *(['fetch', repo_url] + heads))
             
-        if not self._has_commit(commit):
-            raise SourceNotFoundError('Repository "%s" did not contain commit "%s"' %
-                                      (repository, commit))
+        if not self._has_commit(repo_name, commit):
+            raise SourceNotFoundError('Repo_url "%s" did not contain commit "%s"' %
+                                      (repo_url, commit))
 
         # Create a branch so that 'git gc' doesn't collect it
-        self._mark_commit_as_in_use(commit)
+        self._mark_commit_as_in_use(repo_name, commit)
 
         return 'git:%s' % commit
 
@@ -478,10 +498,24 @@ class GitSourceCache(object):
         assert type == 'git'
         if strip != 0:
             raise NotImplementedError('unpacking with git does not support strip != 0')
-        retcode, out, err = self.git('rev-list', '-n1', '--quiet', hash)
-        if retcode != 0:
+
+        # We don't want to require supplying a repo name, so for now
+        # we simply iterate through all git repos
+        try:
+            repo_names = os.listdir(self.repo_path)
+        except OSError, e:
+            if e.errno != errno.ENOENT:
+                raise
+            repo_names = []
+        for repo_name in repo_names:
+            retcode, out, err = self.git(repo_name, 'rev-list', '-n1', '--quiet', hash)
+            if retcode == 0:
+                break
+        else:
             raise KeyNotFoundError('Source item not present: git:%s' % hash)
-        archive_p = sh.git('archive', '--format=tar', hash, _env=self._git_env, _piped=True)
+
+        archive_p = sh.git('archive', '--format=tar', hash, _env=self.get_repo_env(repo_name),
+                           _piped=True)
         unpack_p = sh.tar(archive_p, 'x', _cwd=target_path)
         unpack_p.wait()
 
@@ -586,7 +620,7 @@ class ArchiveSourceCache(object):
     def contains(self, type, hash):
         return os.path.exists(self.get_pack_filename(type, hash))
 
-    def fetch(self, url, type, hash):
+    def fetch(self, url, type, hash, repo_name):
         if type == 'files:':
             raise NotImplementedError("use the put() method to store raw files")
         else:
