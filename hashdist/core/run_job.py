@@ -390,7 +390,8 @@ def get_imports_env(build_store, virtuals, imports):
             if os.path.exists(bin_dir):
                 PATH.append(bin_dir)
 
-            libdirs = glob(pjoin(dep_dir, 'lib*'))
+            libdirs = [pjoin(dep_dir, x) for x in ('lib', 'lib32', 'lib64')]
+            libdirs = [x for x in libdirs if os.path.exists(x)]
             if len(libdirs) == 1:
                 HDIST_LDFLAGS.append('-L' + libdirs[0])
                 HDIST_LDFLAGS.append('-Wl,-R,' + libdirs[0])
