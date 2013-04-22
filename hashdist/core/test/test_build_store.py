@@ -48,8 +48,7 @@ def test_canonical_build_spec():
               {'id': 'c', 'in_env': False, 'ref': "the_c"},
               {'id': 'a', 'in_env': True, 'ref': None},
             ],
-            "env": {},
-            "env_nohash": {},
+            "nohash_params": {},
           },
           "name" : "foo", "version": "r0"
         }
@@ -110,8 +109,8 @@ def test_basic(tempdir, sc, bldr, config):
             ],
         "files" : [{"target": "$ARTIFACT/$BAR/foo", "text": ["foo${BAR}foo"], "expandvars": True}],
         "build": {
-            "env": {"BAR": "bar"},
             "commands": [
+                {"set": "BAR", "value": "bar"},
                 {"hit": ["build-write-files", "--key=files", "build.json"]},
                 {"cmd": ["/bin/bash", "build.sh"]}
                 ]

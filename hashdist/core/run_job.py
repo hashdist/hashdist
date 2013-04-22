@@ -32,17 +32,10 @@ to reproduce a job run, and hash the job spec. Example:
          "nohash_params" : {
             "NCORES": "4"
          }
-         "env" : {
-            "RUN_FOO": {
-              "assign": "1"
-            },
-            "PYTHONPATH": {
-              "type": "path",
-              "prepend": "$BUILD/python-tools"
-            }
-         },
          "cwd": "src",
          "commands" : [
+             {"prepend_path": "FOOPATH", "value": "$ARTIFACT/bin"},
+             {"set": "INCLUDE_FROB", "value": "0"},
              {"cmd": ["pkg-config", "--cflags", "foo"], "to_var": "CFLAGS"},
              {"cmd": ["./configure", "--prefix=$ARTIFACT", "--foo-setting=$FOO"]}
              {"cmd": ["bash", "$in0"],
@@ -128,7 +121,13 @@ See example above for basic script structure. Rules:
  * `hit`: executes the `hit` tool *in-process*. It acts like `cmd` otherwise,
    e.g., `to_var` works.
 
- * `env` and `cwd` modifies env-vars/working directory for the command in question,
+ * `set`, `prepend/append_path`, `prepend/append_flag`: Change environment
+   variables, inserting the value specified by the `value` key, using
+   variable substitution as explained below. `set` simply overwrites
+   variable, while the others modify path/flag-style variables, using the
+   `os.path.patsep` for `prepend/append_path` and a space for `prepend/append_flag`.
+
+ * `cwd` modifies working directory for the command in question,
    or the scope if it is a scope. The `cwd` acts just like the regular
    `cd` command, i.e., you can do things like ``"cwd": ".."``
 
@@ -215,6 +214,7 @@ import errno
 import select
 from StringIO import StringIO
 import json
+from pprint import pprint
 
 from ..hdist_logging import CRITICAL, ERROR, WARNING, INFO, DEBUG
 
@@ -274,8 +274,7 @@ def run_job(logger, build_store, job_spec, override_env, virtuals, cwd, config, 
     """
     job_spec = canonicalize_job_spec(job_spec)
     env = get_imports_env(build_store, virtuals, job_spec['import'])
-    env.update(job_spec['env'])
-    env.update(job_spec['env_nohash'])
+    env.update(job_spec['nohash_params'])
     env.update(override_env)
     env['HDIST_VIRTUALS'] = pack_virtuals_envvar(virtuals)
     env['HDIST_CONFIG'] = json.dumps(config, separators=(',', ':'))
@@ -494,7 +493,7 @@ class CommandTreeExecution(object):
         return env
 
     def run_node(self, node, env, cwd, node_pos):
-        """Executes a command node
+        """Executes a script node and its children
 
         Parameters
         ----------
@@ -502,7 +501,7 @@ class CommandTreeExecution(object):
             A command node
 
         env : dict
-            The environment
+            The environment (will be modified)
 
         cwd : str
             Working directory
@@ -510,19 +509,68 @@ class CommandTreeExecution(object):
         node_pos : tuple
             Tuple of the "path" to this command node; e.g., (0, 1) for second
             command in first group.
-
-        Returns
-        -------
-
-        ret_env : dict
-            The environment as modified by the node.
-
-        ret_cwd : str
-            The current directory
         """
+        type_keys = ['commands', 'cmd', 'hit', 'set', 'prepend_path', 'append_path',
+                     'prepend_flag', 'append_flag']
+        type = None
+        for t in type_keys:
+            if t in node:
+                if type is not None:
+                    msg = 'Several action types present: %s and %s' % (type, t)
+                    self.logger.error(msg)
+                    raise InvalidJobSpecError(msg)
+                type = t
+        if type is None:
+            msg = 'Node must have one of the keys %s' % ', '.join(type_keys)
+            self.logger.error(msg)
+            raise InvalidJobSpecError(msg)
+        getattr(self, 'handle_%s' % type)(node, env, cwd, node_pos)
+
+    def handle_set(self, node, env, cwd, node_pos):
+        self.handle_env_mod(node, env, cwd, node_pos, node['set'], 'set', None)
+
+    def handle_append_path(self, node, env, cwd, node_pos):
+        self.handle_env_mod(node, env, cwd, node_pos,
+                            node['append_path'], 'append', os.path.pathsep)
+
+    def handle_prepend_path(self, node, env, cwd, node_pos):
+        self.handle_env_mod(node, env, cwd, node_pos,
+                            node['prepend_path'], 'prepend', os.path.pathsep)
+
+    def handle_append_flag(self, node, env, cwd, node_pos):
+        self.handle_env_mod(node, env, cwd, node_pos,
+                            node['append_flag'], 'append', ' ')
+    
+    def handle_prepend_flag(self, node, env, cwd, node_pos):
+        self.handle_env_mod(node, env, cwd, node_pos,
+                            node['prepend_flag'], 'prepend', ' ')
+
+    def handle_env_mod(self, node, env, cwd, node_pos, varname, action, sep):
+        value = self.substitute(node['value'], env)
+        if action == 'set' or varname not in env or len(env[varname]) == 0:
+            env[varname] = value
+        elif action == 'prepend':
+            env[varname] = sep.join([value, env[varname]])
+        elif action == 'append':
+            env[varname] = sep.join([env[varname], value])
+        else:
+            assert False
+
+    def handle_cmd(self, node, env, cwd, node_pos):
+        self.handle_command_nodes(node, env, cwd, node_pos)
+
+    def handle_hit(self, node, env, cwd, node_pos):
+        self.handle_command_nodes(node, env, cwd, node_pos)
+
+    def process_cwd(self, node, cwd):
+        if 'cwd' in node:
+            cwd = pjoin(cwd, node['cwd'])
+        return cwd
+
+    def handle_command_nodes(self, node, env, cwd, node_pos):
         if not isinstance(node, dict):
             raise TypeError('command node must be a dict; got %r' % node)
-        if sum(['cmd' in node, 'hit' in node, 'commands' in node]) != 1:
+        if sum(['cmd' in node, 'hit' in node, 'commands' in node, 'set' in node]) != 1:
             raise ValueError("Each script node should have exactly one of the 'cmd', 'hit', 'commands' keys")
         if sum(['to_var' in node, 'stdout_to_file' in node]) > 1:
             raise ValueError("Can only have one of to_var, stdout_to_file")
@@ -531,19 +579,8 @@ class CommandTreeExecution(object):
 
 
         # Make scopes
-        ret_env = dict(env)
-        ret_cwd = cwd
-        
         node_env = dict(env)
-        node_cwd = cwd
-
-        # Process common options
-        if 'cwd' in node:
-            node_cwd = pjoin(node_cwd, node['cwd'])
-        if 'env' in node:
-            for key, value in node['env'].items():
-                # note: subst. using parent env to make sure order doesn't matter
-                node_env[key] = self.substitute(value, env)
+        node_cwd = self.process_cwd(node, cwd)
 
         if 'cmd' in node or 'hit' in node:
             inputs = node.get('inputs', ())
@@ -563,8 +600,8 @@ class CommandTreeExecution(object):
             if 'to_var' in node:
                 stdout = StringIO()
                 func(args, node_env, node_cwd, stdout_to=stdout)
-                # modifying ret_env, not node_env, to export change
-                ret_env[node['to_var']] = stdout.getvalue().strip()
+                # modifying env, not node_env, to export change
+                env[node['to_var']] = stdout.getvalue().strip()
 
             elif 'append_to_file' in node:
                 stdout_filename = self.substitute(node['append_to_file'], node_env)
@@ -580,47 +617,17 @@ class CommandTreeExecution(object):
 
             else:
                 func(args, node_env, node_cwd)
-
-        elif 'commands' in node:
-            self.run_commands(node['commands'], node_env, node_cwd, node_pos)
         else:
             assert False
 
-        self.last_env, self.last_cwd = node_env, node_cwd
-
-        return ret_env, ret_cwd
+        self.last_env, self.last_cwd = dict(node_env), node_cwd
         
-
-    def run_commands(self, commands, env, cwd, node_pos):
-        """Executes 'commands' node (group of commands).
-
-        Parameters
-        ----------
-        commands : list
-            The 'commands' part of the job spec
-
-        env : dict
-            The starting process environment
-
-        cwd : str
-            Working directory
-
-        node_pos : tuple
-            Tuple of the "path" to this command node; e.g., (0, 1) for second
-            command in first group.
-
-        Returns
-        -------
-
-        ret_env : dict
-            The environment as it was on the last node
-        ret_cwd: str
-            The cwd as it was on the last node
-        """
-        for i, command_node in enumerate(commands):
+    def handle_commands(self, node, env, cwd, node_pos):
+        node_cwd = self.process_cwd(node, cwd)
+        sub_env = dict(env)
+        for i, command_node in enumerate(node['commands']):
             pos = node_pos + (i,)
-            env, cwd = self.run_node(command_node, env, cwd, pos)
-        return env, cwd
+            self.run_node(command_node, sub_env, node_cwd, pos)
 
     def run_cmd(self, args, env, cwd, stdout_to=None):
         logger = self.logger

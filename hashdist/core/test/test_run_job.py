@@ -4,10 +4,10 @@ from os.path import join as pjoin
 from nose.tools import eq_
 from textwrap import dedent
 from subprocess import CalledProcessError
+from pprint import pprint
 
 from .. import run_job
 from .test_build_store import fixture as build_store_fixture
-
 
 from .utils import MemoryLogger, logger as test_logger, assert_raises
 
@@ -21,14 +21,16 @@ def filter_out(lines):
 def test_run_job_environment(tempdir, sc, build_store, cfg):
     # tests that the environment gets correctly set up and that the local scope feature
     # works
+    LD_LIBRARY_PATH = os.environ.get("LD_LIBRARY_PATH", "")
     job_spec = {
-        "env": {"LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH", ""),
-            "FOO": "foo"},
-        "env_nohash": {"BAR": "$bar"},
+        "nohash_params": {"BAR": "$bar"},
         "commands": [
+            {"set": "LD_LIBRARY_PATH", "value": LD_LIBRARY_PATH},
+            {"set": "FOO", "value": "foo"},
             {
-                "env": {"BAR": "${FOO}x", "HI": "hi"},
                 "commands": [
+                    {"set": "BAR", "value": "${FOO}x"},
+                    {"set": "HI", "value": "hi"},
                     {"cmd": env_to_stderr + ["FOO"]},
                     {"cmd": env_to_stderr + ["BAR"]},
                     {"cmd": env_to_stderr + ["HI"]},
@@ -46,21 +48,44 @@ def test_run_job_environment(tempdir, sc, build_store, cfg):
     assert 'HDIST_CONFIG' in ret_env
     del ret_env['HDIST_CONFIG']
     expected = {
-        'PATH': '',
-        'HDIST_LDFLAGS': '',
+        'BAR': '$bar',
+        'BAZ': 'BAZ',
+        'FOO': 'foo',
         'HDIST_CFLAGS': '',
         'HDIST_IMPORT': '',
         'HDIST_IMPORT_PATHS': '',
+        'HDIST_LDFLAGS': '',
         'HDIST_VIRTUALS': 'virtual:bash=bash/ljnq7g35h6h4qtb456h5r35ku3dq25nl',
-        'BAR': '$bar',
-        'FOO': 'foo',
-        'BAZ': 'BAZ',
-        'LD_LIBRARY_PATH': job_spec['env']['LD_LIBRARY_PATH']
+        'LD_LIBRARY_PATH': LD_LIBRARY_PATH,
+        'PATH': '',
         }
     eq_(expected, ret_env)
     lines = filter_out(logger.lines)
     eq_(["FOO='foo'", "BAR='foox'", "HI='hi'", "FOO='foo'", "BAR='$bar'", 'HI=None', "PATH=''"],
         lines)
+
+@build_store_fixture()
+def test_env_control(tempdir, sc, build_store, cfg):
+    LD_LIBRARY_PATH = os.environ.get("LD_LIBRARY_PATH", "")
+    job_spec = {
+        "commands": [
+            {"set": "LD_LIBRARY_PATH", "value": LD_LIBRARY_PATH},
+            {"set": "FOO", "value": "foo"},
+            {"set": "FOO", "value": "bar"},
+            {"append_flag": "CFLAGS", "value": "-O3"},
+            {"prepend_flag": "CFLAGS", "value": "-O2"},
+            {"prepend_flag": "CFLAGS", "value": "-O1"},
+            {"append_path": "PATH", "value": "/bar/bin"},
+            {"prepend_path": "PATH", "value": "/foo/bin"},
+            {"cmd": env_to_stderr + ["FOO"]},
+            {"cmd": env_to_stderr + ["CFLAGS"]},
+            {"cmd": env_to_stderr + ["PATH"]},
+        ]}
+    logger = MemoryLogger()
+    ret_env = run_job.run_job(logger, build_store, job_spec, {}, {}, tempdir, cfg)
+    eq_(["FOO='bar'", "CFLAGS='-O1 -O2 -O3'", "PATH='/foo/bin:/bar/bin'"],
+        filter_out(logger.lines))
+    
 
 @build_store_fixture()
 def test_inputs(tempdir, sc, build_store, cfg):
@@ -108,7 +133,8 @@ def test_capture_stdout(tempdir, sc, build_store, cfg):
 def test_script_redirect(tempdir, sc, build_store, cfg):
     job_spec = {
         "commands": [
-            {"cmd": ["$echo", "hi"], "append_to_file": "$foo", "env": {"foo": "foo"}}
+            {"set": "foo", "value": "foo"},
+            {"cmd": ["$echo", "hi"], "append_to_file": "$foo"}
         ]}
     run_job.run_job(test_logger, build_store, job_spec,
                     {"echo": "/bin/echo"}, {}, tempdir, cfg)
@@ -177,9 +203,8 @@ def test_log_pipe_stress(tempdir, sc, build_store, cfg):
     job_spec = {
         "commands": [
             {"hit": ["logpipe", "mylog", "WARNING"], "to_var": "LOG"},
-            {
-             "env": {"LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH", "")},
-             "cmd": [sys.executable, pjoin(tempdir, 'launcher.py'), pjoin(tempdir, 'client.py'), str(NJOBS), str(NMSGS)]},
+            {"set": "LD_LIBRARY_PATH", "value": os.environ.get("LD_LIBRARY_PATH", "")},
+            {"cmd": [sys.executable, pjoin(tempdir, 'launcher.py'), pjoin(tempdir, 'client.py'), str(NJOBS), str(NMSGS)]},
         ]}
     logger = MemoryLogger()
     old = run_job.LOG_PIPE_BUFSIZE
