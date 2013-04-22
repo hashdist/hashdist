@@ -46,6 +46,7 @@ def test_run_job_environment(tempdir, sc, build_store, cfg):
                               tempdir, cfg)
     assert 'HDIST_CONFIG' in ret_env
     del ret_env['HDIST_CONFIG']
+    del ret_env['PWD']
     expected = {
         'BAR': '$bar',
         'BAZ': 'BAZ',
@@ -295,14 +296,15 @@ def test_script_cwd(tempdir, sc, build_store, cfg):
     os.makedirs(pjoin(tempdir, 'a', 'b', 'c'))
     job_spec = {
         "commands": [
-            {"cwd": "a",
-             "commands": [
-                 {"cwd": "b",
-                  "commands": [
-                      {"cwd": "c",
-                       "commands": [
-                          {"cmd": ["/bin/pwd"], "append_to_file": "out", "cwd": ".."}
-                           ]}]}]}]}
+            {"chdir": "a"},
+            {"commands": [
+                {"chdir": "b"},
+                {"commands": [
+                    {"chdir": "c"},
+                    {"commands": [
+                        {"chdir": ".."},
+                        {"cmd": ["/bin/pwd"], "append_to_file": "out"}
+                        ]}]}]}]}
     logger = MemoryLogger()
     run_job.run_job(logger, build_store, job_spec, {}, {}, tempdir, cfg)
     assert os.path.exists(pjoin(tempdir, 'a', 'b', 'out'))

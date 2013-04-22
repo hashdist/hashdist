@@ -32,8 +32,8 @@ to reproduce a job run, and hash the job spec. Example:
          "nohash_params" : {
             "NCORES": "4"
          }
-         "cwd": "src",
          "commands" : [
+             {"chdir": "src"},
              {"prepend_path": "FOOPATH", "value": "$ARTIFACT/bin"},
              {"set": "INCLUDE_FROB", "value": "0"},
              {"cmd": ["pkg-config", "--cflags", "foo"], "to_var": "CFLAGS"},
@@ -121,15 +121,14 @@ See example above for basic script structure. Rules:
  * `hit`: executes the `hit` tool *in-process*. It acts like `cmd` otherwise,
    e.g., `to_var` works.
 
+ * `chdir`: Change current directory, relative to current one (same as modifying `PWD`
+   environment variable)
+
  * `set`, `prepend/append_path`, `prepend/append_flag`: Change environment
    variables, inserting the value specified by the `value` key, using
    variable substitution as explained below. `set` simply overwrites
    variable, while the others modify path/flag-style variables, using the
    `os.path.patsep` for `prepend/append_path` and a space for `prepend/append_flag`.
-
- * `cwd` modifies working directory for the command in question,
-   or the scope if it is a scope. The `cwd` acts just like the regular
-   `cd` command, i.e., you can do things like ``"cwd": ".."``
 
  * `files` specifies files that are dumped to temporary files and made available
    as `$in0`, `$in1` and so on. Each file has the form ``{typestr: value}``,
@@ -146,7 +145,7 @@ See example above for basic script structure. Rules:
    then available for the following commands within the same scope.)
 
  * Variable substitution is performed the following places: The `cmd`,
-   `value` of `set` etc., the `cwd`, `stdout_to_file`.  The syntax is
+   `value` of `set` etc., `chdir` argument, `stdout_to_file`.  The syntax is
    ``$CFLAGS`` and ``${CFLAGS}``. ``\$`` is an escape for ``$``,
    ``\\`` is an escape for ``\``, other escapes not currently supported
    and ``\`` will carry through unmodified.
@@ -355,9 +354,10 @@ def run_job(logger, build_store, job_spec, override_env, virtuals, cwd, config, 
     env.update(override_env)
     env['HDIST_VIRTUALS'] = pack_virtuals_envvar(virtuals)
     env['HDIST_CONFIG'] = json.dumps(config, separators=(',', ':'))
+    env['PWD'] = os.path.abspath(cwd)
     executor = CommandTreeExecution(logger, temp_dir)
     try:
-        executor.run_command_list(assembled_commands, env, cwd, ())
+        executor.run_command_list(assembled_commands, env, ())
     finally:
         executor.close()
     return executor.last_env
@@ -434,7 +434,7 @@ class CommandTreeExecution(object):
                 raise Exception('temp_dir must be an empty directory')
             self.rm_temp_dir = False
         self.temp_dir = temp_dir
-        self.last_env, self.last_cwd = None, None
+        self.last_env = None
 
     def close(self):
         """Removes log FIFOs; should always be called when one is done
@@ -485,7 +485,7 @@ class CommandTreeExecution(object):
             env[name] = filename
         return env
 
-    def run_node(self, node, env, cwd, node_pos):
+    def run_node(self, node, env, node_pos):
         """Executes a script node and its children
 
         Parameters
@@ -494,17 +494,15 @@ class CommandTreeExecution(object):
             A command node
 
         env : dict
-            The environment (will be modified)
-
-        cwd : str
-            Working directory
+            The environment (will be modified). The PWD variable tracks working directory
+            and should always be set on input.
 
         node_pos : tuple
             Tuple of the "path" to this command node; e.g., (0, 1) for second
             command in first group.
         """
         type_keys = ['commands', 'cmd', 'hit', 'set', 'prepend_path', 'append_path',
-                     'prepend_flag', 'append_flag']
+                     'prepend_flag', 'append_flag', 'chdir']
         type = None
         for t in type_keys:
             if t in node:
@@ -518,28 +516,32 @@ class CommandTreeExecution(object):
             self.logger.error(msg)
             raise InvalidJobSpecError(msg)
         elif len(node) > 0:
-            getattr(self, 'handle_%s' % type)(node, env, cwd, node_pos)
+            getattr(self, 'handle_%s' % type)(node, env, node_pos)
 
-    def handle_set(self, node, env, cwd, node_pos):
-        self.handle_env_mod(node, env, cwd, node_pos, node['set'], 'set', None)
+    def handle_chdir(self, node, env, node_pos):
+        d = self.substitute(node['chdir'], env)
+        env['PWD'] = os.path.abspath(pjoin(env['PWD'], d))
 
-    def handle_append_path(self, node, env, cwd, node_pos):
-        self.handle_env_mod(node, env, cwd, node_pos,
+    def handle_set(self, node, env, node_pos):
+        self.handle_env_mod(node, env, node_pos, node['set'], 'set', None)
+
+    def handle_append_path(self, node, env, node_pos):
+        self.handle_env_mod(node, env, node_pos,
                             node['append_path'], 'append', os.path.pathsep)
 
-    def handle_prepend_path(self, node, env, cwd, node_pos):
-        self.handle_env_mod(node, env, cwd, node_pos,
+    def handle_prepend_path(self, node, env, node_pos):
+        self.handle_env_mod(node, env, node_pos,
                             node['prepend_path'], 'prepend', os.path.pathsep)
 
-    def handle_append_flag(self, node, env, cwd, node_pos):
-        self.handle_env_mod(node, env, cwd, node_pos,
+    def handle_append_flag(self, node, env, node_pos):
+        self.handle_env_mod(node, env, node_pos,
                             node['append_flag'], 'append', ' ')
     
-    def handle_prepend_flag(self, node, env, cwd, node_pos):
-        self.handle_env_mod(node, env, cwd, node_pos,
+    def handle_prepend_flag(self, node, env, node_pos):
+        self.handle_env_mod(node, env, node_pos,
                             node['prepend_flag'], 'prepend', ' ')
 
-    def handle_env_mod(self, node, env, cwd, node_pos, varname, action, sep):
+    def handle_env_mod(self, node, env, node_pos, varname, action, sep):
         value = self.substitute(node['value'], env)
         if action == 'set' or varname not in env or len(env[varname]) == 0:
             env[varname] = value
@@ -550,18 +552,13 @@ class CommandTreeExecution(object):
         else:
             assert False
 
-    def handle_cmd(self, node, env, cwd, node_pos):
-        self.handle_command_nodes(node, env, cwd, node_pos)
+    def handle_cmd(self, node, env, node_pos):
+        self.handle_command_nodes(node, env, node_pos)
 
-    def handle_hit(self, node, env, cwd, node_pos):
-        self.handle_command_nodes(node, env, cwd, node_pos)
+    def handle_hit(self, node, env, node_pos):
+        self.handle_command_nodes(node, env, node_pos)
 
-    def process_cwd(self, node, cwd):
-        if 'cwd' in node:
-            cwd = pjoin(cwd, node['cwd'])
-        return cwd
-
-    def handle_command_nodes(self, node, env, cwd, node_pos):
+    def handle_command_nodes(self, node, env, node_pos):
         if not isinstance(node, dict):
             raise TypeError('command node must be a dict; got %r' % node)
         if sum(['cmd' in node, 'hit' in node, 'commands' in node, 'set' in node]) != 1:
@@ -574,7 +571,6 @@ class CommandTreeExecution(object):
 
         # Make scopes
         node_env = dict(env)
-        node_cwd = self.process_cwd(node, cwd)
 
         if 'cmd' in node or 'hit' in node:
             inputs = node.get('inputs', ())
@@ -593,53 +589,51 @@ class CommandTreeExecution(object):
 
             if 'to_var' in node:
                 stdout = StringIO()
-                func(args, node_env, node_cwd, stdout_to=stdout)
+                func(args, node_env, stdout_to=stdout)
                 # modifying env, not node_env, to export change
                 env[node['to_var']] = stdout.getvalue().strip()
 
             elif 'append_to_file' in node:
                 stdout_filename = self.substitute(node['append_to_file'], node_env)
                 if not os.path.isabs(stdout_filename):
-                    stdout_filename = pjoin(node_cwd, stdout_filename)
+                    stdout_filename = pjoin(env['PWD'], stdout_filename)
                 stdout_filename = os.path.realpath(stdout_filename)
                 if stdout_filename.startswith(self.temp_dir):
                     raise NotImplementedError("Cannot currently use stream re-direction to write to "
                                               "a log-pipe (doing the write from a "
                                               "sub-process is OK)")
                 with file(stdout_filename, 'a') as stdout:
-                    func(args, node_env, node_cwd, stdout_to=stdout)
+                    func(args, node_env, stdout_to=stdout)
 
             else:
-                func(args, node_env, node_cwd)
+                func(args, node_env)
         else:
             assert False
 
-        self.last_env, self.last_cwd = dict(node_env), node_cwd
+        self.last_env = dict(node_env)
         
-    def handle_commands(self, node, env, cwd, node_pos):
-        sub_cwd = self.process_cwd(node, cwd)
+    def handle_commands(self, node, env, node_pos):
         sub_env = dict(env)
-        self.run_command_list(node['commands'], sub_env, sub_cwd, node_pos)
+        self.run_command_list(node['commands'], sub_env, node_pos)
 
-    def run_command_list(self, commands, env, cwd, node_pos):
+    def run_command_list(self, commands, env, node_pos):
         for i, command_node in enumerate(commands):
             pos = node_pos + (i,)
-            self.run_node(command_node, env, cwd, pos)
+            self.run_node(command_node, env, pos)
 
-    def run_cmd(self, args, env, cwd, stdout_to=None):
+    def run_cmd(self, args, env, stdout_to=None):
         logger = self.logger
         logger.debug('running %r' % args)
-        logger.debug('cwd: ' + cwd)
         logger.debug('environment:')
         for line in pformat(env).splitlines():
             logger.debug('  ' + line)
         try:
-            self.logged_check_call(args, env, cwd, stdout_to)
+            self.logged_check_call(args, env, stdout_to)
         except subprocess.CalledProcessError, e:
             logger.error("command failed (code=%d); raising" % e.returncode)
             raise
 
-    def run_hit(self, args, env, cwd, stdout_to=None):
+    def run_hit(self, args, env, stdout_to=None):
         args = ['hit'] + args
         logger = self.logger
         logger.debug('running %r' % args)
@@ -660,7 +654,7 @@ class CommandTreeExecution(object):
                 self.create_log_pipe(sublogger_name, level)
             else:
                 from ..cli import main as cli_main
-                with working_directory(cwd):
+                with working_directory(env['PWD']):
                     cli_main(args, env, logger)
         except:
             logger.error("hit command failed")
@@ -670,7 +664,7 @@ class CommandTreeExecution(object):
             sys.stdout = old_stdout
        
 
-    def logged_check_call(self, args, env, cwd, stdout_to):
+    def logged_check_call(self, args, env, stdout_to):
         """
         Similar to subprocess.check_call, but multiplexes input from stderr, stdout
         and any number of log FIFO pipes available to the called process into
@@ -679,7 +673,7 @@ class CommandTreeExecution(object):
         logger = self.logger
         try:
             proc = subprocess.Popen(args,
-                                    cwd=cwd,
+                                    cwd=env['PWD'],
                                     env=env,
                                     stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE,
@@ -689,9 +683,9 @@ class CommandTreeExecution(object):
             if e.errno == errno.ENOENT:
                 # fix error message up a bit since the situation is so confusing
                 if '/' in args[0]:
-                    msg = 'command "%s" not found (cwd: %s)' % (args[0], cwd)
+                    msg = 'command "%s" not found (cwd: %s)' % (args[0], env['PWD'])
                 else:
-                    msg = 'command "%s" not found in $PATH (cwd: %s)' % (args[0], cwd)
+                    msg = 'command "%s" not found in $PATH (cwd: %s)' % (args[0], env['PWD'])
                 logger.error(msg)
                 raise OSError(e.errno, msg)
             else:
