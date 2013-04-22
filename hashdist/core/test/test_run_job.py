@@ -252,6 +252,8 @@ def test_substitute():
             run_job.substitute(x, env)
     yield check, "ab", "$A$B"
     yield check, "ax", "${A}x"
+    yield check, r"${A}x", "\\${A}x"
+    yield check, r"\${A}x", "\\\\${A}x"
     yield check, "\\", "\\"
     yield check, "\\\\", "\\\\"
     yield check, "a$${x}", "${A}\$\${x}"

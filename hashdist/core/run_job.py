@@ -147,9 +147,10 @@ See example above for basic script structure. Rules:
    then available for the following commands within the same scope.)
 
  * Variable substitution is performed the following places: The `cmd`,
-   values of `env`, the `cwd`, `stdout_to_file`.  The syntax is
-   ``$CFLAGS`` and ``${CFLAGS}``. ``\$`` is an escape for ``$``
-   (but ``\`` not followed by ``$`` is not currently an escape).
+   `value` of `set` etc., the `cwd`, `stdout_to_file`.  The syntax is
+   ``$CFLAGS`` and ``${CFLAGS}``. ``\$`` is an escape for ``$``,
+   ``\\`` is an escape for ``\``, other escapes not currently supported
+   and ``\`` will carry through unmodified.
 
 
 For the `hit` tool, in addition to what is listed in ``hit
@@ -314,7 +315,8 @@ def substitute(x, env):
     if '$$' in x:
         # it's the escape character of string.Template, hence the special case
         raise KeyError('$$ is not allowed (no variable can be named $): %s' % x)
-    x = x.replace(r'\$', '$$')
+    x = x.replace(r'\\\\', r'\\')
+    x = x.replace(r'\$', r'$$')
     return Template(x).substitute(env)
 
 def get_imports_env(build_store, virtuals, imports):
