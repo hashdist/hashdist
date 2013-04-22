@@ -27,7 +27,7 @@ to reproduce a job run, and hash the job spec. Example:
             {"ref": "MAKE", "id": "virtual:gnu-make/3+"},
             {"ref": "ZLIB", "id": "zlib/2d4kh7hw4uvml67q7npltyaau5xmn4pc"},
             {"ref": "UNIX", "id": "virtual:unix"},
-            {"ref": "GCC", "before": ["virtual:unix"], "id": "gcc/jonykztnjeqm7bxurpjuttsprphbooqt"}
+            {"ref": "GCC", "id": "gcc/jonykztnjeqm7bxurpjuttsprphbooqt"}
          ],
          "nohash_params" : {
             "NCORES": "4"
@@ -68,8 +68,8 @@ extra allowed keys:
     The artifacts needed in the environment for the run. After the
     job has run they have no effect (i.e., they do not
     affect garbage collection or run-time dependencies of a build,
-    for instance). The list specifies an unordered set; `before` can be used to
-    specify order.
+    for instance). The list is ordered and earlier entries are imported
+    before latter ones.
 
     * **id**: The artifact ID. If the value is prepended with
       ``"virtual:"``, the ID is a virtual ID, used so that the real
@@ -81,9 +81,6 @@ extra allowed keys:
       absolute path to the ``zlib`` artifact, and ``$zlib_id`` will be
       the full artifact ID. This can be set to `None` in order to not
       set any environment variables for the artifact.
-
-    * **before**: List of artifact IDs. Adds a constraint that this
-      dependency is listed before the dependencies listed in all paths.
 
     * **in_env**: Whether to add the environment variables of the
       artifact (typically ``$PATH`` if there is a ``bin`` sub-directory
@@ -298,15 +295,12 @@ def canonicalize_job_spec(job_spec):
         item.setdefault('in_env', True)
         if item.setdefault('ref', None) == '':
             raise ValueError('Empty ref should be None, not ""')
-        item['before'] = sorted(item.get('before', []))
         return item
 
     result = dict(job_spec)
     result['import'] = [
         canonicalize_import(item) for item in result.get('import', ())]
-    result['import'].sort(key=lambda item: item['id'])
-    result.setdefault("env", {})
-    result.setdefault("env_nohash", {})
+    result.setdefault("nohash_params", {})
     return result
     
 def substitute(x, env):
@@ -348,9 +342,6 @@ def get_imports_env(build_store, virtuals, imports):
         Environment variables to set containing variables for the dependency
         artifacts
     """
-    # do a topological sort of imports
-    imports = stable_topological_sort(imports)
-    
     env = {}
     # Build the environment variables due to imports, and complain if
     # any dependency is not built
@@ -418,67 +409,6 @@ def unpack_virtuals_envvar(x):
         return {}
     else:
         return dict(tuple(tup.split('=')) for tup in x.split(';'))
-
-
-def stable_topological_sort(problem):
-    """Topologically sort items with dependencies
-
-    The concrete algorithm is to first identify all roots, then
-    do a DFS. Children are visited in the order they appear in
-    the input. This ensures that there is a predictable output
-    for every input. If no constraints are given the output order
-    is the same as the input order.
-
-    The items to sort must be hashable and unique.
-
-    Parameters
-    ----------
-    
-    problem : list of dict(id=..., before=..., ...)
-        Each object is a dictionary which is preserved to the output.
-        The `id` key is each objects identity, and the `before` is a list
-        of ids of objects that a given object must come before in
-        the ordered output.
-
-    Returns
-    -------
-
-    solution : list
-        The input `problem` in a possibly different order
-    """
-    # record order to use for sorting `before`
-    id_to_obj = {}
-    order = {}
-    for i, obj in enumerate(problem):
-        if obj['id'] in order:
-            raise ValueError('%r appears twice in input' % obj['id'])
-        order[obj['id']] = i
-        id_to_obj[obj['id']] = obj
-
-    # turn into dict-based graph, and find the roots
-    graph = {}
-    roots = set(order.keys())
-    for obj in problem:
-        graph[obj['id']] = sorted(obj['before'], key=order.__getitem__)
-        roots.difference_update(obj['before'])
-
-    result = []
-
-    def dfs(obj_id):
-        if obj_id not in result:
-            result.append(obj_id)
-            for child in graph[obj_id]:
-                dfs(child)
-
-    for obj_id in sorted(roots, key=order.__getitem__):
-        dfs(obj_id)
-
-    # cycles will have been left entirely out at this point
-    if len(result) != len(problem):
-        raise ValueError('provided constraints forms a graph with cycles')
-
-    return [id_to_obj[obj_id] for obj_id in result]
-
 
 class CommandTreeExecution(object):
     """

@@ -72,10 +72,6 @@ def make_profile(logger, build_store, artifacts, target_dir, virtuals, cfg):
     target_dir : str
         Target directory, must be non-existing or entirely empty
     """
-    # order artifacts
-    artifacts = run_job.stable_topological_sort(artifacts)
-
-    # process artifacts in opposite order; highes prioritized gets to go last
     for artifact in artifacts:
         a_id_desc = shorten_artifact_id(artifact['id'])
         logger.info('Linking %s into %s' % (a_id_desc, target_dir))

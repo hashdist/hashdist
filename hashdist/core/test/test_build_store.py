@@ -36,7 +36,7 @@ def test_canonical_build_spec():
                 "import": [
                     {"id": "b"},
                     {"id": "c", "in_env": False, "ref": "the_c"},
-                    {"id": "a", "before": ["c", "b"]}
+                    {"id": "a"}
                 ]
             }
           }
@@ -44,9 +44,9 @@ def test_canonical_build_spec():
     exp = {
           "build": {
             "import": [
-              {'before': ['b', 'c'], 'id': 'a', 'in_env': True, 'ref': None},
-              {'before': [], 'id': 'b', 'in_env': True, 'ref': None},
-              {'before': [], 'id': 'c', 'in_env': False, 'ref': "the_c"},
+              {'id': 'b', 'in_env': True, 'ref': None},
+              {'id': 'c', 'in_env': False, 'ref': "the_c"},
+              {'id': 'a', 'in_env': True, 'ref': None},
             ],
             "env": {},
             "env_nohash": {},
