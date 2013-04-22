@@ -4,10 +4,10 @@ from os.path import join as pjoin
 from nose.tools import eq_
 from textwrap import dedent
 from subprocess import CalledProcessError
+from pprint import pprint
 
 from .. import run_job
 from .test_build_store import fixture as build_store_fixture
-
 
 from .utils import MemoryLogger, logger as test_logger, assert_raises
 
@@ -21,14 +21,16 @@ def filter_out(lines):
 def test_run_job_environment(tempdir, sc, build_store, cfg):
     # tests that the environment gets correctly set up and that the local scope feature
     # works
+    LD_LIBRARY_PATH = os.environ.get("LD_LIBRARY_PATH", "")
     job_spec = {
-        "env": {"LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH", ""),
-            "FOO": "foo"},
-        "env_nohash": {"BAR": "$bar"},
+        "nohash_params": {"BAR": "$bar"},
         "commands": [
+            {"set": "LD_LIBRARY_PATH", "value": LD_LIBRARY_PATH},
+            {"set": "FOO", "value": "foo"},
             {
-                "env": {"BAR": "${FOO}x", "HI": "hi"},
                 "commands": [
+                    {"set": "BAR", "value": "${FOO}x"},
+                    {"set": "HI", "value": "hi"},
                     {"cmd": env_to_stderr + ["FOO"]},
                     {"cmd": env_to_stderr + ["BAR"]},
                     {"cmd": env_to_stderr + ["HI"]},
@@ -37,30 +39,100 @@ def test_run_job_environment(tempdir, sc, build_store, cfg):
             {"cmd": env_to_stderr + ["FOO"]},
             {"cmd": env_to_stderr + ["BAR"]},
             {"cmd": env_to_stderr + ["HI"]},
-            {"cmd": env_to_stderr + ["PATH"]}
         ]}
     logger = MemoryLogger()
-    ret_env = run_job.run_job(logger, build_store, job_spec, {"BAZ": "BAZ"},
+    ret_env = run_job.run_job(logger, build_store, job_spec, {"BAZ": "BAZ"}, '<no-artifact>',
                               {"virtual:bash": "bash/ljnq7g35h6h4qtb456h5r35ku3dq25nl"},
                               tempdir, cfg)
     assert 'HDIST_CONFIG' in ret_env
     del ret_env['HDIST_CONFIG']
+    del ret_env['PWD']
     expected = {
-        'PATH': '',
-        'HDIST_LDFLAGS': '',
-        'HDIST_CFLAGS': '',
+        'ARTIFACT': '<no-artifact>',
+        'BAR': '$bar',
+        'BAZ': 'BAZ',
+        'FOO': 'foo',
         'HDIST_IMPORT': '',
         'HDIST_IMPORT_PATHS': '',
         'HDIST_VIRTUALS': 'virtual:bash=bash/ljnq7g35h6h4qtb456h5r35ku3dq25nl',
-        'BAR': '$bar',
-        'FOO': 'foo',
-        'BAZ': 'BAZ',
-        'LD_LIBRARY_PATH': job_spec['env']['LD_LIBRARY_PATH']
+        'LD_LIBRARY_PATH': LD_LIBRARY_PATH,
+        'PATH': ''
         }
     eq_(expected, ret_env)
     lines = filter_out(logger.lines)
-    eq_(["FOO='foo'", "BAR='foox'", "HI='hi'", "FOO='foo'", "BAR='$bar'", 'HI=None', "PATH=''"],
+    eq_(["FOO='foo'", "BAR='foox'", "HI='hi'", "FOO='foo'", "BAR='$bar'", 'HI=None'],
         lines)
+
+@build_store_fixture()
+def test_env_control(tempdir, sc, build_store, cfg):
+    LD_LIBRARY_PATH = os.environ.get("LD_LIBRARY_PATH", "")
+    job_spec = {
+        "commands": [
+            {"set": "LD_LIBRARY_PATH", "value": LD_LIBRARY_PATH},
+            {"set": "FOO", "value": "foo"},
+            {"set": "FOO", "value": "bar"},
+            {"append_flag": "CFLAGS", "value": "-O3"},
+            {"prepend_flag": "CFLAGS", "value": "-O2"},
+            {"prepend_flag": "CFLAGS", "value": "-O1"},
+            {"append_path": "PATH", "value": "/bar/bin"},
+            {"prepend_path": "PATH", "value": "/foo/bin"},
+            {"cmd": env_to_stderr + ["FOO"]},
+            {"cmd": env_to_stderr + ["CFLAGS"]},
+            {"cmd": env_to_stderr + ["PATH"]},
+        ]}
+    logger = MemoryLogger()
+    ret_env = run_job.run_job(logger, build_store, job_spec, {}, '<no-artifact>', {}, tempdir, cfg)
+    eq_(["FOO='bar'", "CFLAGS='-O1 -O2 -O3'", "PATH='/foo/bin:/bar/bin'"],
+        filter_out(logger.lines))
+
+@build_store_fixture()
+def test_imports(tempdir, sc, build_store, cfg):
+    # Make dependencies
+    doc = {
+        "name": "foosoft", "version": "na", "build": {"commands": []},
+        "on_import": [
+            {"set": "FOO", "value": "foo"},
+            {"set": "ARTIFACT_WAS", "value": "$ARTIFACT"},
+            {"append_flag": "CFLAGS", "value": "-O1"},
+            ]
+        }
+    foo_id, foo_path = build_store.ensure_present(doc, cfg)
+
+    doc = {
+        "name": "barsoft", "version": "na", "build": {"commands": []},
+        "on_import": [
+            {"set": "FOO", "value": "bar"},
+            {"append_flag": "CFLAGS", "value": "-O2"},
+            ]
+        }
+    bar_id, bar_path = build_store.ensure_present(doc, cfg)
+
+    virtuals = {'virtual:bar' : bar_id}
+
+    # Dependee
+    LD_LIBRARY_PATH = os.environ.get("LD_LIBRARY_PATH", "")
+    doc = {
+            "import": [{"ref": "FOOSOFT", "id": foo_id}, {"ref": "BARSOFT", "id": "virtual:bar"}],
+            "commands": [
+                {"cmd": env_to_stderr + ["ARTIFACT_WAS"]},
+                {"cmd": env_to_stderr + ["FOO"]},
+                {"cmd": env_to_stderr + ["CFLAGS"]},
+
+                {"cmd": env_to_stderr + ["FOOSOFT"]},
+                {"cmd": env_to_stderr + ["FOOSOFT_ID"]},
+                {"cmd": env_to_stderr + ["BARSOFT"]},
+                {"cmd": env_to_stderr + ["BARSOFT_ID"]},
+                ]
+        }
+    logger = MemoryLogger()
+    ret_env = run_job.run_job(logger, build_store, doc, {}, '<no-artifact>', virtuals, tempdir, cfg)
+    eq_(["ARTIFACT_WAS=%r" % foo_path,
+         "FOO='bar'", "CFLAGS='-O1 -O2'",
+         "FOOSOFT=%r" % foo_path,
+         "FOOSOFT_ID=%r" % foo_id,
+         "BARSOFT=%r" % bar_path,
+         "BARSOFT_ID=%r" % bar_id],
+        filter_out(logger.lines))
 
 @build_store_fixture()
 def test_inputs(tempdir, sc, build_store, cfg):
@@ -85,7 +157,7 @@ def test_inputs(tempdir, sc, build_store, cfg):
             ]
         }
     logger = MemoryLogger()
-    ret_env = run_job.run_job(logger, build_store, job_spec, {"BAZ": "BAZ"},
+    ret_env = run_job.run_job(logger, build_store, job_spec, {"BAZ": "BAZ"}, '<no-artifact>',
                               {"virtual:bash": "bash/ljnq7g35h6h4qtb456h5r35ku3dq25nl"},
                               tempdir, cfg)
     assert 'DEBUG:Hello1' in logger.lines
@@ -101,17 +173,19 @@ def test_capture_stdout(tempdir, sc, build_store, cfg):
              "cmd": env_to_stderr + ["HI"]}
         ]}
     logger = MemoryLogger()
-    run_job.run_job(logger, build_store, job_spec, {"echo": "/bin/echo"}, {}, tempdir, cfg)
+    run_job.run_job(logger, build_store, job_spec, {"echo": "/bin/echo"}, '<no-artifact>',
+                    {}, tempdir, cfg)
     eq_(["HI='a  b'"], filter_out(logger.lines))
 
 @build_store_fixture()
 def test_script_redirect(tempdir, sc, build_store, cfg):
     job_spec = {
         "commands": [
-            {"cmd": ["$echo", "hi"], "append_to_file": "$foo", "env": {"foo": "foo"}}
+            {"set": "foo", "value": "foo"},
+            {"cmd": ["$echo", "hi"], "append_to_file": "$foo"}
         ]}
     run_job.run_job(test_logger, build_store, job_spec,
-                    {"echo": "/bin/echo"}, {}, tempdir, cfg)
+                    {"echo": "/bin/echo"}, '<no-artifact>', {}, tempdir, cfg)
     with file(pjoin(tempdir, 'foo')) as f:
         assert f.read() == 'hi\n'
 
@@ -125,7 +199,7 @@ def test_attach_log(tempdir, sc, build_store, cfg):
             {"cmd": ["/bin/dd", "if=hello", "of=$LOG"]},
         ]}
     logger = MemoryLogger()
-    run_job.run_job(logger, build_store, job_spec, {}, {}, tempdir, cfg)
+    run_job.run_job(logger, build_store, job_spec, {}, '<no-artifact>', {}, tempdir, cfg)
     assert 'WARNING:mylog:hello from pipe' in logger.lines
 
 @build_store_fixture()
@@ -136,7 +210,7 @@ def test_error_exit(tempdir, sc, build_store, cfg):
         ]}
     logger = MemoryLogger()
     with assert_raises(CalledProcessError):
-        run_job.run_job(logger, build_store, job_spec, {}, {}, tempdir, cfg)
+        run_job.run_job(logger, build_store, job_spec, {}, '<no-artifact>', {}, tempdir, cfg)
 
 @build_store_fixture()
 def test_log_pipe_stress(tempdir, sc, build_store, cfg):
@@ -177,15 +251,14 @@ def test_log_pipe_stress(tempdir, sc, build_store, cfg):
     job_spec = {
         "commands": [
             {"hit": ["logpipe", "mylog", "WARNING"], "to_var": "LOG"},
-            {
-             "env": {"LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH", "")},
-             "cmd": [sys.executable, pjoin(tempdir, 'launcher.py'), pjoin(tempdir, 'client.py'), str(NJOBS), str(NMSGS)]},
+            {"set": "LD_LIBRARY_PATH", "value": os.environ.get("LD_LIBRARY_PATH", "")},
+            {"cmd": [sys.executable, pjoin(tempdir, 'launcher.py'), pjoin(tempdir, 'client.py'), str(NJOBS), str(NMSGS)]},
         ]}
     logger = MemoryLogger()
     old = run_job.LOG_PIPE_BUFSIZE
     try:
         run_job.LOG_PIPE_BUFSIZE = 50
-        run_job.run_job(logger, build_store, job_spec, {}, {}, tempdir, cfg)
+        run_job.run_job(logger, build_store, job_spec, {}, '<no-artifact>', {}, tempdir, cfg)
     finally:
         run_job.LOG_PIPE_BUFSIZE = old
 
@@ -221,23 +294,24 @@ def test_notimplemented_redirection(tempdir, sc, build_store, cfg):
         ]}
     with assert_raises(NotImplementedError):
         logger = MemoryLogger()
-        run_job.run_job(logger, build_store, job_spec, {}, {}, tempdir, cfg)
+        run_job.run_job(logger, build_store, job_spec, {}, '<no-artifact>', {}, tempdir, cfg)
 
 @build_store_fixture()
 def test_script_cwd(tempdir, sc, build_store, cfg):
     os.makedirs(pjoin(tempdir, 'a', 'b', 'c'))
     job_spec = {
         "commands": [
-            {"cwd": "a",
-             "commands": [
-                 {"cwd": "b",
-                  "commands": [
-                      {"cwd": "c",
-                       "commands": [
-                          {"cmd": ["/bin/pwd"], "append_to_file": "out", "cwd": ".."}
-                           ]}]}]}]}
+            {"chdir": "a"},
+            {"commands": [
+                {"chdir": "b"},
+                {"commands": [
+                    {"chdir": "c"},
+                    {"commands": [
+                        {"chdir": ".."},
+                        {"cmd": ["/bin/pwd"], "append_to_file": "out"}
+                        ]}]}]}]}
     logger = MemoryLogger()
-    run_job.run_job(logger, build_store, job_spec, {}, {}, tempdir, cfg)
+    run_job.run_job(logger, build_store, job_spec, {}, '<no-artifact>', {}, tempdir, cfg)
     assert os.path.exists(pjoin(tempdir, 'a', 'b', 'out'))
     with open(pjoin(tempdir, 'a', 'b', 'out')) as f:
         assert f.read().strip() == pjoin(tempdir, 'a', 'b')
@@ -252,46 +326,10 @@ def test_substitute():
             run_job.substitute(x, env)
     yield check, "ab", "$A$B"
     yield check, "ax", "${A}x"
+    yield check, r"${A}x", "\\${A}x"
+    yield check, r"\${A}x", "\\\\${A}x"
     yield check, "\\", "\\"
     yield check, "\\\\", "\\\\"
     yield check, "a$${x}", "${A}\$\${x}"
     yield check_raises, "$Ax"
     yield check_raises, "$$"
-
-def test_stable_topological_sort():
-    def check(expected, problem):
-        # pack simpler problem description into objects
-        problem_objs = [dict(id=id, before=before, preserve=id[::-1])
-                        for id, before in problem]
-        got = run_job.stable_topological_sort(problem_objs)
-        got_ids = [x['id'] for x in got]
-        assert expected == got_ids
-        for obj in got:
-            assert obj['preserve'] == obj['id'][::-1]
-    
-    problem = [
-        ("t-shirt", []),
-        ("sweater", ["t-shirt"]),
-        ("shoes", []),
-        ("space suit", ["sweater", "socks", "underwear"]),
-        ("underwear", []),
-        ("socks", []),
-        ]
-
-    check(['shoes', 'space suit', 'sweater', 't-shirt', 'underwear', 'socks'], problem)
-    # change order of two leaves
-    problem[-2], problem[-1] = problem[-1], problem[-2]
-    check(['shoes', 'space suit', 'sweater', 't-shirt', 'socks', 'underwear'], problem)
-    # change order of two roots (shoes and space suit)
-    problem[2], problem[3] = problem[3], problem[2]
-    check(['space suit', 'sweater', 't-shirt', 'socks', 'underwear', 'shoes'], problem)
-
-    # error conditions
-    with assert_raises(ValueError):
-        # repeat element
-        check([], problem + [("socks", [])])
-
-    with assert_raises(ValueError):
-        # cycle
-        check([], [("x", ["y"]), ("y", ["x"])])
-

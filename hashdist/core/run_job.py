@@ -27,22 +27,15 @@ to reproduce a job run, and hash the job spec. Example:
             {"ref": "MAKE", "id": "virtual:gnu-make/3+"},
             {"ref": "ZLIB", "id": "zlib/2d4kh7hw4uvml67q7npltyaau5xmn4pc"},
             {"ref": "UNIX", "id": "virtual:unix"},
-            {"ref": "GCC", "before": ["virtual:unix"], "id": "gcc/jonykztnjeqm7bxurpjuttsprphbooqt"}
+            {"ref": "GCC", "id": "gcc/jonykztnjeqm7bxurpjuttsprphbooqt"}
          ],
          "nohash_params" : {
             "NCORES": "4"
          }
-         "env" : {
-            "RUN_FOO": {
-              "assign": "1"
-            },
-            "PYTHONPATH": {
-              "type": "path",
-              "prepend": "$BUILD/python-tools"
-            }
-         },
-         "cwd": "src",
          "commands" : [
+             {"chdir": "src"},
+             {"prepend_path": "FOOPATH", "value": "$ARTIFACT/bin"},
+             {"set": "INCLUDE_FROB", "value": "0"},
              {"cmd": ["pkg-config", "--cflags", "foo"], "to_var": "CFLAGS"},
              {"cmd": ["./configure", "--prefix=$ARTIFACT", "--foo-setting=$FOO"]}
              {"cmd": ["bash", "$in0"],
@@ -68,8 +61,8 @@ extra allowed keys:
     The artifacts needed in the environment for the run. After the
     job has run they have no effect (i.e., they do not
     affect garbage collection or run-time dependencies of a build,
-    for instance). The list specifies an unordered set; `before` can be used to
-    specify order.
+    for instance). The list is ordered and earlier entries are imported
+    before latter ones.
 
     * **id**: The artifact ID. If the value is prepended with
       ``"virtual:"``, the ID is a virtual ID, used so that the real
@@ -82,12 +75,9 @@ extra allowed keys:
       the full artifact ID. This can be set to `None` in order to not
       set any environment variables for the artifact.
 
-    * **before**: List of artifact IDs. Adds a constraint that this
-      dependency is listed before the dependencies listed in all paths.
-
-    * **in_env**: Whether to add the environment variables of the
-      artifact (typically ``$PATH`` if there is a ``bin`` sub-directory
-      and so on). Otherwise the artifact can only be used through the
+    * **in_env**: Whether to run the "on_import" section of the artifact
+      (typically to set up ``$PATH``
+      etc.). Otherwise the artifact can only be used through the
       variables ``ref`` sets up. Defaults to `True`.
 
 **nohash_params**:
@@ -131,9 +121,14 @@ See example above for basic script structure. Rules:
  * `hit`: executes the `hit` tool *in-process*. It acts like `cmd` otherwise,
    e.g., `to_var` works.
 
- * `env` and `cwd` modifies env-vars/working directory for the command in question,
-   or the scope if it is a scope. The `cwd` acts just like the regular
-   `cd` command, i.e., you can do things like ``"cwd": ".."``
+ * `chdir`: Change current directory, relative to current one (same as modifying `PWD`
+   environment variable)
+
+ * `set`, `prepend/append_path`, `prepend/append_flag`: Change environment
+   variables, inserting the value specified by the `value` key, using
+   variable substitution as explained below. `set` simply overwrites
+   variable, while the others modify path/flag-style variables, using the
+   `os.path.patsep` for `prepend/append_path` and a space for `prepend/append_flag`.
 
  * `files` specifies files that are dumped to temporary files and made available
    as `$in0`, `$in1` and so on. Each file has the form ``{typestr: value}``,
@@ -150,9 +145,10 @@ See example above for basic script structure. Rules:
    then available for the following commands within the same scope.)
 
  * Variable substitution is performed the following places: The `cmd`,
-   values of `env`, the `cwd`, `stdout_to_file`.  The syntax is
-   ``$CFLAGS`` and ``${CFLAGS}``. ``\$`` is an escape for ``$``
-   (but ``\`` not followed by ``$`` is not currently an escape).
+   `value` of `set` etc., `chdir` argument, `stdout_to_file`.  The syntax is
+   ``$CFLAGS`` and ``${CFLAGS}``. ``\$`` is an escape for ``$``,
+   ``\\`` is an escape for ``\``, other escapes not currently supported
+   and ``\`` will carry through unmodified.
 
 
 For the `hit` tool, in addition to what is listed in ``hit
@@ -217,6 +213,7 @@ import errno
 import select
 from StringIO import StringIO
 import json
+from pprint import pprint
 
 from ..hdist_logging import CRITICAL, ERROR, WARNING, INFO, DEBUG
 
@@ -231,7 +228,84 @@ class InvalidJobSpecError(ValueError):
 class JobFailedError(RuntimeError):
     pass
 
-def run_job(logger, build_store, job_spec, override_env, virtuals, cwd, config, temp_dir=None):
+
+# Utils
+def substitute(logger, x, env):
+    try:
+        return substitute(x, env)
+    except KeyError, e:
+        msg = 'No such environment variable: %s' % str(e)
+        logger.error(msg)
+        raise ValueError(msg)
+
+def handle_imports(logger, build_store, artifact_dir, virtuals, job_spec):
+    """Assembles a job script by inlining "on_import" sections from imported artifacts
+
+    For each entry in the import section, look up the "on_import" section
+    in the corresponding ``artifact.json`` and inline it in the job spec
+    together with a statement setting ARTIFACT so that it always points
+    to the artifact currently running its code.
+    
+    For the moment, imports are *not* done recursively, i.e., an "import"
+    key is disallowed in the "on_import" section.
+
+    Returns
+    -------
+
+    env : dict
+        Environment containing HDIST_IMPORT{,_PATHS} and variables for each import.
+    script : list
+        Instructions to execte; imports first and the job_spec commands afterwards.
+    """
+    job_spec = canonicalize_job_spec(job_spec)
+
+    imports = job_spec['import']
+    result = []
+    env = {}
+    HDIST_IMPORT = []
+    HDIST_IMPORT_PATHS = []
+    
+    for import_ in imports:
+        dep_id = import_['id']
+        dep_ref = import_['ref'] if 'ref' in import_ else None
+        # Resolutions of virtual imports should be provided by the user
+        # at the time of build
+        if dep_id.startswith('virtual:'):
+            try:
+                dep_id = virtuals[dep_id]
+            except KeyError:
+                raise ValueError('build spec contained a virtual dependency "%s" that was not '
+                                 'provided' % dep_id)
+
+        dep_dir = build_store.resolve(dep_id)
+        if dep_dir is None:
+            raise InvalidJobSpecError('Dependency "%s"="%s" not already built, please build it first' %
+                                        (dep_ref, dep_id))
+
+        HDIST_IMPORT.append(dep_id)
+        HDIST_IMPORT_PATHS.append(dep_dir)
+        if dep_ref is not None:
+            env[dep_ref] = dep_dir
+            env['%s_ID' % dep_ref] = dep_id
+
+        if import_.get('in_env', True):
+            artifact_json = pjoin(dep_dir, 'artifact.json')
+            with open(artifact_json) as f:
+                import_doc = json.load(f)
+            if 'on_import' not in import_doc:
+                continue
+            on_import = import_doc['on_import']
+            if len(on_import) > 0:
+                result.append({'set': 'ARTIFACT', 'value': dep_dir})
+                result.extend(on_import)
+    result.append({'set': 'ARTIFACT', 'value': artifact_dir})
+    result.extend(job_spec['commands'])
+    env['HDIST_IMPORT'] = ' '.join(HDIST_IMPORT)
+    env['HDIST_IMPORT_PATHS'] = os.path.pathsep.join(HDIST_IMPORT_PATHS)
+    return env, result
+
+def run_job(logger, build_store, job_spec, override_env, artifact_dir, virtuals, cwd, config,
+            temp_dir=None):
     """Runs a job in a controlled environment, according to rules documented above.
 
     Parameters
@@ -248,6 +322,9 @@ def run_job(logger, build_store, job_spec, override_env, virtuals, cwd, config, 
     override_env : dict
         Extra environment variables not present in job_spec, these will be added
         last and overwrite existing ones.
+
+    artifact_dir : str
+        The value $ARTIFACT should take after running the imports
 
     virtuals : dict
         Maps virtual artifact to real artifact IDs.
@@ -271,19 +348,26 @@ def run_job(logger, build_store, job_spec, override_env, virtuals, cwd, config, 
 
     out_env: dict
         The environment after the last command that was run (regardless
-        of scoping/nesting).
+        of scoping/nesting). If the job spec is empty (no commands),
+        this will be an empty dict.
         
     """
-    job_spec = canonicalize_job_spec(job_spec)
-    env = get_imports_env(build_store, virtuals, job_spec['import'])
-    env.update(job_spec['env'])
-    env.update(job_spec['env_nohash'])
+    env, assembled_commands = handle_imports(logger, build_store, artifact_dir, virtuals, job_spec)
+
+    if 'commands' not in job_spec:
+        # Wait until here with exiting because we still want to err if imports are not built
+        return {}
+    
+    # Need to explicitly clear PATH, otherwise Popen will set it.
+    env['PATH'] = ''
+    env.update(job_spec.get('nohash_params', {}))
     env.update(override_env)
     env['HDIST_VIRTUALS'] = pack_virtuals_envvar(virtuals)
     env['HDIST_CONFIG'] = json.dumps(config, separators=(',', ':'))
+    env['PWD'] = os.path.abspath(cwd)
     executor = CommandTreeExecution(logger, temp_dir)
     try:
-        executor.run_node(job_spec, env, cwd, ())
+        executor.run_command_list(assembled_commands, env, ())
     finally:
         executor.close()
     return executor.last_env
@@ -298,15 +382,12 @@ def canonicalize_job_spec(job_spec):
         item.setdefault('in_env', True)
         if item.setdefault('ref', None) == '':
             raise ValueError('Empty ref should be None, not ""')
-        item['before'] = sorted(item.get('before', []))
         return item
 
     result = dict(job_spec)
     result['import'] = [
         canonicalize_import(item) for item in result.get('import', ())]
-    result['import'].sort(key=lambda item: item['id'])
-    result.setdefault("env", {})
-    result.setdefault("env_nohash", {})
+    result.setdefault("nohash_params", {})
     return result
     
 def substitute(x, env):
@@ -320,96 +401,10 @@ def substitute(x, env):
     if '$$' in x:
         # it's the escape character of string.Template, hence the special case
         raise KeyError('$$ is not allowed (no variable can be named $): %s' % x)
-    x = x.replace(r'\$', '$$')
+    x = x.replace(r'\\\\', r'\\')
+    x = x.replace(r'\$', r'$$')
     return Template(x).substitute(env)
 
-def get_imports_env(build_store, virtuals, imports):
-    """
-    Sets up environment variables given by the 'import' section
-    of the job spec (see above).
-
-    Parameters
-    ----------
-
-    build_store : BuildStore object
-        Build store to look up artifacts in
-
-    virtuals : dict
-        Maps virtual artifact IDs (including "virtual:" prefix) to concrete
-        artifact IDs.
-
-    imports : list
-        'import' section of job spec document as documented above.
-
-    Returns
-    -------
-
-    env : dict
-        Environment variables to set containing variables for the dependency
-        artifacts
-    """
-    # do a topological sort of imports
-    imports = stable_topological_sort(imports)
-    
-    env = {}
-    # Build the environment variables due to imports, and complain if
-    # any dependency is not built
-
-    PATH = []
-    HDIST_CFLAGS = []
-    HDIST_LDFLAGS = []
-    HDIST_IMPORT = []
-    HDIST_IMPORT_PATHS = []
-    
-    for dep in imports:
-        dep_ref = dep['ref']
-        dep_id = dep['id']
-        HDIST_IMPORT.append(dep_id)
-
-        # Resolutions of virtual imports should be provided by the user
-        # at the time of build
-        if dep_id.startswith('virtual:'):
-            try:
-                dep_id = virtuals[dep_id]
-            except KeyError:
-                raise ValueError('build spec contained a virtual dependency "%s" that was not '
-                                 'provided' % dep_id)
-
-        dep_dir = build_store.resolve(dep_id)
-        if dep_dir is None:
-            raise InvalidJobSpecError('Dependency "%s"="%s" not already built, please build it first' %
-                                        (dep_ref, dep_id))
-        HDIST_IMPORT_PATHS.append(dep_dir)
-
-        if dep_ref is not None:
-            env[dep_ref] = dep_dir
-            env['%s_ID' % dep_ref] = dep_id
-
-        if dep['in_env']:
-            bin_dir = pjoin(dep_dir, 'bin')
-            if os.path.exists(bin_dir):
-                PATH.append(bin_dir)
-
-            libdirs = [pjoin(dep_dir, x) for x in ('lib', 'lib32', 'lib64')]
-            libdirs = [x for x in libdirs if os.path.exists(x)]
-            if len(libdirs) == 1:
-                HDIST_LDFLAGS.append('-L' + libdirs[0])
-                HDIST_LDFLAGS.append('-Wl,-R,' + libdirs[0])
-            elif len(libdirs) > 1:
-                raise InvalidJobSpecError('in_hdist_compiler_paths set for artifact %s with '
-                                          'more than one library dir (%r)' % (dep_id, libdirs))
-
-            incdir = pjoin(dep_dir, 'include')
-            if os.path.exists(incdir):
-                HDIST_CFLAGS.append('-I' + incdir)
-
-    env['PATH'] = os.path.pathsep.join(PATH)
-    env['HDIST_CFLAGS'] = ' '.join(HDIST_CFLAGS)
-    env['HDIST_LDFLAGS'] = ' '.join(HDIST_LDFLAGS)
-    env['HDIST_IMPORT'] = ' '.join(HDIST_IMPORT)
-    env['HDIST_IMPORT_PATHS'] = ' '.join(HDIST_IMPORT_PATHS)
-    return env
-    
 def pack_virtuals_envvar(virtuals):
     return ';'.join('%s=%s' % tup for tup in sorted(virtuals.items()))
 
@@ -418,67 +413,6 @@ def unpack_virtuals_envvar(x):
         return {}
     else:
         return dict(tuple(tup.split('=')) for tup in x.split(';'))
-
-
-def stable_topological_sort(problem):
-    """Topologically sort items with dependencies
-
-    The concrete algorithm is to first identify all roots, then
-    do a DFS. Children are visited in the order they appear in
-    the input. This ensures that there is a predictable output
-    for every input. If no constraints are given the output order
-    is the same as the input order.
-
-    The items to sort must be hashable and unique.
-
-    Parameters
-    ----------
-    
-    problem : list of dict(id=..., before=..., ...)
-        Each object is a dictionary which is preserved to the output.
-        The `id` key is each objects identity, and the `before` is a list
-        of ids of objects that a given object must come before in
-        the ordered output.
-
-    Returns
-    -------
-
-    solution : list
-        The input `problem` in a possibly different order
-    """
-    # record order to use for sorting `before`
-    id_to_obj = {}
-    order = {}
-    for i, obj in enumerate(problem):
-        if obj['id'] in order:
-            raise ValueError('%r appears twice in input' % obj['id'])
-        order[obj['id']] = i
-        id_to_obj[obj['id']] = obj
-
-    # turn into dict-based graph, and find the roots
-    graph = {}
-    roots = set(order.keys())
-    for obj in problem:
-        graph[obj['id']] = sorted(obj['before'], key=order.__getitem__)
-        roots.difference_update(obj['before'])
-
-    result = []
-
-    def dfs(obj_id):
-        if obj_id not in result:
-            result.append(obj_id)
-            for child in graph[obj_id]:
-                dfs(child)
-
-    for obj_id in sorted(roots, key=order.__getitem__):
-        dfs(obj_id)
-
-    # cycles will have been left entirely out at this point
-    if len(result) != len(problem):
-        raise ValueError('provided constraints forms a graph with cycles')
-
-    return [id_to_obj[obj_id] for obj_id in result]
-
 
 class CommandTreeExecution(object):
     """
@@ -510,7 +444,7 @@ class CommandTreeExecution(object):
                 raise Exception('temp_dir must be an empty directory')
             self.rm_temp_dir = False
         self.temp_dir = temp_dir
-        self.last_env, self.last_cwd = None, None
+        self.last_env = None
 
     def close(self):
         """Removes log FIFOs; should always be called when one is done
@@ -561,8 +495,8 @@ class CommandTreeExecution(object):
             env[name] = filename
         return env
 
-    def run_node(self, node, env, cwd, node_pos):
-        """Executes a command node
+    def run_node(self, node, env, node_pos):
+        """Executes a script node and its children
 
         Parameters
         ----------
@@ -570,27 +504,74 @@ class CommandTreeExecution(object):
             A command node
 
         env : dict
-            The environment
-
-        cwd : str
-            Working directory
+            The environment (will be modified). The PWD variable tracks working directory
+            and should always be set on input.
 
         node_pos : tuple
             Tuple of the "path" to this command node; e.g., (0, 1) for second
             command in first group.
-
-        Returns
-        -------
-
-        ret_env : dict
-            The environment as modified by the node.
-
-        ret_cwd : str
-            The current directory
         """
+        type_keys = ['commands', 'cmd', 'hit', 'set', 'prepend_path', 'append_path',
+                     'prepend_flag', 'append_flag', 'chdir']
+        type = None
+        for t in type_keys:
+            if t in node:
+                if type is not None:
+                    msg = 'Several action types present: %s and %s' % (type, t)
+                    self.logger.error(msg)
+                    raise InvalidJobSpecError(msg)
+                type = t
+        if type is None and len(node) > 0:
+            msg = 'Node must be empty or have one of the keys %s' % ', '.join(type_keys)
+            self.logger.error(msg)
+            raise InvalidJobSpecError(msg)
+        elif len(node) > 0:
+            getattr(self, 'handle_%s' % type)(node, env, node_pos)
+
+    def handle_chdir(self, node, env, node_pos):
+        d = self.substitute(node['chdir'], env)
+        env['PWD'] = os.path.abspath(pjoin(env['PWD'], d))
+
+    def handle_set(self, node, env, node_pos):
+        self.handle_env_mod(node, env, node_pos, node['set'], 'set', None)
+
+    def handle_append_path(self, node, env, node_pos):
+        self.handle_env_mod(node, env, node_pos,
+                            node['append_path'], 'append', os.path.pathsep)
+
+    def handle_prepend_path(self, node, env, node_pos):
+        self.handle_env_mod(node, env, node_pos,
+                            node['prepend_path'], 'prepend', os.path.pathsep)
+
+    def handle_append_flag(self, node, env, node_pos):
+        self.handle_env_mod(node, env, node_pos,
+                            node['append_flag'], 'append', ' ')
+    
+    def handle_prepend_flag(self, node, env, node_pos):
+        self.handle_env_mod(node, env, node_pos,
+                            node['prepend_flag'], 'prepend', ' ')
+
+    def handle_env_mod(self, node, env, node_pos, varname, action, sep):
+        value = self.substitute(node['value'], env)
+        if action == 'set' or varname not in env or len(env[varname]) == 0:
+            env[varname] = value
+        elif action == 'prepend':
+            env[varname] = sep.join([value, env[varname]])
+        elif action == 'append':
+            env[varname] = sep.join([env[varname], value])
+        else:
+            assert False
+
+    def handle_cmd(self, node, env, node_pos):
+        self.handle_command_nodes(node, env, node_pos)
+
+    def handle_hit(self, node, env, node_pos):
+        self.handle_command_nodes(node, env, node_pos)
+
+    def handle_command_nodes(self, node, env, node_pos):
         if not isinstance(node, dict):
             raise TypeError('command node must be a dict; got %r' % node)
-        if sum(['cmd' in node, 'hit' in node, 'commands' in node]) != 1:
+        if sum(['cmd' in node, 'hit' in node, 'commands' in node, 'set' in node]) != 1:
             raise ValueError("Each script node should have exactly one of the 'cmd', 'hit', 'commands' keys")
         if sum(['to_var' in node, 'stdout_to_file' in node]) > 1:
             raise ValueError("Can only have one of to_var, stdout_to_file")
@@ -599,19 +580,7 @@ class CommandTreeExecution(object):
 
 
         # Make scopes
-        ret_env = dict(env)
-        ret_cwd = cwd
-        
         node_env = dict(env)
-        node_cwd = cwd
-
-        # Process common options
-        if 'cwd' in node:
-            node_cwd = pjoin(node_cwd, node['cwd'])
-        if 'env' in node:
-            for key, value in node['env'].items():
-                # note: subst. using parent env to make sure order doesn't matter
-                node_env[key] = self.substitute(value, env)
 
         if 'cmd' in node or 'hit' in node:
             inputs = node.get('inputs', ())
@@ -630,80 +599,51 @@ class CommandTreeExecution(object):
 
             if 'to_var' in node:
                 stdout = StringIO()
-                func(args, node_env, node_cwd, stdout_to=stdout)
-                # modifying ret_env, not node_env, to export change
-                ret_env[node['to_var']] = stdout.getvalue().strip()
+                func(args, node_env, stdout_to=stdout)
+                # modifying env, not node_env, to export change
+                env[node['to_var']] = stdout.getvalue().strip()
 
             elif 'append_to_file' in node:
                 stdout_filename = self.substitute(node['append_to_file'], node_env)
                 if not os.path.isabs(stdout_filename):
-                    stdout_filename = pjoin(node_cwd, stdout_filename)
+                    stdout_filename = pjoin(env['PWD'], stdout_filename)
                 stdout_filename = os.path.realpath(stdout_filename)
                 if stdout_filename.startswith(self.temp_dir):
                     raise NotImplementedError("Cannot currently use stream re-direction to write to "
                                               "a log-pipe (doing the write from a "
                                               "sub-process is OK)")
                 with file(stdout_filename, 'a') as stdout:
-                    func(args, node_env, node_cwd, stdout_to=stdout)
+                    func(args, node_env, stdout_to=stdout)
 
             else:
-                func(args, node_env, node_cwd)
-
-        elif 'commands' in node:
-            self.run_commands(node['commands'], node_env, node_cwd, node_pos)
+                func(args, node_env)
         else:
             assert False
 
-        self.last_env, self.last_cwd = node_env, node_cwd
-
-        return ret_env, ret_cwd
+        self.last_env = dict(node_env)
         
+    def handle_commands(self, node, env, node_pos):
+        sub_env = dict(env)
+        self.run_command_list(node['commands'], sub_env, node_pos)
 
-    def run_commands(self, commands, env, cwd, node_pos):
-        """Executes 'commands' node (group of commands).
-
-        Parameters
-        ----------
-        commands : list
-            The 'commands' part of the job spec
-
-        env : dict
-            The starting process environment
-
-        cwd : str
-            Working directory
-
-        node_pos : tuple
-            Tuple of the "path" to this command node; e.g., (0, 1) for second
-            command in first group.
-
-        Returns
-        -------
-
-        ret_env : dict
-            The environment as it was on the last node
-        ret_cwd: str
-            The cwd as it was on the last node
-        """
+    def run_command_list(self, commands, env, node_pos):
         for i, command_node in enumerate(commands):
             pos = node_pos + (i,)
-            env, cwd = self.run_node(command_node, env, cwd, pos)
-        return env, cwd
+            self.run_node(command_node, env, pos)
 
-    def run_cmd(self, args, env, cwd, stdout_to=None):
+    def run_cmd(self, args, env, stdout_to=None):
         logger = self.logger
         logger.debug('running %r' % args)
-        logger.debug('cwd: ' + cwd)
         logger.debug('environment:')
         for line in pformat(env).splitlines():
             logger.debug('  ' + line)
         try:
-            self.logged_check_call(args, env, cwd, stdout_to)
+            self.logged_check_call(args, env, stdout_to)
         except subprocess.CalledProcessError, e:
             logger.error("command failed (code=%d); raising" % e.returncode)
             raise
 
-    def run_hit(self, args, env, cwd, stdout_to=None):
+    def run_hit(self, args, env, stdout_to=None):
         args = ['hit'] + args
         logger = self.logger
         logger.debug('running %r' % args)
@@ -724,7 +664,7 @@ class CommandTreeExecution(object):
                 self.create_log_pipe(sublogger_name, level)
             else:
                 from ..cli import main as cli_main
-                with working_directory(cwd):
+                with working_directory(env['PWD']):
                     cli_main(args, env, logger)
         except:
             logger.error("hit command failed")
@@ -734,7 +674,7 @@ class CommandTreeExecution(object):
             sys.stdout = old_stdout
        
 
-    def logged_check_call(self, args, env, cwd, stdout_to):
+    def logged_check_call(self, args, env, stdout_to):
         """
         Similar to subprocess.check_call, but multiplexes input from stderr, stdout
         and any number of log FIFO pipes available to the called process into
@@ -743,7 +683,7 @@ class CommandTreeExecution(object):
         logger = self.logger
         try:
             proc = subprocess.Popen(args,
-                                    cwd=cwd,
+                                    cwd=env['PWD'],
                                     env=env,
                                     stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE,
@@ -753,9 +693,9 @@ class CommandTreeExecution(object):
             if e.errno == errno.ENOENT:
                 # fix error message up a bit since the situation is so confusing
                 if '/' in args[0]:
-                    msg = 'command "%s" not found (cwd: %s)' % (args[0], cwd)
+                    msg = 'command "%s" not found (cwd: %s)' % (args[0], env['PWD'])
                 else:
-                    msg = 'command "%s" not found in $PATH (cwd: %s)' % (args[0], cwd)
+                    msg = 'command "%s" not found in $PATH (cwd: %s)' % (args[0], env['PWD'])
                 logger.error(msg)
                 raise OSError(e.errno, msg)
             else:

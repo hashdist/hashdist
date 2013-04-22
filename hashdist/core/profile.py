@@ -72,10 +72,6 @@ def make_profile(logger, build_store, artifacts, target_dir, virtuals, cfg):
     target_dir : str
         Target directory, must be non-existing or entirely empty
     """
-    # order artifacts
-    artifacts = run_job.stable_topological_sort(artifacts)
-
-    # process artifacts in opposite order; highes prioritized gets to go last
     for artifact in artifacts:
         a_id_desc = shorten_artifact_id(artifact['id'])
         logger.info('Linking %s into %s' % (a_id_desc, target_dir))
@@ -110,8 +106,8 @@ def install_artifact_into_profile(logger, build_store, artifact_id, target_dir, 
         job_spec = doc.get("profile_install", None)
         if job_spec:
             env = {}
-            env['ARTIFACT'] = artifact_dir
             env['PROFILE'] = os.path.abspath(target_dir)
-            run_job.run_job(logger, build_store, job_spec, env, virtuals, artifact_dir, cfg)
+            run_job.run_job(logger, build_store, job_spec, env, artifact_dir,
+                            virtuals, artifact_dir, cfg)
         else:
             logger.info('Nothing to do')
