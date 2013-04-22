@@ -108,7 +108,7 @@ An example build spec:
 **profile_install**:
     Copied to `$ARTIFACT/artifact.json` before the build.
 
-**import_modify_env**:
+**on_import**:
     Copied to `$ARTIFACT/artifact.json` before the build.
 
 **sources**:
@@ -552,7 +552,7 @@ class ArtifactBuilder(object):
     def make_artifact_json(self, artifact_dir):
         fname = pjoin(artifact_dir, 'artifact.json')
         artifact_doc = {}
-        for key in ['name', 'version', 'profile_install', 'import_modify_env']:
+        for key in ['name', 'version', 'profile_install', 'on_import']:
             if key in self.build_spec.doc:
                 artifact_doc[key] = self.build_spec.doc[key]
         with open(fname, 'w') as f:

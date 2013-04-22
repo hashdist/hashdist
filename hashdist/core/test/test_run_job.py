@@ -39,7 +39,6 @@ def test_run_job_environment(tempdir, sc, build_store, cfg):
             {"cmd": env_to_stderr + ["FOO"]},
             {"cmd": env_to_stderr + ["BAR"]},
             {"cmd": env_to_stderr + ["HI"]},
-            {"cmd": env_to_stderr + ["PATH"]}
         ]}
     logger = MemoryLogger()
     ret_env = run_job.run_job(logger, build_store, job_spec, {"BAZ": "BAZ"},
@@ -51,17 +50,15 @@ def test_run_job_environment(tempdir, sc, build_store, cfg):
         'BAR': '$bar',
         'BAZ': 'BAZ',
         'FOO': 'foo',
-        'HDIST_CFLAGS': '',
         'HDIST_IMPORT': '',
         'HDIST_IMPORT_PATHS': '',
-        'HDIST_LDFLAGS': '',
         'HDIST_VIRTUALS': 'virtual:bash=bash/ljnq7g35h6h4qtb456h5r35ku3dq25nl',
         'LD_LIBRARY_PATH': LD_LIBRARY_PATH,
-        'PATH': '',
+        'PATH': ''
         }
     eq_(expected, ret_env)
     lines = filter_out(logger.lines)
-    eq_(["FOO='foo'", "BAR='foox'", "HI='hi'", "FOO='foo'", "BAR='$bar'", 'HI=None', "PATH=''"],
+    eq_(["FOO='foo'", "BAR='foox'", "HI='hi'", "FOO='foo'", "BAR='$bar'", 'HI=None'],
         lines)
 
 @build_store_fixture()
@@ -85,7 +82,52 @@ def test_env_control(tempdir, sc, build_store, cfg):
     ret_env = run_job.run_job(logger, build_store, job_spec, {}, {}, tempdir, cfg)
     eq_(["FOO='bar'", "CFLAGS='-O1 -O2 -O3'", "PATH='/foo/bin:/bar/bin'"],
         filter_out(logger.lines))
-    
+
+@build_store_fixture()
+def test_imports(tempdir, sc, build_store, cfg):
+    # Make dependencies
+    doc = {
+        "name": "foosoft", "version": "na", "build": {"commands": []},
+        "on_import": [
+            {"set": "FOO", "value": "foo"},
+            {"append_flag": "CFLAGS", "value": "-O1"},
+            ]
+        }
+    foo_id, foo_path = build_store.ensure_present(doc, cfg)
+
+    doc = {
+        "name": "barsoft", "version": "na", "build": {"commands": []},
+        "on_import": [
+            {"set": "FOO", "value": "bar"},
+            {"append_flag": "CFLAGS", "value": "-O2"},
+            ]
+        }
+    bar_id, bar_path = build_store.ensure_present(doc, cfg)
+
+    virtuals = {'virtual:bar' : bar_id}
+
+    # Dependee
+    LD_LIBRARY_PATH = os.environ.get("LD_LIBRARY_PATH", "")
+    doc = {
+            "import": [{"ref": "FOOSOFT", "id": foo_id}, {"ref": "BARSOFT", "id": "virtual:bar"}],
+            "commands": [
+                {"cmd": env_to_stderr + ["FOO"]},
+                {"cmd": env_to_stderr + ["CFLAGS"]},
+
+                {"cmd": env_to_stderr + ["FOOSOFT"]},
+                {"cmd": env_to_stderr + ["FOOSOFT_ID"]},
+                {"cmd": env_to_stderr + ["BARSOFT"]},
+                {"cmd": env_to_stderr + ["BARSOFT_ID"]},
+                ]
+        }
+    logger = MemoryLogger()
+    ret_env = run_job.run_job(logger, build_store, doc, {}, virtuals, tempdir, cfg)
+    eq_(["FOO='bar'", "CFLAGS='-O1 -O2'",
+         "FOOSOFT=%r" % foo_path,
+         "FOOSOFT_ID=%r" % foo_id,
+         "BARSOFT=%r" % bar_path,
+         "BARSOFT_ID=%r" % bar_id],
+        filter_out(logger.lines))
 
 @build_store_fixture()
 def test_inputs(tempdir, sc, build_store, cfg):

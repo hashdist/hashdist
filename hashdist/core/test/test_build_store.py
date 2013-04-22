@@ -9,6 +9,7 @@ import gzip
 import json
 from contextlib import closing
 import subprocess
+from pprint import pprint
 
 from nose.tools import eq_
 from nose import SkipTest
@@ -148,7 +149,7 @@ def test_artifact_json(tempdir, sc, bldr, config):
         "name": "fooname",
         "version": "na",
         "profile_install": {"foo": "bar"},
-        "import_modify_env": ["baz"],
+        "on_import": ["baz"],
         }
     spec = dict(artifact)
     spec.update({"build":{"commands": []}})

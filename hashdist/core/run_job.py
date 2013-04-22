@@ -75,9 +75,9 @@ extra allowed keys:
       the full artifact ID. This can be set to `None` in order to not
       set any environment variables for the artifact.
 
-    * **in_env**: Whether to add the environment variables of the
-      artifact (typically ``$PATH`` if there is a ``bin`` sub-directory
-      and so on). Otherwise the artifact can only be used through the
+    * **in_env**: Whether to run the "on_import" section of the artifact
+      (typically to set up ``$PATH``
+      etc.). Otherwise the artifact can only be used through the
       variables ``ref`` sets up. Defaults to `True`.
 
 **nohash_params**:
@@ -229,6 +229,76 @@ class InvalidJobSpecError(ValueError):
 class JobFailedError(RuntimeError):
     pass
 
+
+# Utils
+def substitute(logger, x, env):
+    try:
+        return substitute(x, env)
+    except KeyError, e:
+        msg = 'No such environment variable: %s' % str(e)
+        logger.error(msg)
+        raise ValueError(msg)
+
+def handle_imports(logger, build_store, virtuals, job_spec):
+    """Assembles a job script by inlining "on_import" sections from imported artifacts
+
+    For each entry in the import section, look up the "on_import" section
+    in the corresponding ``artifact.json`` and inline it in the job spec.
+    For the moment, imports are *not* done recursively, i.e., an "import"
+    key is disallowed in the "on_import" section.
+
+    Returns
+    -------
+
+    env : dict
+        Environment containing HDIST_IMPORT{,_PATHS} and variables for each import.
+    script : list
+        Modified "root" node of script execution
+    """
+    job_spec = canonicalize_job_spec(job_spec)
+
+    imports = job_spec['import']
+    result = []
+    env = {}
+    HDIST_IMPORT = []
+    HDIST_IMPORT_PATHS = []
+    
+    for import_ in imports:
+        dep_id = import_['id']
+        dep_ref = import_['ref'] if 'ref' in import_ else None
+        # Resolutions of virtual imports should be provided by the user
+        # at the time of build
+        if dep_id.startswith('virtual:'):
+            try:
+                dep_id = virtuals[dep_id]
+            except KeyError:
+                raise ValueError('build spec contained a virtual dependency "%s" that was not '
+                                 'provided' % dep_id)
+
+        dep_dir = build_store.resolve(dep_id)
+        if dep_dir is None:
+            raise InvalidJobSpecError('Dependency "%s"="%s" not already built, please build it first' %
+                                        (dep_ref, dep_id))
+
+        HDIST_IMPORT.append(dep_id)
+        HDIST_IMPORT_PATHS.append(dep_dir)
+        if dep_ref is not None:
+            env[dep_ref] = dep_dir
+            env['%s_ID' % dep_ref] = dep_id
+
+        if import_.get('in_env', True):
+            artifact_json = pjoin(dep_dir, 'artifact.json')
+            with open(artifact_json) as f:
+                import_doc = json.load(f)
+            if 'on_import' not in import_doc:
+                continue
+            on_import = import_doc['on_import']
+            result.extend(on_import)
+    result.extend(job_spec['commands'])
+    env['HDIST_IMPORT'] = ' '.join(HDIST_IMPORT)
+    env['HDIST_IMPORT_PATHS'] = os.path.pathsep.join(HDIST_IMPORT_PATHS)
+    return env, result
+
 def run_job(logger, build_store, job_spec, override_env, virtuals, cwd, config, temp_dir=None):
     """Runs a job in a controlled environment, according to rules documented above.
 
@@ -269,18 +339,25 @@ def run_job(logger, build_store, job_spec, override_env, virtuals, cwd, config, 
 
     out_env: dict
         The environment after the last command that was run (regardless
-        of scoping/nesting).
+        of scoping/nesting). If the job spec is empty (no commands),
+        this will be an empty dict.
         
     """
-    job_spec = canonicalize_job_spec(job_spec)
-    env = get_imports_env(build_store, virtuals, job_spec['import'])
-    env.update(job_spec['nohash_params'])
+    env, assembled_commands = handle_imports(logger, build_store, virtuals, job_spec)
+
+    if 'commands' not in job_spec:
+        # Wait until here with exiting because we still want to err if imports are not built
+        return {}
+    
+    # Need to explicitly clear PATH, otherwise Popen will set it.
+    env['PATH'] = ''
+    env.update(job_spec.get('nohash_params', {}))
     env.update(override_env)
     env['HDIST_VIRTUALS'] = pack_virtuals_envvar(virtuals)
     env['HDIST_CONFIG'] = json.dumps(config, separators=(',', ':'))
     executor = CommandTreeExecution(logger, temp_dir)
     try:
-        executor.run_node(job_spec, env, cwd, ())
+        executor.run_command_list(assembled_commands, env, cwd, ())
     finally:
         executor.close()
     return executor.last_env
@@ -318,90 +395,6 @@ def substitute(x, env):
     x = x.replace(r'\$', r'$$')
     return Template(x).substitute(env)
 
-def get_imports_env(build_store, virtuals, imports):
-    """
-    Sets up environment variables given by the 'import' section
-    of the job spec (see above).
-
-    Parameters
-    ----------
-
-    build_store : BuildStore object
-        Build store to look up artifacts in
-
-    virtuals : dict
-        Maps virtual artifact IDs (including "virtual:" prefix) to concrete
-        artifact IDs.
-
-    imports : list
-        'import' section of job spec document as documented above.
-
-    Returns
-    -------
-
-    env : dict
-        Environment variables to set containing variables for the dependency
-        artifacts
-    """
-    env = {}
-    # Build the environment variables due to imports, and complain if
-    # any dependency is not built
-
-    PATH = []
-    HDIST_CFLAGS = []
-    HDIST_LDFLAGS = []
-    HDIST_IMPORT = []
-    HDIST_IMPORT_PATHS = []
-    
-    for dep in imports:
-        dep_ref = dep['ref']
-        dep_id = dep['id']
-        HDIST_IMPORT.append(dep_id)
-
-        # Resolutions of virtual imports should be provided by the user
-        # at the time of build
-        if dep_id.startswith('virtual:'):
-            try:
-                dep_id = virtuals[dep_id]
-            except KeyError:
-                raise ValueError('build spec contained a virtual dependency "%s" that was not '
-                                 'provided' % dep_id)
-
-        dep_dir = build_store.resolve(dep_id)
-        if dep_dir is None:
-            raise InvalidJobSpecError('Dependency "%s"="%s" not already built, please build it first' %
-                                        (dep_ref, dep_id))
-        HDIST_IMPORT_PATHS.append(dep_dir)
-
-        if dep_ref is not None:
-            env[dep_ref] = dep_dir
-            env['%s_ID' % dep_ref] = dep_id
-
-        if dep['in_env']:
-            bin_dir = pjoin(dep_dir, 'bin')
-            if os.path.exists(bin_dir):
-                PATH.append(bin_dir)
-
-            libdirs = [pjoin(dep_dir, x) for x in ('lib', 'lib32', 'lib64')]
-            libdirs = [x for x in libdirs if os.path.exists(x)]
-            if len(libdirs) == 1:
-                HDIST_LDFLAGS.append('-L' + libdirs[0])
-                HDIST_LDFLAGS.append('-Wl,-R,' + libdirs[0])
-            elif len(libdirs) > 1:
-                raise InvalidJobSpecError('in_hdist_compiler_paths set for artifact %s with '
-                                          'more than one library dir (%r)' % (dep_id, libdirs))
-
-            incdir = pjoin(dep_dir, 'include')
-            if os.path.exists(incdir):
-                HDIST_CFLAGS.append('-I' + incdir)
-
-    env['PATH'] = os.path.pathsep.join(PATH)
-    env['HDIST_CFLAGS'] = ' '.join(HDIST_CFLAGS)
-    env['HDIST_LDFLAGS'] = ' '.join(HDIST_LDFLAGS)
-    env['HDIST_IMPORT'] = ' '.join(HDIST_IMPORT)
-    env['HDIST_IMPORT_PATHS'] = ' '.join(HDIST_IMPORT_PATHS)
-    return env
-    
 def pack_virtuals_envvar(virtuals):
     return ';'.join('%s=%s' % tup for tup in sorted(virtuals.items()))
 
@@ -520,11 +513,12 @@ class CommandTreeExecution(object):
                     self.logger.error(msg)
                     raise InvalidJobSpecError(msg)
                 type = t
-        if type is None:
-            msg = 'Node must have one of the keys %s' % ', '.join(type_keys)
+        if type is None and len(node) > 0:
+            msg = 'Node must be empty or have one of the keys %s' % ', '.join(type_keys)
             self.logger.error(msg)
             raise InvalidJobSpecError(msg)
-        getattr(self, 'handle_%s' % type)(node, env, cwd, node_pos)
+        elif len(node) > 0:
+            getattr(self, 'handle_%s' % type)(node, env, cwd, node_pos)
 
     def handle_set(self, node, env, cwd, node_pos):
         self.handle_env_mod(node, env, cwd, node_pos, node['set'], 'set', None)
@@ -623,11 +617,14 @@ class CommandTreeExecution(object):
         self.last_env, self.last_cwd = dict(node_env), node_cwd
         
     def handle_commands(self, node, env, cwd, node_pos):
-        node_cwd = self.process_cwd(node, cwd)
+        sub_cwd = self.process_cwd(node, cwd)
         sub_env = dict(env)
-        for i, command_node in enumerate(node['commands']):
+        self.run_command_list(node['commands'], sub_env, sub_cwd, node_pos)
+
+    def run_command_list(self, commands, env, cwd, node_pos):
+        for i, command_node in enumerate(commands):
             pos = node_pos + (i,)
-            self.run_node(command_node, sub_env, node_cwd, pos)
+            self.run_node(command_node, env, cwd, pos)
 
     def run_cmd(self, args, env, cwd, stdout_to=None):
         logger = self.logger
