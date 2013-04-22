@@ -41,13 +41,14 @@ def test_run_job_environment(tempdir, sc, build_store, cfg):
             {"cmd": env_to_stderr + ["HI"]},
         ]}
     logger = MemoryLogger()
-    ret_env = run_job.run_job(logger, build_store, job_spec, {"BAZ": "BAZ"},
+    ret_env = run_job.run_job(logger, build_store, job_spec, {"BAZ": "BAZ"}, '<no-artifact>',
                               {"virtual:bash": "bash/ljnq7g35h6h4qtb456h5r35ku3dq25nl"},
                               tempdir, cfg)
     assert 'HDIST_CONFIG' in ret_env
     del ret_env['HDIST_CONFIG']
     del ret_env['PWD']
     expected = {
+        'ARTIFACT': '<no-artifact>',
         'BAR': '$bar',
         'BAZ': 'BAZ',
         'FOO': 'foo',
@@ -80,7 +81,7 @@ def test_env_control(tempdir, sc, build_store, cfg):
             {"cmd": env_to_stderr + ["PATH"]},
         ]}
     logger = MemoryLogger()
-    ret_env = run_job.run_job(logger, build_store, job_spec, {}, {}, tempdir, cfg)
+    ret_env = run_job.run_job(logger, build_store, job_spec, {}, '<no-artifact>', {}, tempdir, cfg)
     eq_(["FOO='bar'", "CFLAGS='-O1 -O2 -O3'", "PATH='/foo/bin:/bar/bin'"],
         filter_out(logger.lines))
 
@@ -91,6 +92,7 @@ def test_imports(tempdir, sc, build_store, cfg):
         "name": "foosoft", "version": "na", "build": {"commands": []},
         "on_import": [
             {"set": "FOO", "value": "foo"},
+            {"set": "ARTIFACT_WAS", "value": "$ARTIFACT"},
             {"append_flag": "CFLAGS", "value": "-O1"},
             ]
         }
@@ -112,6 +114,7 @@ def test_imports(tempdir, sc, build_store, cfg):
     doc = {
             "import": [{"ref": "FOOSOFT", "id": foo_id}, {"ref": "BARSOFT", "id": "virtual:bar"}],
             "commands": [
+                {"cmd": env_to_stderr + ["ARTIFACT_WAS"]},
                 {"cmd": env_to_stderr + ["FOO"]},
                 {"cmd": env_to_stderr + ["CFLAGS"]},
 
@@ -122,8 +125,9 @@ def test_imports(tempdir, sc, build_store, cfg):
                 ]
         }
     logger = MemoryLogger()
-    ret_env = run_job.run_job(logger, build_store, doc, {}, virtuals, tempdir, cfg)
-    eq_(["FOO='bar'", "CFLAGS='-O1 -O2'",
+    ret_env = run_job.run_job(logger, build_store, doc, {}, '<no-artifact>', virtuals, tempdir, cfg)
+    eq_(["ARTIFACT_WAS=%r" % foo_path,
+         "FOO='bar'", "CFLAGS='-O1 -O2'",
          "FOOSOFT=%r" % foo_path,
          "FOOSOFT_ID=%r" % foo_id,
          "BARSOFT=%r" % bar_path,
@@ -153,7 +157,7 @@ def test_inputs(tempdir, sc, build_store, cfg):
             ]
         }
     logger = MemoryLogger()
-    ret_env = run_job.run_job(logger, build_store, job_spec, {"BAZ": "BAZ"},
+    ret_env = run_job.run_job(logger, build_store, job_spec, {"BAZ": "BAZ"}, '<no-artifact>',
                               {"virtual:bash": "bash/ljnq7g35h6h4qtb456h5r35ku3dq25nl"},
                               tempdir, cfg)
     assert 'DEBUG:Hello1' in logger.lines
@@ -169,7 +173,8 @@ def test_capture_stdout(tempdir, sc, build_store, cfg):
              "cmd": env_to_stderr + ["HI"]}
         ]}
     logger = MemoryLogger()
-    run_job.run_job(logger, build_store, job_spec, {"echo": "/bin/echo"}, {}, tempdir, cfg)
+    run_job.run_job(logger, build_store, job_spec, {"echo": "/bin/echo"}, '<no-artifact>',
+                    {}, tempdir, cfg)
     eq_(["HI='a  b'"], filter_out(logger.lines))
 
 @build_store_fixture()
@@ -180,7 +185,7 @@ def test_script_redirect(tempdir, sc, build_store, cfg):
             {"cmd": ["$echo", "hi"], "append_to_file": "$foo"}
         ]}
     run_job.run_job(test_logger, build_store, job_spec,
-                    {"echo": "/bin/echo"}, {}, tempdir, cfg)
+                    {"echo": "/bin/echo"}, '<no-artifact>', {}, tempdir, cfg)
     with file(pjoin(tempdir, 'foo')) as f:
         assert f.read() == 'hi\n'
 
@@ -194,7 +199,7 @@ def test_attach_log(tempdir, sc, build_store, cfg):
             {"cmd": ["/bin/dd", "if=hello", "of=$LOG"]},
         ]}
     logger = MemoryLogger()
-    run_job.run_job(logger, build_store, job_spec, {}, {}, tempdir, cfg)
+    run_job.run_job(logger, build_store, job_spec, {}, '<no-artifact>', {}, tempdir, cfg)
     assert 'WARNING:mylog:hello from pipe' in logger.lines
 
 @build_store_fixture()
@@ -205,7 +210,7 @@ def test_error_exit(tempdir, sc, build_store, cfg):
         ]}
     logger = MemoryLogger()
     with assert_raises(CalledProcessError):
-        run_job.run_job(logger, build_store, job_spec, {}, {}, tempdir, cfg)
+        run_job.run_job(logger, build_store, job_spec, {}, '<no-artifact>', {}, tempdir, cfg)
 
 @build_store_fixture()
 def test_log_pipe_stress(tempdir, sc, build_store, cfg):
@@ -253,7 +258,7 @@ def test_log_pipe_stress(tempdir, sc, build_store, cfg):
     old = run_job.LOG_PIPE_BUFSIZE
     try:
         run_job.LOG_PIPE_BUFSIZE = 50
-        run_job.run_job(logger, build_store, job_spec, {}, {}, tempdir, cfg)
+        run_job.run_job(logger, build_store, job_spec, {}, '<no-artifact>', {}, tempdir, cfg)
     finally:
         run_job.LOG_PIPE_BUFSIZE = old
 
@@ -289,7 +294,7 @@ def test_notimplemented_redirection(tempdir, sc, build_store, cfg):
         ]}
     with assert_raises(NotImplementedError):
         logger = MemoryLogger()
-        run_job.run_job(logger, build_store, job_spec, {}, {}, tempdir, cfg)
+        run_job.run_job(logger, build_store, job_spec, {}, '<no-artifact>', {}, tempdir, cfg)
 
 @build_store_fixture()
 def test_script_cwd(tempdir, sc, build_store, cfg):
@@ -306,7 +311,7 @@ def test_script_cwd(tempdir, sc, build_store, cfg):
                         {"cmd": ["/bin/pwd"], "append_to_file": "out"}
                         ]}]}]}]}
     logger = MemoryLogger()
-    run_job.run_job(logger, build_store, job_spec, {}, {}, tempdir, cfg)
+    run_job.run_job(logger, build_store, job_spec, {}, '<no-artifact>', {}, tempdir, cfg)
     assert os.path.exists(pjoin(tempdir, 'a', 'b', 'out'))
     with open(pjoin(tempdir, 'a', 'b', 'out')) as f:
         assert f.read().strip() == pjoin(tempdir, 'a', 'b')

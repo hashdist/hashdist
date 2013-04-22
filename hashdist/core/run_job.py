@@ -238,11 +238,14 @@ def substitute(logger, x, env):
         logger.error(msg)
         raise ValueError(msg)
 
-def handle_imports(logger, build_store, virtuals, job_spec):
+def handle_imports(logger, build_store, artifact_dir, virtuals, job_spec):
     """Assembles a job script by inlining "on_import" sections from imported artifacts
 
     For each entry in the import section, look up the "on_import" section
-    in the corresponding ``artifact.json`` and inline it in the job spec.
+    in the corresponding ``artifact.json`` and inline it in the job spec
+    together with a statement setting ARTIFACT so that it always points
+    to the artifact currently running its code.
+    
     For the moment, imports are *not* done recursively, i.e., an "import"
     key is disallowed in the "on_import" section.
 
@@ -252,7 +255,7 @@ def handle_imports(logger, build_store, virtuals, job_spec):
     env : dict
         Environment containing HDIST_IMPORT{,_PATHS} and variables for each import.
     script : list
-        Modified "root" node of script execution
+        Instructions to execte; imports first and the job_spec commands afterwards.
     """
     job_spec = canonicalize_job_spec(job_spec)
 
@@ -292,13 +295,17 @@ def handle_imports(logger, build_store, virtuals, job_spec):
             if 'on_import' not in import_doc:
                 continue
             on_import = import_doc['on_import']
-            result.extend(on_import)
+            if len(on_import) > 0:
+                result.append({'set': 'ARTIFACT', 'value': dep_dir})
+                result.extend(on_import)
+    result.append({'set': 'ARTIFACT', 'value': artifact_dir})
     result.extend(job_spec['commands'])
     env['HDIST_IMPORT'] = ' '.join(HDIST_IMPORT)
     env['HDIST_IMPORT_PATHS'] = os.path.pathsep.join(HDIST_IMPORT_PATHS)
     return env, result
 
-def run_job(logger, build_store, job_spec, override_env, virtuals, cwd, config, temp_dir=None):
+def run_job(logger, build_store, job_spec, override_env, artifact_dir, virtuals, cwd, config,
+            temp_dir=None):
     """Runs a job in a controlled environment, according to rules documented above.
 
     Parameters
@@ -315,6 +322,9 @@ def run_job(logger, build_store, job_spec, override_env, virtuals, cwd, config, 
     override_env : dict
         Extra environment variables not present in job_spec, these will be added
         last and overwrite existing ones.
+
+    artifact_dir : str
+        The value $ARTIFACT should take after running the imports
 
     virtuals : dict
         Maps virtual artifact to real artifact IDs.
@@ -342,7 +352,7 @@ def run_job(logger, build_store, job_spec, override_env, virtuals, cwd, config, 
         this will be an empty dict.
         
     """
-    env, assembled_commands = handle_imports(logger, build_store, virtuals, job_spec)
+    env, assembled_commands = handle_imports(logger, build_store, artifact_dir, virtuals, job_spec)
 
     if 'commands' not in job_spec:
         # Wait until here with exiting because we still want to err if imports are not built

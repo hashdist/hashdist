@@ -521,7 +521,6 @@ class ArtifactBuilder(object):
         should_keep = False # failures in init are bugs in hashdist itself, no need to keep dir
         try:
             env = {}
-            env['ARTIFACT'] = artifact_dir
             env['BUILD'] = build_dir
             self.serialize_build_spec(build_dir)
 
@@ -576,7 +575,7 @@ class ArtifactBuilder(object):
             logger.push_stream(log_file, raw=True)
             try:
                 run_job.run_job(logger, self.build_store, job_spec,
-                                env, self.virtuals, cwd=build_dir, config=config,
+                                env, artifact_dir, self.virtuals, cwd=build_dir, config=config,
                                 temp_dir=job_tmp_dir)
             except:
                 exc_type, exc_value, exc_tb = sys.exc_info()

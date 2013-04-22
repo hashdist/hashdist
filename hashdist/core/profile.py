@@ -106,8 +106,8 @@ def install_artifact_into_profile(logger, build_store, artifact_id, target_dir, 
         job_spec = doc.get("profile_install", None)
         if job_spec:
             env = {}
-            env['ARTIFACT'] = artifact_dir
             env['PROFILE'] = os.path.abspath(target_dir)
-            run_job.run_job(logger, build_store, job_spec, env, virtuals, artifact_dir, cfg)
+            run_job.run_job(logger, build_store, job_spec, env, artifact_dir,
+                            virtuals, artifact_dir, cfg)
         else:
             logger.info('Nothing to do')
