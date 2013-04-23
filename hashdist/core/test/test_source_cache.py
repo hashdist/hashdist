@@ -111,6 +111,7 @@ def test_common_prefix():
     def f(lst):
         return common_path_prefix([pjoin(*x.split('/')) for x in lst])
     
+    eq_('a/b/c/d/', f(['a/b/c/d/e']))
     eq_('a/', f(['a/c', 'a/d']))
     eq_('a/b/', f(['a/b/c', 'a/b/d']))
     eq_('', f(['a/b/c', 'a/b/d', 'a']))

@@ -677,6 +677,26 @@ class ArchiveSourceCache(object):
 # Archive format support
 #
 
+
+def common_path_prefix(paths):
+    if len(paths) == 0:
+        return 0
+    sep = os.path.sep
+    prefixes = [p.split(sep)[:-1] for p in paths]
+    common_prefix = paths[0].split(sep)[:-1]
+    for path in paths[1:]:
+        prefix = path.split(sep)[:-1]
+        if len(prefix) < common_prefix:
+            common_prefix = common_prefix[:len(prefix)]
+        for i, (this_part, common_part) in enumerate(zip(prefix, common_prefix)):
+            if this_part != common_part:
+                common_prefix = common_prefix[:i]
+                break
+    if len(common_prefix) == 0:
+        return ''
+    else:
+        return sep.join(common_prefix) + sep
+
 class TarballHandler(object):
     chunk_size = 16 * 1024
     
@@ -738,22 +758,6 @@ class TarBz2Handler(TarballHandler):
     exts = ['tar.bz2', 'tb2', 'tbz2']
     read_mode = 'r:bz2'
     tar_cmd = ('tar', 'xj')
-
-def common_path_prefix(paths):
-    if len(paths) == 0:
-        return 0
-    prefix = paths[0].split(os.path.sep)
-    for p in paths[1:]:
-        #print p, prefix, type(prefix), len(prefix)
-        for i, (p_part, prefix_part) in enumerate(zip(p.split(os.path.sep), prefix)):
-            if p_part != prefix_part:
-                prefix = prefix[:i]
-                break
-        prefix = prefix[:i]
-    if len(prefix) == 0:
-        return ''
-    else:
-        return pjoin(*prefix) + os.path.sep
 
 class ZipHandler(object):
     type = 'zip'
