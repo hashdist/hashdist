@@ -88,7 +88,6 @@ import os
 import re
 import sys
 import subprocess
-import mimetypes
 import tempfile
 import urllib2
 import json
@@ -529,11 +528,9 @@ class ArchiveSourceCache(object):
     chunk_size = 16 * 1024
 
     archive_types = {
-        'tar.gz' :  (('application/x-tar', 'gzip'), ('tar', 'xz'), 'r:gz'),
-        'tar.bz2' : (('application/x-tar', 'bzip2'), ('tar', 'xj'), 'r:bz2'),
+        'tar.gz' : (['tar.gz', 'tgz'], ('tar', 'xz'), 'r:gz'),
+        'tar.bz2' : (['tar.bz2', 'tb2', 'tbz2'], ('tar', 'xj'), 'r:bz2'),
         }
-
-    mime_to_ext = dict((value[0], key) for key, value in archive_types.iteritems())
 
     def __init__(self, source_cache):
         assert not isinstance(source_cache, str)
@@ -609,13 +606,14 @@ class ArchiveSourceCache(object):
         if type is not None:
             if type not in self.archive_types:
                 raise ValueError('Unknown archive type: %s' % type)
+            return type
         else:
-            mime = mimetypes.guess_type(url)
-            if mime not in self.mime_to_ext:
-                raise ValueError('Unable to guess archive type of "%s"' % url)
-            type = self.mime_to_ext[mime]
-
-        return type
+            for it_type, info in self.archive_types.items():
+                extensions = info[0]
+                for ext in extensions:
+                    if url.endswith('.' + ext):
+                        return it_type
+            raise ValueError('Unable to guess archive type of "%s"' % url)
 
     def contains(self, type, hash):
         return os.path.exists(self.get_pack_filename(type, hash))
