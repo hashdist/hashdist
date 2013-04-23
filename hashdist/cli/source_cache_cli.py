@@ -13,7 +13,7 @@ class FetchGit(object):
 
     Example::
 
-        $ hit fetchgit git://github.com/numpy/numpy.git master
+        $ hit fetchgit -p numpy git://github.com/numpy/numpy.git master
         Fetching ...
         Done
         git:c5ccca92c5f136833ad85614feb2aa4f5bd8b7c3
@@ -21,18 +21,25 @@ class FetchGit(object):
     One can then unpack results later only by using the keys::
 
         $ hit unpack git:c5ccca92c5f136833ad85614feb2aa4f5bd8b7c3 numpy
+
+    The argument to -p is a unique ID for project (since there can be
+    several repo URLs for one project), hopefully the need for this
+    can be removed in the future, but for now it is mandatory.
     
     """
 
     @staticmethod
     def setup(ap):
-        ap.add_argument('repository', help='Local or remote path/URL to git repository')
+        ap.add_argument('-p', '--project', help='Unique ID for git repository')
+        ap.add_argument('repo_url', help='Local or remote path/URL to git repository')
         ap.add_argument('rev', help='Branch/tag/commit to fetch')
 
     @staticmethod
     def run(ctx, args):
+        if args.project is None:
+            ctx.error('Must currently set the -p flag')
         store = SourceCache.create_from_config(ctx.config, ctx.logger)
-        key = store.fetch_git(args.repository, args.rev)
+        key = store.fetch_git(args.repo_url, args.rev, args.project)
         sys.stderr.write('\n')
         sys.stdout.write('%s\n' % key)
         

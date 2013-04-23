@@ -118,10 +118,10 @@ def test_stable_archive_hash():
 
 def test_git_fetch_git():
     with temp_source_cache() as sc:
-        key = sc.fetch_git(mock_git_repo, 'master')
+        key = sc.fetch_git(mock_git_repo, 'master', 'foo')
         assert key == 'git:%s' % mock_git_commit
 
-        devel_key = sc.fetch_git(mock_git_repo, 'devel')
+        devel_key = sc.fetch_git(mock_git_repo, 'devel', 'foo')
         assert devel_key == 'git:%s' % mock_git_devel_branch_commit
 
         with temp_dir() as d:
@@ -131,10 +131,10 @@ def test_git_fetch_git():
 
 def test_git_fetch():
     with temp_source_cache() as sc:
-        sc.fetch(mock_git_repo, 'git:' + mock_git_commit)
-        sc.fetch(mock_git_repo, 'git:' + mock_git_devel_branch_commit)
-        sc.fetch('git://not-valid', 'git:' + mock_git_commit)
-        sc.fetch(None, 'git:' + mock_git_commit)
+        sc.fetch(mock_git_repo, 'git:' + mock_git_commit, 'foo')
+        sc.fetch(mock_git_repo, 'git:' + mock_git_devel_branch_commit, 'foo')
+        sc.fetch('git://not-valid', 'git:' + mock_git_commit, 'foo')
+        sc.fetch(None, 'git:' + mock_git_commit, 'foo')
 
 def test_unpack_nonexisting_git():
     with temp_source_cache() as sc:
@@ -151,9 +151,9 @@ def test_unpack_nonexisting_tarball():
 def test_able_to_fetch_twice():
     # With 'master' rev
     with temp_source_cache() as sc:
-        result = sc.fetch_git(mock_git_repo, 'master')
+        result = sc.fetch_git(mock_git_repo, 'master', 'foo')
         assert result == 'git:%s' % mock_git_commit
-        result = sc.fetch_git(mock_git_repo, 'master')
+        result = sc.fetch_git(mock_git_repo, 'master', 'foo')
         assert result == 'git:%s' % mock_git_commit
 
 def test_hash_check():
