@@ -486,7 +486,7 @@ class GitSourceCache(object):
             self.git_interactive(repo_name, *(['fetch', repo_url] + heads))
             
         if not self._has_commit(repo_name, commit):
-            raise SourceNotFoundError('Repo_url "%s" did not contain commit "%s"' %
+            raise SourceNotFoundError('Repository "%s" did not contain commit "%s"' %
                                       (repo_url, commit))
 
         # Create a branch so that 'git gc' doesn't collect it
