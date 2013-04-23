@@ -5,7 +5,7 @@ from .main import register_subcommand
 import argparse
 import sys
 
-from ..core import supported_source_archive_types, SourceCache
+from ..core import archive_types, SourceCache
 
 class FetchGit(object):
     """
@@ -46,7 +46,7 @@ class FetchGit(object):
 register_subcommand(FetchGit)
 
 
-_archive_types_doc = ', '.join(supported_source_archive_types)
+_archive_types_doc = ', '.join(archive_types)
 
 def as_url(url):
     """Prepends "file:" to ``url`` if it is likely to refer to a local file

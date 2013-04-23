@@ -96,7 +96,6 @@ import hashlib
 import struct
 import errno
 import stat
-import tarfile
 from timeit import default_timer as clock
 from contextlib import closing
 
@@ -280,7 +279,7 @@ class SourceCache(object):
     def _get_handler(self, type):
         if type == 'git':
             handler = GitSourceCache(self)
-        elif type == 'files' or type in supported_source_archive_types:
+        elif type == 'files' or type in archive_types:
             handler = ArchiveSourceCache(self)
         else:
             raise ValueError('does not recognize key prefix: %s' % type)
@@ -527,10 +526,6 @@ class ArchiveSourceCache(object):
 
     chunk_size = 16 * 1024
 
-    archive_types = {
-        'tar.gz' : (['tar.gz', 'tgz'], ('tar', 'xz'), 'r:gz'),
-        'tar.bz2' : (['tar.bz2', 'tb2', 'tbz2'], ('tar', 'xj'), 'r:bz2'),
-        }
 
     def __init__(self, source_cache):
         assert not isinstance(source_cache, str)
@@ -594,9 +589,7 @@ class ArchiveSourceCache(object):
             os.unlink(temp_path)
             raise
 
-        # Test that we have downloaded a valid archive
-        mode = self.archive_types[type][2]
-        if not is_tarball(temp_path, mode):
+        if not create_archive_handler(type).verify(temp_path):
             self.logger.error("File downloaded from '%s' is not a valid archive" % url)
             raise SourceNotFoundError("File downloaded from '%s' is not a valid archive" % url)
 
@@ -604,15 +597,13 @@ class ArchiveSourceCache(object):
 
     def _ensure_type(self, url, type):
         if type is not None:
-            if type not in self.archive_types:
+            if type not in archive_types:
                 raise ValueError('Unknown archive type: %s' % type)
             return type
         else:
-            for it_type, info in self.archive_types.items():
-                extensions = info[0]
-                for ext in extensions:
-                    if url.endswith('.' + ext):
-                        return it_type
+            for ext, it_type in archive_ext_to_type.items():
+                if url.endswith('.' + ext):
+                    return it_type
             raise ValueError('Unable to guess archive type of "%s"' % url)
 
     def contains(self, type, hash):
@@ -664,15 +655,7 @@ class ArchiveSourceCache(object):
                 files = hit_unpack(infile, 'files:%s' % hash)
                 scatter_files(files, target_dir)
             else:
-                tar_cmd = list(self.archive_types[type][1])
-                if strip != 0:
-                    tar_cmd.append('--strip-components=%d' % strip)
-                if unsafe_mode:
-                    retcode = self._untar_unsafe(infile, hash, target_dir, tar_cmd)
-                else:
-                    retcode = self._untar_safe(infile, hash, target_dir, tar_cmd)
-                if retcode != 0:
-                    raise subprocess.CalledProcessError(retcode, tar_cmd[0])
+                create_archive_handler(type).unpack(infile, target_dir, hash, unsafe_mode, strip)
 
     def open_file(self, type, hash):
         try:
@@ -682,11 +665,43 @@ class ArchiveSourceCache(object):
                 raise KeyNotFoundError("%s:%s" % (type, hash))
         return f
 
-    def _key_check(self, filename, hasher, hash):
-        if format_digest(hasher) != hash:
-            raise CorruptSourceCacheError("Corrupted file: '%s'" % filename)
+    #
+    # hit packs
+    #
+    def _extract_hit_pack(self, f, key, target_dir):
+        files = hit_unpack(f, key)
+        scatter_files(files, target_dir)        
 
-    def _untar_unsafe(self, infile, hash, target_dir, tar_cmd):
+
+#
+# Archive format support
+#
+
+class TarballHandler(object):
+    chunk_size = 16 * 1024
+    
+    def verify(self, filename):
+        import tarfile
+        try:
+            with closing(tarfile.open(filename, self.read_mode)) as archive:
+                # Just in case, make sure we can actually read the archive:
+                members = archive.getmembers()
+            return True
+        except tarfile.ReadError:
+            return False
+
+    def unpack(self, infile, target_dir, hash, unsafe_mode, strip):
+        tar_cmd = list(self.tar_cmd)
+        if strip != 0:
+            tar_cmd.append('--strip-components=%d' % strip)
+        if unsafe_mode:
+            retcode = self._untar_unsafe(infile, target_dir, hash, tar_cmd)
+        else:
+            retcode = self._untar_safe(infile, target_dir, hash, tar_cmd)
+        if retcode != 0:
+            raise subprocess.CalledProcessError(retcode, tar_cmd[0])
+
+    def _untar_unsafe(self, infile, target_dir, hash, tar_cmd):
         p  = subprocess.Popen(tar_cmd, stdin=subprocess.PIPE, cwd=target_dir)
         tee = HashingWriteStream(hashlib.sha256(), p.stdin)
         while True:
@@ -698,7 +713,7 @@ class ArchiveSourceCache(object):
         self._key_check(infile.name, tee, hash)
         return retcode
 
-    def _untar_safe(self, infile, hash, target_dir, tar_cmd):
+    def _untar_safe(self, infile, target_dir, hash, tar_cmd):
         archive_data = infile.read()
         self._key_check(infile.name, hashlib.sha256(archive_data), hash)
         p  = subprocess.Popen(tar_cmd, stdin=subprocess.PIPE, cwd=target_dir)
@@ -706,16 +721,79 @@ class ArchiveSourceCache(object):
         p.stdin.close()
         return p.wait()
 
+    def _key_check(self, filename, hasher, hash):
+        if format_digest(hasher) != hash:
+            raise CorruptSourceCacheError("Corrupted file: '%s'" % filename)
 
-    #
-    # hit packs
-    #
-    def _extract_hit_pack(self, f, key, target_dir):
-        files = hit_unpack(f, key)
-        scatter_files(files, target_dir)        
 
-supported_source_archive_types = sorted(ArchiveSourceCache.archive_types.keys())
+class TarGzHandler(TarballHandler):
+    type = 'tar.gz'
+    exts = ['tar.gz', 'tgz']
+    read_mode = 'r:gz'
+    tar_cmd = ('tar', 'xz')
 
+
+class TarBz2Handler(TarballHandler):
+    type = 'tar.bz2'
+    exts = ['tar.bz2', 'tb2', 'tbz2']
+    read_mode = 'r:bz2'
+    tar_cmd = ('tar', 'xj')
+
+def common_path_prefix(paths):
+    if len(paths) == 0:
+        return 0
+    prefix = paths[0].split(os.path.sep)
+    for p in paths[1:]:
+        #print p, prefix, type(prefix), len(prefix)
+        for i, (p_part, prefix_part) in enumerate(zip(p.split(os.path.sep), prefix)):
+            if p_part != prefix_part:
+                prefix = prefix[:i]
+                break
+        prefix = prefix[:i]
+    if len(prefix) == 0:
+        return ''
+    else:
+        return pjoin(*prefix) + os.path.sep
+
+class ZipHandler(object):
+    type = 'zip'
+    exts = ['zip']
+    def verify(self, filename):
+        from zipfile import ZipFile
+        with closing(ZipFile(filename)) as f:
+            return f.testzip() is None # returns None if zip is OK
+
+    def unpack(self, infile, target_dir, hash, unsafe_mode, strip):
+        from zipfile import ZipFile
+        from StringIO import StringIO
+        # only safe mode implemented as ZipFile does random access
+        archive_data = infile.read()
+        if format_digest(hashlib.sha256(archive_data)) != hash:
+            raise CorruptSourceCacheError("Corrupted file: '%s'" % infile.name)
+        with closing(ZipFile(StringIO(archive_data))) as f:
+            infolist = f.infolist()
+            if len(infolist) == 0:
+                return
+            # Scan through infolist to determine length of common prefix, and modify ZipInfo structs
+            # during extraction
+            prefix_len = len(common_path_prefix([info.filename for info in infolist]))
+            for info in infolist:
+                info.filename = info.filename[prefix_len:]
+                f.extract(info, target_dir)
+        
+archive_ext_to_type = {}
+archive_handler_classes = {}
+archive_types = []
+for cls in [TarGzHandler, TarBz2Handler, ZipHandler]:
+    for ext in cls.exts:
+        archive_ext_to_type[ext] = cls.type
+    archive_handler_classes[cls.type] = cls
+    archive_types.append(cls.type)
+archive_types = sorted(archive_types)
+
+        
+def create_archive_handler(type):
+    return archive_handler_classes[type]()
 
 def hit_pack(files, stream=None):
     """
@@ -829,11 +907,3 @@ def silent_unlink(path):
     except:
         pass
 
-def is_tarball(path, mode):
-    try:
-        with closing(tarfile.open(path, mode)) as archive:
-            # Just in case, make sure we can actually read the archive:
-            members = archive.getmembers()
-        return True
-    except tarfile.ReadError:
-        return False

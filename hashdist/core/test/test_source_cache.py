@@ -7,6 +7,7 @@ import hashlib
 from StringIO import StringIO
 import stat
 import errno
+from contextlib import closing
 
 pjoin = os.path.join
 
@@ -18,13 +19,15 @@ from ..hasher import Hasher, format_digest
 from .utils import temp_dir, working_directory, VERBOSE, logger, assert_raises
 from . import utils
 
+from nose.tools import eq_
+
 #
 # Fixture
 #
 
-mock_archive = None
-mock_archive_hash = None
-mock_archive_tmpdir = None
+mock_tarball = None
+mock_tarball_hash = None
+mock_tarball_tmpdir = None
 
 mock_git_repo = None
 mock_git_commit = None
@@ -39,22 +42,33 @@ def temp_source_cache():
 
 
 def setup():
-    global mock_git_repo, mock_git_commit, mock_git_devel_branch_commit
+    global mock_git_repo, mock_git_commit, mock_git_devel_branch_commit, mock_container_dir
     mock_git_repo = tempfile.mkdtemp()
+    mock_container_dir = tempfile.mkdtemp()
     mock_git_commit, mock_git_devel_branch_commit = make_mock_git_repo()
-    make_mock_archive()
+    make_mock_tarball()
+    make_mock_zipfile()
         
 def teardown():
     shutil.rmtree(mock_git_repo)
-    shutil.rmtree(mock_archive_tmpdir)
+    shutil.rmtree(mock_tarball_tmpdir)
+    shutil.rmtree(mock_container_dir)
 
+# Mock packs
 
-# Mock tarball
-
-def make_mock_archive():
-    global mock_archive, mock_archive_tmpdir, mock_archive_hash
-    mock_archive_tmpdir, mock_archive,  mock_archive_hash = utils.make_temporary_tarball(
+def make_mock_tarball():
+    global mock_tarball, mock_tarball_tmpdir, mock_tarball_hash
+    mock_tarball_tmpdir, mock_tarball,  mock_tarball_hash = utils.make_temporary_tarball(
         [('README', 'file contents')])
+
+def make_mock_zipfile():
+    global mock_zipfile
+    from zipfile import ZipFile
+    mock_zipfile = pjoin(mock_container_dir, 'test.zip')
+    with closing(ZipFile(mock_zipfile, 'a')) as z:
+        # a/b is common prefix and should be stripped on unpacking
+        z.writestr(pjoin('a', 'b', '0', 'README'), 'file contents')
+        z.writestr(pjoin('a', 'b', '1', 'README'), 'file contents')
 
 # Mock git repo
 
@@ -92,14 +106,38 @@ def make_mock_git_repo():
 # Tests
 #
 
-def test_archive():
+def test_common_prefix():
+    from ..source_cache import common_path_prefix
+    def f(lst):
+        return common_path_prefix([pjoin(*x.split('/')) for x in lst])
+    
+    eq_('a/', f(['a/c', 'a/d']))
+    eq_('a/b/', f(['a/b/c', 'a/b/d']))
+    eq_('', f(['a/b/c', 'a/b/d', 'a']))
+    eq_('', f(['a', 'a/b/c', 'a/b/d']))
+    eq_('a/b/c/d/', f(['a/b/c/d/e/0', 'a/b/c/d/e/1', 'a/b/c/d/1']))
+    
+def test_tarball():
     with temp_source_cache() as sc:
-        key = sc.fetch_archive('file:' + mock_archive)
-        assert key == mock_archive_hash
+        key = sc.fetch_archive('file:' + mock_tarball)
+        assert key == mock_tarball_hash
         with temp_dir() as d:
             sc.unpack(key, d)
             with file(pjoin(d, 'README')) as f:
                 assert f.read() == 'file contents'
+
+
+def test_zipfile():
+    with temp_source_cache() as sc:
+        key = sc.fetch_archive('file:' + mock_zipfile)
+        assert key.startswith('zip:')
+        with temp_dir() as d:
+            sc.unpack(key, d)
+            with file(pjoin(d, '0', 'README')) as f:
+                assert f.read() == 'file contents'
+            with file(pjoin(d, '1', 'README')) as f:
+                assert f.read() == 'file contents'
+            
 
 def test_curl_errors():
     with temp_source_cache() as sc:
@@ -114,7 +152,7 @@ def test_stable_archive_hash():
     with temp_source_cache() as sc:
         key = sc.fetch_archive('file:' + fixed_tarball)
         assert key == 'tar.gz:4niostz3iktlg67najtxuwwgss5vl6k4'
-        assert key != mock_archive_hash
+        assert key != mock_tarball_hash
 
 def test_git_fetch_git():
     with temp_source_cache() as sc:
@@ -158,39 +196,39 @@ def test_able_to_fetch_twice():
 
 def test_hash_check():
     with temp_source_cache() as sc:
-        sc.fetch('file:' + mock_archive, mock_archive_hash)
+        sc.fetch('file:' + mock_tarball, mock_tarball_hash)
 
 def test_corrupt_download():
     with temp_source_cache() as sc:
         with assert_raises(RuntimeError):
-            corrupt_hash = mock_archive_hash[:-8] + 'aaaaaaaa'
-            sc.fetch('file:' + mock_archive, corrupt_hash)
+            corrupt_hash = mock_tarball_hash[:-8] + 'aaaaaaaa'
+            sc.fetch('file:' + mock_tarball, corrupt_hash)
         # Check that no temporary files are left
         assert len(os.listdir(pjoin(sc.cache_path, 'packs', 'tar.gz'))) == 0
 
 def test_corrupt_store():
     with temp_source_cache() as sc:
-        key = sc.fetch_archive('file:' + mock_archive)
-        pack_filename = pjoin(sc.cache_path, 'packs', 'tar.gz', mock_archive_hash.split(':')[1])
+        key = sc.fetch_archive('file:' + mock_tarball)
+        pack_filename = pjoin(sc.cache_path, 'packs', 'tar.gz', mock_tarball_hash.split(':')[1])
         os.chmod(pack_filename, stat.S_IRUSR | stat.S_IWUSR)
         with file(pack_filename, 'w') as f:
             f.write('corrupt archive')
         with temp_dir() as d:
             with assert_raises(CorruptSourceCacheError):
-                sc.unpack(mock_archive_hash, d, unsafe_mode=False)
+                sc.unpack(mock_tarball_hash, d, unsafe_mode=False)
             assert os.listdir(d) == []
         with temp_dir() as d:
             with assert_raises(CorruptSourceCacheError):
-                sc.unpack(mock_archive_hash, d, unsafe_mode=True)        
+                sc.unpack(mock_tarball_hash, d, unsafe_mode=True)        
 
 
 def test_does_not_re_download():
     with temp_source_cache() as sc:
-        sc.fetch('file:' + mock_archive, mock_archive_hash)
+        sc.fetch('file:' + mock_tarball, mock_tarball_hash)
         # next line does not error because it finds it already by hash
-        sc.fetch('file:does-not-exist', mock_archive_hash)
+        sc.fetch('file:does-not-exist', mock_tarball_hash)
         # passing None is ok too
-        sc.fetch(None, mock_archive_hash)
+        sc.fetch(None, mock_tarball_hash)
 
 def test_ensure_type():
     with temp_source_cache() as sc:
