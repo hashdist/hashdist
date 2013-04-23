@@ -73,7 +73,7 @@ An example build spec:
          },
          "sources" : [
              {"key": "git:c5ccca92c5f136833ad85614feb2aa4f5bd8b7c3"},
-             {"key": "tar.bz2:RB1JbykVljxdvL07mN60y9V9BVCruWRky2FpK2QCCow", "target": "sources", "strip": 1},
+             {"key": "tar.bz2:RB1JbykVljxdvL07mN60y9V9BVCruWRky2FpK2QCCow", "target": "sources"},
              {"key": "files:5fcANXHsmjPpukSffBZF913JEnMwzcCoysn-RZEX7cM"}
          ],
          "files" : [
@@ -599,7 +599,6 @@ def unpack_sources(logger, source_cache, doc, target_dir):
     for source_item in doc:
         key = source_item['key']
         target = pjoin(target_dir, source_item.get('target', '.'))
-        strip = source_item.get('strip', 0)
         logger.info('Unpacking sources %s' % key)
-        source_cache.unpack(key, target, unsafe_mode=True, strip=strip)
+        source_cache.unpack(key, target)
 

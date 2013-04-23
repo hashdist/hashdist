@@ -315,7 +315,7 @@ class SourceCache(object):
         handler = self._get_handler(type)
         handler.fetch(url, type, hash, repo_name)
 
-    def unpack(self, key, target_path, unsafe_mode=False, strip=0):
+    def unpack(self, key, target_path):
         """
         Unpacks the sources identified by `key` to `target_path`
 
@@ -324,13 +324,9 @@ class SourceCache(object):
         will be raised in this case. In normal circumstances this should
         never happen.
 
-        By default, the archive will be loaded into memory and
-        checked, and if found corrupt nothing will be extracted. By
-        setting `unsafe_mode`, extraction takes place on the fly while
-        validating, which is faster and use less memory, but it means
-        that a corrupt archive may be partially or fully extracted
-        (though an exception is raised at the end). No removal of the
-        extracted contents is attempted in this case.
+        The archive will be loaded into memory, checked against the
+        hash, and then extracted from the memory copy, so that attacks
+        through tampering with on-disk archives should not be possible.
 
         Parameters
         ----------
@@ -341,17 +337,6 @@ class SourceCache(object):
         target_path : str
             Path to extract in
 
-        unsafe_mode : bool (default: False)
-            Whether a faster, memory-conserving mode should be used.
-            It is safe to use `unsafe_mode` if `target_path` is
-            a fresh directory which is removed in the event of a
-            `CorruptSourceCacheError`.
-
-        strip : int (default: 0)
-            Strips the first `strip` components off the path of each
-            extracted file. Set to 1 to remove the typical
-            ``projectname-2.2`` directory in tarballs.
-
         """
         if not os.path.exists(target_path):
             os.makedirs(target_path)
@@ -359,7 +344,7 @@ class SourceCache(object):
             raise ValueError("Key must be on form 'type:hash'")
         type, hash = key.split(':')
         handler = self._get_handler(type)
-        handler.unpack(type, hash, target_path, unsafe_mode, strip)
+        handler.unpack(type, hash, target_path)
 
 
 class GitSourceCache(object):
@@ -492,10 +477,8 @@ class GitSourceCache(object):
 
         return 'git:%s' % commit
 
-    def unpack(self, type, hash, target_path, unsafe_mode, strip):
+    def unpack(self, type, hash, target_path):
         assert type == 'git'
-        if strip != 0:
-            raise NotImplementedError('unpacking with git does not support strip != 0')
 
         # We don't want to require supplying a repo name, so for now
         # we simply iterate through all git repos
@@ -646,16 +629,14 @@ class ArchiveSourceCache(object):
                 hit_pack(files, f)
         return key
     
-    def unpack(self, type, hash, target_dir, unsafe_mode, strip):
+    def unpack(self, type, hash, target_dir):
         infile = self.open_file(type, hash)
         with infile:
             if type == 'files':
-                if strip != 0:
-                    raise NotImplementedError('unpacking with git does not support strip != 0')
                 files = hit_unpack(infile, 'files:%s' % hash)
                 scatter_files(files, target_dir)
             else:
-                create_archive_handler(type).unpack(infile, target_dir, hash, unsafe_mode, strip)
+                create_archive_handler(type).unpack(infile, target_dir, hash)
 
     def open_file(self, type, hash):
         try:
@@ -710,54 +691,35 @@ class TarballHandler(object):
         except tarfile.ReadError:
             return False
 
-    def unpack(self, infile, target_dir, hash, unsafe_mode, strip):
-        tar_cmd = list(self.tar_cmd)
-        if strip != 0:
-            tar_cmd.append('--strip-components=%d' % strip)
-        if unsafe_mode:
-            retcode = self._untar_unsafe(infile, target_dir, hash, tar_cmd)
-        else:
-            retcode = self._untar_safe(infile, target_dir, hash, tar_cmd)
-        if retcode != 0:
-            raise subprocess.CalledProcessError(retcode, tar_cmd[0])
+    def unpack(self, infile, target_dir, hash):
+        import tarfile
+        from StringIO import StringIO
 
-    def _untar_unsafe(self, infile, target_dir, hash, tar_cmd):
-        p  = subprocess.Popen(tar_cmd, stdin=subprocess.PIPE, cwd=target_dir)
-        tee = HashingWriteStream(hashlib.sha256(), p.stdin)
-        while True:
-            chunk = infile.read(self.chunk_size)
-            if not chunk: break
-            tee.write(chunk)
-        p.stdin.close()
-        retcode = p.wait()
-        self._key_check(infile.name, tee, hash)
-        return retcode
-
-    def _untar_safe(self, infile, target_dir, hash, tar_cmd):
         archive_data = infile.read()
-        self._key_check(infile.name, hashlib.sha256(archive_data), hash)
-        p  = subprocess.Popen(tar_cmd, stdin=subprocess.PIPE, cwd=target_dir)
-        p.stdin.write(archive_data)
-        p.stdin.close()
-        return p.wait()
+        if format_digest(hashlib.sha256(archive_data)) != hash:
+            raise CorruptSourceCacheError("Corrupted file: '%s'" % infile.name)
 
-    def _key_check(self, filename, hasher, hash):
-        if format_digest(hasher) != hash:
-            raise CorruptSourceCacheError("Corrupted file: '%s'" % filename)
+        with closing(tarfile.open(fileobj=StringIO(archive_data), mode=self.read_mode)) as archive:
+            members = archive.getmembers()
+            prefix_len = len(common_path_prefix([member.name for member in members
+                                                 if member.type != tarfile.DIRTYPE]))
+            # Filter away too short directory names
+            members = [m for m in members if len(member.name) > prefix_len]
+            for member in members:
+                member.name = member.name[prefix_len:]
+            archive.extractall(target_dir, members)
 
 
 class TarGzHandler(TarballHandler):
     type = 'tar.gz'
     exts = ['tar.gz', 'tgz']
     read_mode = 'r:gz'
-    tar_cmd = ('tar', 'xz')
 
 
 class TarBz2Handler(TarballHandler):
     type = 'tar.bz2'
     exts = ['tar.bz2', 'tb2', 'tbz2']
     read_mode = 'r:bz2'
-    tar_cmd = ('tar', 'xj')
 
 class ZipHandler(object):
     type = 'zip'
@@ -767,7 +729,7 @@ class ZipHandler(object):
         with closing(ZipFile(filename)) as f:
             return f.testzip() is None # returns None if zip is OK
 
-    def unpack(self, infile, target_dir, hash, unsafe_mode, strip):
+    def unpack(self, infile, target_dir, hash):
         from zipfile import ZipFile
         from StringIO import StringIO
         # only safe mode implemented as ZipFile does random access

@@ -241,12 +241,12 @@ def test_source_unpack_options(tempdir, sc, bldr, config):
             "name": "foo",
             "version": "na",
             "sources": [
-                {"target": ".", "key": tarball_key, "strip": 1},
-                {"target": "subdir", "key": tarball_key, "strip": 0},
+                {"target": ".", "key": tarball_key},
+                {"target": "subdir", "key": tarball_key},
                 ],
             "build": {
                 "commands": [
-                    {"cmd": ["/bin/cp", "subdir/coolproject-2.3/README", "$ARTIFACT/a"]},
+                    {"cmd": ["/bin/cp", "subdir/README", "$ARTIFACT/a"]},
                     {"cmd": ["/bin/cp", "README", "$ARTIFACT/b"]},
                 ]
             },

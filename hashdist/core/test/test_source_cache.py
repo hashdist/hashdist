@@ -59,7 +59,8 @@ def teardown():
 def make_mock_tarball():
     global mock_tarball, mock_tarball_tmpdir, mock_tarball_hash
     mock_tarball_tmpdir, mock_tarball,  mock_tarball_hash = utils.make_temporary_tarball(
-        [('README', 'file contents')])
+        [('a/b/0/README', 'file contents'),
+         ('a/b/1/README', 'file contents')])
 
 def make_mock_zipfile():
     global mock_zipfile
@@ -124,7 +125,9 @@ def test_tarball():
         assert key == mock_tarball_hash
         with temp_dir() as d:
             sc.unpack(key, d)
-            with file(pjoin(d, 'README')) as f:
+            with file(pjoin(d, '0', 'README')) as f:
+                assert f.read() == 'file contents'
+            with file(pjoin(d, '1', 'README')) as f:
                 assert f.read() == 'file contents'
 
 
@@ -216,11 +219,8 @@ def test_corrupt_store():
             f.write('corrupt archive')
         with temp_dir() as d:
             with assert_raises(CorruptSourceCacheError):
-                sc.unpack(mock_tarball_hash, d, unsafe_mode=False)
+                sc.unpack(mock_tarball_hash, d)
             assert os.listdir(d) == []
-        with temp_dir() as d:
-            with assert_raises(CorruptSourceCacheError):
-                sc.unpack(mock_tarball_hash, d, unsafe_mode=True)        
 
 
 def test_does_not_re_download():
