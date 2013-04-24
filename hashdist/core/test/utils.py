@@ -5,6 +5,7 @@ import functools
 import contextlib
 import subprocess
 import hashlib
+from contextlib import closing
 
 from nose.tools import eq_
 
@@ -104,6 +105,7 @@ def make_temporary_tarball(files):
     """Make a tarball in a temporary directory under /tmp; returns
     (name of directory, name of archive, source cache key)
     """
+    import tarfile
     from ..source_cache import scatter_files
     from ..hasher import format_digest
     
@@ -113,10 +115,14 @@ def make_temporary_tarball(files):
     tmp_d = tempfile.mkdtemp()
     try:
         scatter_files(files, tmp_d)
-        subprocess.check_call(['tar', 'czf', archive_filename] + os.listdir(tmp_d), cwd=tmp_d)
+        with closing(tarfile.open(archive_filename, 'w:gz')) as archive:
+            with working_directory(tmp_d):
+                for dirpath, dirnames, filenames in os.walk('.'):
+                    archive.add(dirpath)
+                    for fname in filenames:
+                        archive.add(pjoin(dirpath, fname))
     finally:
         shutil.rmtree(tmp_d)
-    # get key
     with file(archive_filename) as f:
         key = 'tar.gz:' + format_digest(hashlib.sha256(f.read()))
     return container_dir, archive_filename, key

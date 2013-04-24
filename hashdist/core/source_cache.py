@@ -99,7 +99,6 @@ import stat
 from timeit import default_timer as clock
 from contextlib import closing
 
-from ..deps import sh
 from .hasher import Hasher, format_digest, HashingReadStream, HashingWriteStream
 from .fileutils import silent_makedirs
 
@@ -484,6 +483,8 @@ class GitSourceCache(object):
         return 'git:%s' % commit
 
     def unpack(self, type, hash, target_path):
+        import tarfile
+        
         assert type == 'git'
 
         # We don't want to require supplying a repo name, so for now
@@ -501,10 +502,15 @@ class GitSourceCache(object):
         else:
             raise KeyNotFoundError('Source item not present: git:%s' % hash)
 
-        archive_p = sh.git('archive', '--format=tar', hash, _env=self.get_repo_env(repo_name),
-                           _piped=True)
-        unpack_p = sh.tar(archive_p, 'x', _cwd=target_path)
-        unpack_p.wait()
+        p = subprocess.Popen(['git', 'archive', '--format=tar', hash],
+                             env=self.get_repo_env(repo_name),
+                             stdout=subprocess.PIPE)
+        # open in stream mode with the "r|" mode
+        with closing(tarfile.open(fileobj=p.stdout, mode='r|')) as archive:
+            archive.extractall(target_path)
+        retcode = p.wait()
+        if retcode != 0:
+            raise CalledProcessError('git error: %d' % retcode)
 
 
 SIMPLE_FILE_URL_RE = re.compile(r'^file:/?[^/]+.*$')
