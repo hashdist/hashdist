@@ -11,9 +11,6 @@ matrix:
 before_install:
   - git config --global user.email "hashdist@h.com";
     git config --global user.name "Hashdist"
-  - if [[ $TRAVIS_PYTHON_VERSION == '2.6' ]]; then
-      pip install argparse unittest2;
-    fi
 script:
   - nosetests -v -s
 branches:
