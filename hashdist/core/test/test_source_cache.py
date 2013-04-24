@@ -79,13 +79,16 @@ def make_mock_tarball():
                 f.addfile(info, f2)
 
 def make_mock_zipfile():
-    global mock_zipfile
+    global mock_zipfile, mock_zipfile_hash
     from zipfile import ZipFile
     mock_zipfile = pjoin(mock_container_dir, 'test.zip')
     with closing(ZipFile(mock_zipfile, 'a')) as z:
         # a/b is common prefix and should be stripped on unpacking
         z.writestr(pjoin('a', 'b', '0', 'README'), 'file contents')
         z.writestr(pjoin('a', 'b', '1', 'README'), 'file contents')
+    with open(mock_zipfile) as f:
+        mock_zipfile_hash = 'zip:' + format_digest(hashlib.sha256(f.read()))
+    
 
 # Mock git repo
 
@@ -161,7 +164,7 @@ def test_tarball():
 def test_zipfile():
     with temp_source_cache() as sc:
         key = sc.fetch_archive('file:' + mock_zipfile)
-        assert key.startswith('zip:')
+        assert key == mock_zipfile_hash
         with temp_dir() as d:
             sc.unpack(key, d)
             with file(pjoin(d, '0', 'README')) as f:
@@ -234,6 +237,9 @@ def test_corrupt_download():
         with assert_raises(RuntimeError):
             corrupt_hash = mock_tarball_hash[:-8] + 'aaaaaaaa'
             sc.fetch('file:' + mock_tarball, corrupt_hash)
+        with assert_raises(RuntimeError):
+            corrupt_hash = mock_zipfile_hash[:-8] + 'aaaaaaaa'
+            sc.fetch('file:' + mock_zipfile, corrupt_hash)
         # Check that no temporary files are left
         assert len(os.listdir(pjoin(sc.cache_path, 'packs', 'tar.gz'))) == 0
 
