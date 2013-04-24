@@ -2,7 +2,6 @@
 """
 
 from .main import register_subcommand
-import argparse
 import sys
 
 from ..core import archive_types, SourceCache
