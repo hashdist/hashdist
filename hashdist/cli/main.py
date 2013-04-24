@@ -7,7 +7,6 @@ Other ``hashdist.cmd.*`` modules register their sub-commands using the
 from __future__ import print_function
 
 import functools
-import argparse
 import sys
 import textwrap
 import os
@@ -16,6 +15,11 @@ import traceback
 
 from ..core import load_configuration_from_inifile, DEFAULT_CONFIG_FILENAME
 from ..hdist_logging import Logger, DEBUG, INFO
+
+try:
+    import argparse
+except ImportError:
+    from ..deps import argparse
 
 #
 # sub-command registration

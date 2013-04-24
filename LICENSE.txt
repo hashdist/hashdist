@@ -7,11 +7,14 @@ There are 3 licenses:
  * pyyaml: MIT
  * sh: MIT
  * distlib: Python license
+ * argparse: Python license
 
 The licenses for each component are copied verbatim below.
 
-Hashdist
---------
+
+##################################################################
+# Hashdist                                                       #
+##################################################################
 
 Copyright (c) 2012, Dag Sverre Seljebotn and Ondrej Certik
 All rights reserved.
@@ -47,9 +50,34 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+##################################################################
+# argparse                                                       #
+##################################################################
 
-sh
---
+argparse is (c) 2006-2009 Steven J. Bethard <steven.bethard@gmail.com>.
+
+The argparse module was contributed to Python as of Python 2.7 and thus
+was licensed under the Python license. Same license applies to all files in
+the argparse package project.
+
+For details about the Python License, please see doc/Python-License.txt.
+
+History
+-------
+
+Before (and including) argparse 1.1, the argparse package was licensed under
+Apache License v2.0.
+
+After argparse 1.1, all project files from the argparse project were deleted
+due to license compatibility issues between Apache License 2.0 and GNU GPL v2.
+
+The project repository then had a clean start with some files taken from
+Python 2.7.1, so definitely all files are under Python License now.
+
+
+##################################################################
+# sh                                                             #
+##################################################################
 
 Copyright (C) 2011-2012 by Andrew Moffat
 
@@ -71,8 +99,9 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
-pyyaml
-------
+##################################################################
+# pyyaml                                                         #
+##################################################################
 
 Copyright (c) 2006 Kirill Simonov
 
@@ -94,8 +123,9 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-distlib (licensed as CPython, remainder of this file incl. headings)
---------------------------------------------------------------------
+##################################################################
+# distlib (licensed as CPython)                                  #
+##################################################################
 
 A. HISTORY OF THE SOFTWARE
 ==========================

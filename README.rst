@@ -44,6 +44,9 @@ dependencies are simply ripped out of the original projects and
 bundled under ``hashdist/deps``. The copyright of these belong to the
 respective authors; the licenses are included in LICENSE.txt.
 
+ * argparse
+     * version: 1.2.1
+
  * sh
      * location: hashdist/deps/sh:
      * version: commit abb0ba6

@@ -1,4 +1,5 @@
 import os
+import sys
 import tempfile
 import shutil
 import functools
@@ -14,18 +15,20 @@ from logging import getLevelName
 
 from os.path import join as pjoin
 
-try:
-    # Create assert_raises() using unittest2 on Python 2.6
-    import unittest2
-    class Dummy(unittest2.TestCase):
-        def nop():
-            pass
-    _t = Dummy('nop')
-    assert_raises = _t.assertRaises
-except ImportError:
-    # On Python > 2.6, we can just use assert_raises from nose.tools which uses
-    # unittest:
-    from nose.tools import assert_raises
+# Make our own assert_raises, as nose.tools doesn't have it on Python 2.6
+# We always use the context manager form
+@contextlib.contextmanager
+def assert_raises(wanted_exc_type):
+    try:
+        yield
+    except:
+        exc_type, exc_val, exc_tb = sys.exc_info()
+        if not issubclass(exc_type, wanted_exc_type):
+            assert False, 'Wanted exception %r but got %r' % (
+                wanted_exc_type, exc_type)
+    else:
+        assert False, 'Expected exception not raised'
+        
 
 @contextlib.contextmanager
 def temp_dir():
