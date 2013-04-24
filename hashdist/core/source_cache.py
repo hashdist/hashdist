@@ -88,7 +88,6 @@ import os
 import re
 import sys
 import subprocess
-import mimetypes
 import tempfile
 import urllib2
 import json
@@ -97,7 +96,6 @@ import hashlib
 import struct
 import errno
 import stat
-import tarfile
 from timeit import default_timer as clock
 from contextlib import closing
 
@@ -113,13 +111,19 @@ TAG_RE = re.compile(TAG_RE_S)
 PACKS_DIRNAME = 'packs'
 GIT_DIRNAME = 'git'
 
-class SourceNotFoundError(Exception):
+class SourceCacheError(Exception):
     pass
 
-class KeyNotFoundError(Exception):
+class SourceNotFoundError(SourceCacheError):
     pass
 
-class CorruptSourceCacheError(Exception):
+class KeyNotFoundError(SourceCacheError):
+    pass
+
+class CorruptSourceCacheError(SourceCacheError):
+    pass
+
+class SecurityError(SourceCacheError):
     pass
 
 class ProgressBar(object):
@@ -281,7 +285,7 @@ class SourceCache(object):
     def _get_handler(self, type):
         if type == 'git':
             handler = GitSourceCache(self)
-        elif type == 'files' or type in supported_source_archive_types:
+        elif type == 'files' or type in archive_types:
             handler = ArchiveSourceCache(self)
         else:
             raise ValueError('does not recognize key prefix: %s' % type)
@@ -317,7 +321,7 @@ class SourceCache(object):
         handler = self._get_handler(type)
         handler.fetch(url, type, hash, repo_name)
 
-    def unpack(self, key, target_path, unsafe_mode=False, strip=0):
+    def unpack(self, key, target_path):
         """
         Unpacks the sources identified by `key` to `target_path`
 
@@ -326,13 +330,9 @@ class SourceCache(object):
         will be raised in this case. In normal circumstances this should
         never happen.
 
-        By default, the archive will be loaded into memory and
-        checked, and if found corrupt nothing will be extracted. By
-        setting `unsafe_mode`, extraction takes place on the fly while
-        validating, which is faster and use less memory, but it means
-        that a corrupt archive may be partially or fully extracted
-        (though an exception is raised at the end). No removal of the
-        extracted contents is attempted in this case.
+        The archive will be loaded into memory, checked against the
+        hash, and then extracted from the memory copy, so that attacks
+        through tampering with on-disk archives should not be possible.
 
         Parameters
         ----------
@@ -343,17 +343,6 @@ class SourceCache(object):
         target_path : str
             Path to extract in
 
-        unsafe_mode : bool (default: False)
-            Whether a faster, memory-conserving mode should be used.
-            It is safe to use `unsafe_mode` if `target_path` is
-            a fresh directory which is removed in the event of a
-            `CorruptSourceCacheError`.
-
-        strip : int (default: 0)
-            Strips the first `strip` components off the path of each
-            extracted file. Set to 1 to remove the typical
-            ``projectname-2.2`` directory in tarballs.
-
         """
         if not os.path.exists(target_path):
             os.makedirs(target_path)
@@ -361,7 +350,7 @@ class SourceCache(object):
             raise ValueError("Key must be on form 'type:hash'")
         type, hash = key.split(':')
         handler = self._get_handler(type)
-        handler.unpack(type, hash, target_path, unsafe_mode, strip)
+        handler.unpack(type, hash, target_path)
 
 
 class GitSourceCache(object):
@@ -494,10 +483,8 @@ class GitSourceCache(object):
 
         return 'git:%s' % commit
 
-    def unpack(self, type, hash, target_path, unsafe_mode, strip):
+    def unpack(self, type, hash, target_path):
         assert type == 'git'
-        if strip != 0:
-            raise NotImplementedError('unpacking with git does not support strip != 0')
 
         # We don't want to require supplying a repo name, so for now
         # we simply iterate through all git repos
@@ -528,12 +515,6 @@ class ArchiveSourceCache(object):
 
     chunk_size = 16 * 1024
 
-    archive_types = {
-        'tar.gz' :  (('application/x-tar', 'gzip'), ('tar', 'xz'), 'r:gz'),
-        'tar.bz2' : (('application/x-tar', 'bzip2'), ('tar', 'xj'), 'r:bz2'),
-        }
-
-    mime_to_ext = dict((value[0], key) for key, value in archive_types.iteritems())
 
     def __init__(self, source_cache):
         assert not isinstance(source_cache, str)
@@ -597,9 +578,7 @@ class ArchiveSourceCache(object):
             os.unlink(temp_path)
             raise
 
-        # Test that we have downloaded a valid archive
-        mode = self.archive_types[type][2]
-        if not is_tarball(temp_path, mode):
+        if not create_archive_handler(type).verify(temp_path):
             self.logger.error("File downloaded from '%s' is not a valid archive" % url)
             raise SourceNotFoundError("File downloaded from '%s' is not a valid archive" % url)
 
@@ -607,15 +586,14 @@ class ArchiveSourceCache(object):
 
     def _ensure_type(self, url, type):
         if type is not None:
-            if type not in self.archive_types:
+            if type not in archive_types:
                 raise ValueError('Unknown archive type: %s' % type)
+            return type
         else:
-            mime = mimetypes.guess_type(url)
-            if mime not in self.mime_to_ext:
-                raise ValueError('Unable to guess archive type of "%s"' % url)
-            type = self.mime_to_ext[mime]
-
-        return type
+            for ext, it_type in archive_ext_to_type.items():
+                if url.endswith('.' + ext):
+                    return it_type
+            raise ValueError('Unable to guess archive type of "%s"' % url)
 
     def contains(self, type, hash):
         return os.path.exists(self.get_pack_filename(type, hash))
@@ -657,24 +635,18 @@ class ArchiveSourceCache(object):
                 hit_pack(files, f)
         return key
     
-    def unpack(self, type, hash, target_dir, unsafe_mode, strip):
+    def unpack(self, type, hash, target_dir):
         infile = self.open_file(type, hash)
         with infile:
             if type == 'files':
-                if strip != 0:
-                    raise NotImplementedError('unpacking with git does not support strip != 0')
                 files = hit_unpack(infile, 'files:%s' % hash)
                 scatter_files(files, target_dir)
             else:
-                tar_cmd = list(self.archive_types[type][1])
-                if strip != 0:
-                    tar_cmd.append('--strip-components=%d' % strip)
-                if unsafe_mode:
-                    retcode = self._untar_unsafe(infile, hash, target_dir, tar_cmd)
-                else:
-                    retcode = self._untar_safe(infile, hash, target_dir, tar_cmd)
-                if retcode != 0:
-                    raise subprocess.CalledProcessError(retcode, tar_cmd[0])
+                try:
+                    create_archive_handler(type).unpack(infile, target_dir, hash)
+                except SourceCacheError, e:
+                    self.logger.error(str(e))
+                    raise
 
     def open_file(self, type, hash):
         try:
@@ -684,31 +656,6 @@ class ArchiveSourceCache(object):
                 raise KeyNotFoundError("%s:%s" % (type, hash))
         return f
 
-    def _key_check(self, filename, hasher, hash):
-        if format_digest(hasher) != hash:
-            raise CorruptSourceCacheError("Corrupted file: '%s'" % filename)
-
-    def _untar_unsafe(self, infile, hash, target_dir, tar_cmd):
-        p  = subprocess.Popen(tar_cmd, stdin=subprocess.PIPE, cwd=target_dir)
-        tee = HashingWriteStream(hashlib.sha256(), p.stdin)
-        while True:
-            chunk = infile.read(self.chunk_size)
-            if not chunk: break
-            tee.write(chunk)
-        p.stdin.close()
-        retcode = p.wait()
-        self._key_check(infile.name, tee, hash)
-        return retcode
-
-    def _untar_safe(self, infile, hash, target_dir, tar_cmd):
-        archive_data = infile.read()
-        self._key_check(infile.name, hashlib.sha256(archive_data), hash)
-        p  = subprocess.Popen(tar_cmd, stdin=subprocess.PIPE, cwd=target_dir)
-        p.stdin.write(archive_data)
-        p.stdin.close()
-        return p.wait()
-
-
     #
     # hit packs
     #
@@ -716,8 +663,119 @@ class ArchiveSourceCache(object):
         files = hit_unpack(f, key)
         scatter_files(files, target_dir)        
 
-supported_source_archive_types = sorted(ArchiveSourceCache.archive_types.keys())
 
+#
+# Archive format support
+#
+
+def common_path_prefix(paths):
+    if len(paths) == 0:
+        return 0
+    sep = os.path.sep
+    prefixes = [p.split(sep)[:-1] for p in paths]
+    common_prefix = paths[0].split(sep)[:-1]
+    for path in paths[1:]:
+        prefix = path.split(sep)[:-1]
+        if len(prefix) < common_prefix:
+            common_prefix = common_prefix[:len(prefix)]
+        for i, (this_part, common_part) in enumerate(zip(prefix, common_prefix)):
+            if this_part != common_part:
+                common_prefix = common_prefix[:i]
+                break
+    if len(common_prefix) == 0:
+        return ''
+    else:
+        return sep.join(common_prefix) + sep
+
+class TarballHandler(object):
+    chunk_size = 16 * 1024
+    
+    def verify(self, filename):
+        import tarfile
+        try:
+            with closing(tarfile.open(filename, self.read_mode)) as archive:
+                # Just in case, make sure we can actually read the archive:
+                members = archive.getmembers()
+            return True
+        except tarfile.ReadError:
+            return False
+
+    def unpack(self, infile, target_dir, hash):
+        import tarfile
+        from StringIO import StringIO
+        target_dir = os.path.abspath(target_dir)
+
+        archive_data = infile.read()
+        if format_digest(hashlib.sha256(archive_data)) != hash:
+            raise CorruptSourceCacheError("Corrupted file: '%s'" % infile.name)
+
+        with closing(tarfile.open(fileobj=StringIO(archive_data), mode=self.read_mode)) as archive:
+            members = archive.getmembers()
+            prefix_len = len(common_path_prefix([member.name for member in members
+                                                 if member.type != tarfile.DIRTYPE]))
+            # Filter away too short directory entries, remove prefix,
+            # and prevent directory escape attacks
+            filtered_members = []
+            for member in members:
+                if len(member.name) <= prefix_len:
+                    continue
+                if not os.path.abspath(pjoin(target_dir, member.name)).startswith(target_dir):
+                    raise SecurityError("Archive attempted to break out of target dir "
+                                        "with filename: %s" % member.name)
+                member.name = member.name[prefix_len:]
+            archive.extractall(target_dir, members)
+
+
+class TarGzHandler(TarballHandler):
+    type = 'tar.gz'
+    exts = ['tar.gz', 'tgz']
+    read_mode = 'r:gz'
+
+
+class TarBz2Handler(TarballHandler):
+    type = 'tar.bz2'
+    exts = ['tar.bz2', 'tb2', 'tbz2']
+    read_mode = 'r:bz2'
+
+class ZipHandler(object):
+    type = 'zip'
+    exts = ['zip']
+    def verify(self, filename):
+        from zipfile import ZipFile
+        with closing(ZipFile(filename)) as f:
+            return f.testzip() is None # returns None if zip is OK
+
+    def unpack(self, infile, target_dir, hash):
+        from zipfile import ZipFile
+        from StringIO import StringIO
+        # only safe mode implemented as ZipFile does random access
+        archive_data = infile.read()
+        if format_digest(hashlib.sha256(archive_data)) != hash:
+            raise CorruptSourceCacheError("Corrupted file: '%s'" % infile.name)
+        with closing(ZipFile(StringIO(archive_data))) as f:
+            infolist = f.infolist()
+            if len(infolist) == 0:
+                return
+            # Scan through infolist to determine length of common prefix, and modify ZipInfo structs
+            # during extraction
+            prefix_len = len(common_path_prefix([info.filename for info in infolist]))
+            for info in infolist:
+                info.filename = info.filename[prefix_len:]
+                f.extract(info, target_dir)
+        
+archive_ext_to_type = {}
+archive_handler_classes = {}
+archive_types = []
+for cls in [TarGzHandler, TarBz2Handler, ZipHandler]:
+    for ext in cls.exts:
+        archive_ext_to_type[ext] = cls.type
+    archive_handler_classes[cls.type] = cls
+    archive_types.append(cls.type)
+archive_types = sorted(archive_types)
+
+        
+def create_archive_handler(type):
+    return archive_handler_classes[type]()
 
 def hit_pack(files, stream=None):
     """
@@ -831,11 +889,3 @@ def silent_unlink(path):
     except:
         pass
 
-def is_tarball(path, mode):
-    try:
-        with closing(tarfile.open(path, mode)) as archive:
-            # Just in case, make sure we can actually read the archive:
-            members = archive.getmembers()
-        return True
-    except tarfile.ReadError:
-        return False
