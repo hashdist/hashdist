@@ -13,10 +13,10 @@ pjoin = os.path.join
 
 from ..source_cache import (ArchiveSourceCache, SourceCache,
         CorruptSourceCacheError, hit_pack, hit_unpack, scatter_files,
-        KeyNotFoundError, SourceNotFoundError)
+        KeyNotFoundError, SourceNotFoundError, SecurityError)
 from ..hasher import Hasher, format_digest
 
-from .utils import temp_dir, working_directory, VERBOSE, logger, assert_raises
+from .utils import temp_dir, working_directory, VERBOSE, logger, assert_raises, MemoryLogger
 from . import utils
 
 from nose.tools import eq_
@@ -33,7 +33,7 @@ mock_git_repo = None
 mock_git_commit = None
 
 @contextlib.contextmanager
-def temp_source_cache():
+def temp_source_cache(logger=logger):
     tempdir = tempfile.mkdtemp()
     try:
         yield SourceCache(tempdir, logger)
@@ -57,10 +57,26 @@ def teardown():
 # Mock packs
 
 def make_mock_tarball():
+    import tarfile
+    
     global mock_tarball, mock_tarball_tmpdir, mock_tarball_hash
+    global mock_dangerous_tarballs
+
     mock_tarball_tmpdir, mock_tarball,  mock_tarball_hash = utils.make_temporary_tarball(
         [('a/b/0/README', 'file contents'),
          ('a/b/1/README', 'file contents')])
+    
+    import tarfile
+    mock_dangerous_tarballs = [pjoin(mock_container_dir, 'danger%d.tar.gz' % i) for i in range(2)]
+    contentsfile = pjoin(mock_container_dir, 'tmp')
+    with open(contentsfile, 'w') as f:
+        f.write('hello')
+    for attackname, filename in zip(['/escapes', '../escapes'], mock_dangerous_tarballs):
+        with closing(tarfile.open(filename, 'w:gz')) as f:
+            info = tarfile.TarInfo(attackname)
+            info.size = len('hello')
+            with open(pjoin(mock_container_dir, 'tmp')) as f2:
+                f.addfile(info, f2)
 
 def make_mock_zipfile():
     global mock_zipfile
@@ -118,7 +134,18 @@ def test_common_prefix():
     eq_('', f(['a/b/c', 'a/b/d', 'a']))
     eq_('', f(['a', 'a/b/c', 'a/b/d']))
     eq_('a/b/c/d/', f(['a/b/c/d/e/0', 'a/b/c/d/e/1', 'a/b/c/d/1']))
-    
+
+
+def test_trap_tarball_attack():
+    logger = MemoryLogger()
+    with temp_source_cache(logger) as sc:
+        for tb in mock_dangerous_tarballs:
+            key = sc.fetch_archive('file:' + tb)
+            with temp_dir() as d:
+                with assert_raises(SecurityError):
+                    sc.unpack(key, d)
+                assert any('attempted to break out' in line for line in logger.lines)
+
 def test_tarball():
     with temp_source_cache() as sc:
         key = sc.fetch_archive('file:' + mock_tarball)

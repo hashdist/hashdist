@@ -111,13 +111,19 @@ TAG_RE = re.compile(TAG_RE_S)
 PACKS_DIRNAME = 'packs'
 GIT_DIRNAME = 'git'
 
-class SourceNotFoundError(Exception):
+class SourceCacheError(Exception):
     pass
 
-class KeyNotFoundError(Exception):
+class SourceNotFoundError(SourceCacheError):
     pass
 
-class CorruptSourceCacheError(Exception):
+class KeyNotFoundError(SourceCacheError):
+    pass
+
+class CorruptSourceCacheError(SourceCacheError):
+    pass
+
+class SecurityError(SourceCacheError):
     pass
 
 class ProgressBar(object):
@@ -636,7 +642,11 @@ class ArchiveSourceCache(object):
                 files = hit_unpack(infile, 'files:%s' % hash)
                 scatter_files(files, target_dir)
             else:
-                create_archive_handler(type).unpack(infile, target_dir, hash)
+                try:
+                    create_archive_handler(type).unpack(infile, target_dir, hash)
+                except SourceCacheError, e:
+                    self.logger.error(str(e))
+                    raise
 
     def open_file(self, type, hash):
         try:
@@ -657,7 +667,6 @@ class ArchiveSourceCache(object):
 #
 # Archive format support
 #
-
 
 def common_path_prefix(paths):
     if len(paths) == 0:
@@ -694,6 +703,7 @@ class TarballHandler(object):
     def unpack(self, infile, target_dir, hash):
         import tarfile
         from StringIO import StringIO
+        target_dir = os.path.abspath(target_dir)
 
         archive_data = infile.read()
         if format_digest(hashlib.sha256(archive_data)) != hash:
@@ -703,9 +713,15 @@ class TarballHandler(object):
             members = archive.getmembers()
             prefix_len = len(common_path_prefix([member.name for member in members
                                                  if member.type != tarfile.DIRTYPE]))
-            # Filter away too short directory names
-            members = [m for m in members if len(member.name) > prefix_len]
+            # Filter away too short directory entries, remove prefix,
+            # and prevent directory escape attacks
+            filtered_members = []
             for member in members:
+                if len(member.name) <= prefix_len:
+                    continue
+                if not os.path.abspath(pjoin(target_dir, member.name)).startswith(target_dir):
+                    raise SecurityError("Archive attempted to break out of target dir "
+                                        "with filename: %s" % member.name)
                 member.name = member.name[prefix_len:]
             archive.extractall(target_dir, members)
 
