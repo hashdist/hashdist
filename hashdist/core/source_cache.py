@@ -471,6 +471,8 @@ class GitSourceCache(object):
             # do a separate ls-remote...
             out = self.checked_git(repo_name, 'ls-remote', repo_url)
             heads = [line.split()[1] for line in out.splitlines() if line.strip()]
+            # Fix for https://github.com/hashdist/python-hpcmp2/issues/57
+            heads = [x for x in heads if not x.endswith("^{}")]
             self.git_interactive(repo_name, 'fetch', repo_url, *heads)
             
         if not self._has_commit(repo_name, commit):
