@@ -90,6 +90,7 @@ def fixture(short_hash_len=SHORT_ARTIFACT_ID_LEN, dir_pattern='{name}/{shorthash
                                                                  short_hash_len=short_hash_len)
                 return func(tempdir, sc, bldr, config)
             finally:
+                os.system("chmod -R +w %s" % tempdir)
                 shutil.rmtree(tempdir)
         return decorated
     return decorator
