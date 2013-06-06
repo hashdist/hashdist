@@ -701,11 +701,71 @@ class CommandTreeExecution(object):
             else:
                 raise
 
+        if 'linux' in sys.platform and not _TEST_LOG_PROCESS_SIMPLE:
+            retcode = self._log_process_with_logpipes(proc, stdout_to)
+        else:
+            if len(self.log_fifo_filenames) > 0:
+                raise NotImplementedError('log pipes not implemented on this platform')
+            retcode = self._log_process_simple(proc, stdout_to)
+
+        if retcode != 0:
+            exc = subprocess.CalledProcessError(retcode, args)
+            self.logger.error(str(exc))
+            raise exc
+
+    def _log_process_simple(self, proc, stdout_to):
+        logger = self.logger
+        stdout_fd, stderr_fd = proc.stdout.fileno(), proc.stderr.fileno()
+        fds = [stdout_fd, stderr_fd]
+        for fd in fds: # set O_NONBLOCK
+            fcntl.fcntl(fd, fcntl.F_SETFL, fcntl.fcntl(fd, fcntl.F_GETFL) | os.O_NONBLOCK)
+
+        buffers = {stdout_fd: '', stderr_fd: ''}
+        while True:
+            select.select(fds, [], [], 0.05)
+            for fd in fds:
+                try:
+                    s = os.read(fd, LOG_PIPE_BUFSIZE)
+                except IOError, e:
+                    if e.errno != errno.EAGAIN:
+                        raise
+                    s = ''
+                except OSError, e:
+                    if e.errno != errno.EAGAIN:
+                        raise
+                    s = ''
+                if s != '':
+                    if stdout_to is not None and fd == stdout_fd:
+                        # Just forward
+                        stdout_to.write(s)
+                    else:
+                        buffers[fd] += s
+                        lines = buffers[fd].splitlines(True) # keepends=True
+                        if lines[-1][-1] != '\n':
+                            buffers[fd] = lines[-1]
+                            del lines[-1]
+                        else:
+                            buffers[fd] = ''
+                        for line in lines:
+                            if line[-1] == '\n':
+                                line = line[:-1]
+                            logger.debug(line)
+                        logger.debug('FOOBAR')
+                    
+            if proc.poll() is not None:
+                break
+        for buf in buffers.values():
+            if buf != '':
+                logger.debug(buf)
+        return proc.wait()
+
+    def _log_process_with_logpipes(self, proc, stdout_to):
         # Weave together input from stdout, stderr, and any attached log
         # pipes.  To avoid any deadlocks with unbuffered stderr
         # interlaced with use of log pipe etc. we avoid readline(), but
         # instead use os.open to read and handle line-assembly ourselves...
-
+        logger = self.logger
+        
         stdout_fd, stderr_fd = proc.stdout.fileno(), proc.stderr.fileno()
         poller = select.poll()
         poller.register(stdout_fd)
@@ -807,10 +867,7 @@ class CommandTreeExecution(object):
             close_fifo(fd)
 
         retcode = proc.wait()
-        if retcode != 0:
-            exc = subprocess.CalledProcessError(retcode, args)
-            self.logger.error(str(exc))
-            raise exc
+        return retcode
 
     def create_log_pipe(self, sublogger_name, level_str):
         level = dict(CRITICAL=CRITICAL, ERROR=ERROR, WARNING=WARNING, INFO=INFO, DEBUG=DEBUG)[level_str]
@@ -820,4 +877,6 @@ class CommandTreeExecution(object):
             os.mkfifo(fifo_filename, 0600)
             self.log_fifo_filenames[sublogger_name, level] = fifo_filename
         sys.stdout.write(fifo_filename)
-        
+
+# temporarily set by test_run_job; can also set manually to emulate OS X
+_TEST_LOG_PROCESS_SIMPLE = False
