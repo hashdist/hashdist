@@ -512,6 +512,7 @@ class ArtifactBuilder(object):
             shutil.rmtree(artifact_dir)
             raise
         artifact_dir = self.build_store.register_artifact(self.build_spec, artifact_dir)
+        os.system("chmod -R -w %s" % artifact_dir)
         return artifact_dir
 
     def build_to(self, artifact_dir, config, keep_build):
