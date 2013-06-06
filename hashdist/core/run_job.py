@@ -750,7 +750,6 @@ class CommandTreeExecution(object):
                             if line[-1] == '\n':
                                 line = line[:-1]
                             logger.debug(line)
-                        logger.debug('FOOBAR')
                     
             if proc.poll() is not None:
                 break
