@@ -5,6 +5,7 @@ from nose.tools import eq_
 from textwrap import dedent
 from subprocess import CalledProcessError
 from pprint import pprint
+from nose import SkipTest
 
 from .. import run_job
 from .test_build_store import fixture as build_store_fixture
@@ -172,10 +173,20 @@ def test_capture_stdout(tempdir, sc, build_store, cfg):
              "env": {"LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH", "")},
              "cmd": env_to_stderr + ["HI"]}
         ]}
-    logger = MemoryLogger()
-    run_job.run_job(logger, build_store, job_spec, {"echo": "/bin/echo"}, '<no-artifact>',
-                    {}, tempdir, cfg)
-    eq_(["HI='a  b'"], filter_out(logger.lines))
+    # Test both with _TEST_LOG_PROCESS_SIMPLE and without
+    def doit():
+        logger = MemoryLogger()
+        run_job.run_job(logger, build_store, job_spec, {"echo": "/bin/echo"}, '<no-artifact>',
+                        {}, tempdir, cfg)
+        eq_(["HI='a  b'"], filter_out(logger.lines))
+
+    doit()
+    o = run_job._TEST_LOG_PROCESS_SIMPLE
+    try:
+        run_job._TEST_LOG_PROCESS_SIMPLE = True
+        doit()
+    finally:
+        run_job._TEST_LOG_PROCESS_SIMPLE = o
 
 @build_store_fixture()
 def test_script_redirect(tempdir, sc, build_store, cfg):
@@ -191,6 +202,9 @@ def test_script_redirect(tempdir, sc, build_store, cfg):
 
 @build_store_fixture()
 def test_attach_log(tempdir, sc, build_store, cfg):
+    if 'linux' not in sys.platform:
+        raise SkipTest('Linux only')
+    
     with file(pjoin(tempdir, 'hello'), 'w') as f:
         f.write('hello from pipe')
     job_spec = {
@@ -214,6 +228,9 @@ def test_error_exit(tempdir, sc, build_store, cfg):
 
 @build_store_fixture()
 def test_log_pipe_stress(tempdir, sc, build_store, cfg):
+    if 'linux' not in sys.platform:
+        raise SkipTest('Linux only')
+
     # Stress-test the log piping a bit, since the combination of Unix FIFO
     # pipes and poll() is a bit tricky to get right.
 
