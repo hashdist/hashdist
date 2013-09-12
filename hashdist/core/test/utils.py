@@ -6,6 +6,7 @@ import functools
 import contextlib
 import subprocess
 import hashlib
+from textwrap import dedent
 from contextlib import closing
 
 from nose.tools import eq_
@@ -62,6 +63,11 @@ def eqsorted_(a, b):
 def cat(filename):
     with open(filename) as f:
         return f.read()
+
+def dump(filename, contents):
+    os.makedirs(os.path.dirname(filename))
+    with open(filename, 'w') as f:
+        f.write(dedent(contents))
 
 def temp_working_dir_fixture(func):
     @functools.wraps(func)
