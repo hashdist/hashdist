@@ -17,6 +17,7 @@ SCHEMA = {
         },
     'sourcecache': {
         'sources': ('dir', '~/.hit/src'),
+        'mirror': ('str', '')
         },
     'builder': {
         'build-temp': ('dir', '~/.hit/bld'),

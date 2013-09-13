@@ -342,3 +342,17 @@ def test_corrupt_archive():
                 sc.fetch_archive('file:' + archive_path1)
             with assert_raises(SourceNotFoundError):
                 sc.fetch_archive('file:' + archive_path2)
+
+def test_mirrors():
+    with temp_dir() as sc_dir:
+        with temp_dir() as mirror1:
+            with temp_dir() as mirror2:
+                destdir = pjoin(mirror2, 'packs', 'tar.gz')
+                sha = mock_tarball_hash.split(':')[1]
+                os.makedirs(destdir)
+                shutil.copy(mock_tarball, pjoin(destdir, sha))
+
+                sc = SourceCache(sc_dir, logger, mirrors=['file:' + mirror1, 'file:' + mirror2])
+                sc.fetch('http://nonexisting.com', mock_tarball_hash)
+                assert [sha] == os.listdir(pjoin(sc_dir, 'packs', 'tar.gz'))
+
