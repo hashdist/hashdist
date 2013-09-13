@@ -529,12 +529,14 @@ class ArchiveSourceCache(object):
     def __init__(self, source_cache):
         assert not isinstance(source_cache, str)
         self.source_cache = source_cache
+        self.files_path = source_cache.cache_path
         self.packs_path = source_cache._ensure_subdir(PACKS_DIRNAME)
         self.mirrors = source_cache.mirrors
         self.logger = self.source_cache.logger
 
     def get_pack_filename(self, type, hash):
-        type_dir = pjoin(self.packs_path, type)
+        d = self.files_path if type == 'files' else self.packs_path
+        type_dir = pjoin(d, type)
         mkdir_if_not_exists(type_dir)
         return pjoin(type_dir, hash)
 
