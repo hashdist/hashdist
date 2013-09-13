@@ -15,7 +15,7 @@ def test_hit_cli_artifact(tempdir, sc, bldr, config):
         ['artifact.json', 'bin', 'build.json', 'build.log.gz', 'pypkg'])
     with file(pjoin(hit_path, 'bin', 'hit')) as f:
         hit_bin = f.read()
-    assert hit_bin.startswith('#!' + sys.executable)
+    assert hit_bin.startswith('#!' + os.path.realpath(sys.executable))
 
     # Try to use it
     spec = {
