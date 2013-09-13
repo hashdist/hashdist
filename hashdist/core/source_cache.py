@@ -183,7 +183,7 @@ class SourceCache(object):
     """
     """
 
-    def __init__(self, cache_path, logger, create_dirs=False):
+    def __init__(self, cache_path, logger, mirrors=(), create_dirs=False):
         if not os.path.isdir(cache_path):
             if create_dirs:
                 silent_makedirs(cache_path)
@@ -191,7 +191,7 @@ class SourceCache(object):
                 raise ValueError('"%s" is not an existing directory' % cache_path)
         self.cache_path = os.path.realpath(cache_path)
         self.logger = logger
-
+        self.mirrors = mirrors
 
     def _ensure_subdir(self, name):
         path = pjoin(self.cache_path, name)
@@ -206,7 +206,9 @@ class SourceCache(object):
     def create_from_config(config, logger, create_dirs=False):
         """Creates a SourceCache from the settings in the configuration
         """
-        return SourceCache(config['sourcecache/sources'], logger, create_dirs)
+        mirror = config['sourcecache/mirror'].strip()
+        mirrors = [mirror] if mirror else []
+        return SourceCache(config['sourcecache/sources'], logger, mirrors, create_dirs)
 
     def fetch_git(self, repository, rev, repo_name):
         """Fetches source code from git repository
@@ -527,11 +529,14 @@ class ArchiveSourceCache(object):
     def __init__(self, source_cache):
         assert not isinstance(source_cache, str)
         self.source_cache = source_cache
+        self.files_path = source_cache.cache_path
         self.packs_path = source_cache._ensure_subdir(PACKS_DIRNAME)
+        self.mirrors = source_cache.mirrors
         self.logger = self.source_cache.logger
 
     def get_pack_filename(self, type, hash):
-        type_dir = pjoin(self.packs_path, type)
+        d = self.files_path if type == 'files' else self.packs_path
+        type_dir = pjoin(d, type)
         mkdir_if_not_exists(type_dir)
         return pjoin(type_dir, hash)
 
@@ -546,7 +551,10 @@ class ArchiveSourceCache(object):
         # Provide a special case for local files
         use_urllib = not SIMPLE_FILE_URL_RE.match(url)
         if not use_urllib:
-            stream = file(url[len('file:'):])
+            try:
+                stream = open(url[len('file:'):])
+            except IOError as e:
+                raise SourceNotFoundError(str(e))
         else:
             # Make request.
             sys.stderr.write('Downloading %s...\n' % url)
@@ -606,6 +614,17 @@ class ArchiveSourceCache(object):
     def contains(self, type, hash):
         return os.path.exists(self.get_pack_filename(type, hash))
 
+    def fetch_from_mirrors(self, type, hash):
+        for mirror in self.mirrors:
+            url = '%s/%s/%s/%s' % (mirror, PACKS_DIRNAME, type, hash)
+            try:
+                self._download_archive(url, type, hash)
+            except SourceNotFoundError:
+                continue
+            else:
+                return True # found it
+        return False
+
     def fetch(self, url, type, hash, repo_name):
         if type == 'files:':
             raise NotImplementedError("use the put() method to store raw files")
@@ -614,9 +633,14 @@ class ArchiveSourceCache(object):
 
     def fetch_archive(self, url, type, expected_hash):
         if expected_hash is not None:
-            if self.contains(type, expected_hash):
+            found = self.contains(type, expected_hash)
+            if not found:
+                found = self.fetch_from_mirrors(type, expected_hash)
+            if found:
                 return '%s:%s' % (type, expected_hash)
-        
+        return self._download_archive(url, type, expected_hash)
+
+    def _download_archive(self, url, type, expected_hash):
         type = self._ensure_type(url, type)
         temp_file, hash = self._download_and_hash(url, type)
         try:
