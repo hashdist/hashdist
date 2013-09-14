@@ -1,7 +1,7 @@
 from textwrap import dedent
 from ...core.test.utils import *
 from .. import package
-
+from ..marked_yaml import marked_yaml_load
 
 
 
@@ -30,13 +30,18 @@ def test_package_loading(d):
 @temp_working_dir_fixture
 def test_assemble_stages(d):
     spec = dedent("""\
-    name: a
-    build-stages:
       - {name: install, handler: bash, bash: make install}
       - {name: make, handler: bash, before: install, after: configure, bash: make}
-      - {name: configure, hander: bash, bash: ./configure --with-foo=${foo}}
+      - {name: configure, handler: bash, bash: './configure --with-foo=${foo}'}
     """)
     parameters = {'foo': 'somevalue'}
+    script = package.assemble_build_script(marked_yaml_load(spec), parameters)
+    assert script == dedent("""\
+    #!/bin/bash
+    ./configure --with-foo=${foo}
+    make
+    make install
+    """)
 
 def test_topological_stage_sort():
     stages = [dict(name='z'),

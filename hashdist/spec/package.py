@@ -111,3 +111,16 @@ def topological_stage_sort(stages):
         del stage['before']
     return ordered_stages
 
+def assemble_build_script(stages, parameters):
+    """
+    Turns the complete set of build-stages (as a list of document fragments)
+    and assembles them into the final build script, which is returned
+    as a string.
+    """
+    lines = ['#!/bin/bash']
+    stages = normalize_stages(stages)
+    stages = topological_stage_sort(stages)
+    for stage in stages:
+        assert stage['handler'] == 'bash' # for now
+        lines.append(stage['bash'].strip())
+    return '\n'.join(lines) + '\n'
