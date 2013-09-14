@@ -1,6 +1,7 @@
-import tempfile
+from textwrap import dedent
 from ...core.test.utils import *
 from .. import package
+
 
 
 
@@ -27,5 +28,22 @@ def test_package_loading(d):
     
     
 @temp_working_dir_fixture
-def test_script_assembly(d):
-    pass
+def test_assemble_stages(d):
+    spec = dedent("""\
+    name: a
+    build-stages:
+      - {name: install, handler: bash, bash: make install}
+      - {name: make, handler: bash, before: install, after: configure, bash: make}
+      - {name: configure, hander: bash, bash: ./configure --with-foo=${foo}}
+    """)
+    parameters = {'foo': 'somevalue'}
+
+def test_topological_stage_sort():
+    stages = [dict(name='z'),
+              dict(name='a', before=['c', 'b']),
+              dict(name='c'),
+              dict(name='b'),
+              dict(name='aa', before='c', after='b')]
+    stages = package.normalize_stages(stages)
+    stages = package.topological_stage_sort(stages)
+    assert stages == [{'name': 'a'}, {'name': 'b'}, {'name': 'aa'}, {'name': 'c'}, {'name': 'z'}]

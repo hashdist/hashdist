@@ -57,3 +57,57 @@ class PackageSpecResolver(object):
             obj = _package_spec_cache[filename] = PackageSpec.load(doc, self)
         return obj
 
+def normalize_stages(stages):
+    def normalize_stage(stage):
+        # turn before/after into lists
+        stage = dict(stage)
+        for key in ['before', 'after']:
+            if key not in stage:
+                stage[key] = []
+            elif isinstance(stage[key], basestring):
+                stage[key] = [stage[key]]
+        return stage
+    return [normalize_stage(stage) for stage in stages]
+
+
+def topological_stage_sort(stages):
+    """
+    Turns a list of stages with keys name/before/after and turns it
+    into an ordered list of stages. Every stage must have a unique
+    name. The topological sort visits multiple dependent stages
+    alphabetically.
+    """
+    # note that each stage is shallow-copied for modification below
+    stage_by_name = dict((stage['name'], dict(stage)) for stage in stages)
+    if len(stage_by_name) != len(stages):
+        raise ValueError('`stages` has entries with the same name')
+    # convert 'before' to 'after'
+    for stage in stages:
+        for later_stage_name in stage['before']:
+            try:
+                later_stage = stage_by_name[later_stage_name]
+            except:
+                raise ValueError('stage "%s" referred to, but not available' % later_stage_name)
+            later_stage['after'] = later_stage['after'] + [stage['name']]  # copy
+
+    visited = set()
+    visiting = set()
+    ordered_stages = []
+    def toposort(stage_name):
+        if stage_name in visiting:
+            raise ValueError('stage %s participates in stage ordering cycle' % stage_name)
+        if stage_name not in visited:
+            stage = stage_by_name[stage_name]
+            visiting.add(stage_name)
+            for earlier_stage_name in stage['after']:
+                toposort(earlier_stage_name)
+            visiting.remove(stage_name)
+            visited.add(stage_name)
+            ordered_stages.append(stage)
+    for stage_name in sorted(stage_by_name.keys()):
+        toposort(stage_name)
+    for stage in ordered_stages:
+        del stage['after']
+        del stage['before']
+    return ordered_stages
+
