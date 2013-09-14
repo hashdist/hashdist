@@ -552,7 +552,10 @@ class CommandTreeExecution(object):
                             node['prepend_flag'], 'prepend', ' ')
 
     def handle_env_mod(self, node, env, node_pos, varname, action, sep):
-        value = self.substitute(node['value'], env)
+        value = node.get('nohash_value', None)
+        if value is None:
+            value = node['value']
+        value = self.substitute(value, env)
         if action == 'set' or varname not in env or len(env[varname]) == 0:
             env[varname] = value
         elif action == 'prepend':
