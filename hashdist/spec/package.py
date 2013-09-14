@@ -2,6 +2,7 @@ import os
 from os.path import join as pjoin
 
 from .marked_yaml import marked_yaml_load
+from .utils import substitute_stack_parameters
 
 class PackageSpec(object):
     def __init__(self, doc, build_deps, run_deps):
@@ -122,5 +123,7 @@ def assemble_build_script(stages, parameters):
     stages = topological_stage_sort(stages)
     for stage in stages:
         assert stage['handler'] == 'bash' # for now
-        lines.append(stage['bash'].strip())
+        snippet = stage['bash'].strip()
+        snippet = substitute_stack_parameters(snippet, parameters)
+        lines.append(snippet)
     return '\n'.join(lines) + '\n'

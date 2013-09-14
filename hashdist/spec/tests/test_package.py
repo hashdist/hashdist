@@ -32,13 +32,13 @@ def test_assemble_stages(d):
     spec = dedent("""\
       - {name: install, handler: bash, bash: make install}
       - {name: make, handler: bash, before: install, after: configure, bash: make}
-      - {name: configure, handler: bash, bash: './configure --with-foo=${foo}'}
+      - {name: configure, handler: bash, bash: './configure --with-foo=${{foo}}'}
     """)
     parameters = {'foo': 'somevalue'}
     script = package.assemble_build_script(marked_yaml_load(spec), parameters)
     assert script == dedent("""\
     #!/bin/bash
-    ./configure --with-foo=${foo}
+    ./configure --with-foo=somevalue
     make
     make install
     """)
