@@ -186,7 +186,7 @@ import json
 from logging import DEBUG
 
 from .source_cache import SourceCache
-from .hasher import Hasher
+from .hasher import hash_document, prune_nohash
 from .common import (InvalidBuildSpecError, BuildFailedError,
                      json_formatting_options, SHORT_ARTIFACT_ID_LEN,
                      working_directory)
@@ -206,7 +206,7 @@ class BuildSpec(object):
         self.doc = canonicalize_build_spec(build_spec)
         self.name = self.doc['name']
         self.version = self.doc['version']
-        digest = Hasher(self.doc).format_digest()
+        digest = hash_document('build-spec', prune_nohash(self.doc))
         self.digest = digest
         self.artifact_id = '%s/%s' % (self.name, digest)
 

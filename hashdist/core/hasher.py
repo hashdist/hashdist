@@ -4,11 +4,56 @@
 
 """
 
+import json
 import hashlib
 import base64
 import struct
 
 hash_type = hashlib.sha256
+
+def hash_document(doctype, doc):
+    """
+    Computes a hash from a document. This is done by serializing to as
+    compact JSON as possible with sorted keys, then perform sha256
+    an. The string ``{doctype}|`` is prepended to the hashed string
+    and serves to make sure different kind of documents yield different
+    hashes even if they are identical.
+
+    Some unicode characters have multiple possible code-points, so
+    that this definition; however, this should be considered an
+    extreme corner case.  In general it should be very unusual for
+    hashes that are publicly shared/moves beyond one computer to
+    contain anything but ASCII. However, we do not enforce this, in
+    case one wishes to encode references in the local filesystem.
+
+    """
+    serialized = json.dumps(doc, indent=None, sort_keys=True, separators=(',', ':'), encoding='utf-8',
+                            ensure_ascii=True, allow_nan=False)
+    h = hashlib.sha256(doctype + '|')
+    h.update(serialized)
+    return format_digest(h)
+
+def prune_nohash(doc):
+    """
+    Returns a copy of the document with every key/value-pair whose key
+    starts with 'nohash_' is removed.
+    """
+    if isinstance(doc, (int, bool, float, bool, basestring)) or doc is None:
+        r = doc
+    elif isinstance(doc, dict):
+        r = {}
+        for key, value in doc.iteritems():
+            assert isinstance(key, basestring)
+            if not key.startswith('nohash_'):
+                r[key] = prune_nohash(value)
+    elif isinstance(doc, (list, tuple)):
+        r = [prune_nohash(child) for child in doc]
+    else:
+        raise TypeError('document contains illegal type %r' % type(doc))
+    return r
+
+
+
 
 def argsort(seq):
     return sorted(range(len(seq)), key=seq.__getitem__)

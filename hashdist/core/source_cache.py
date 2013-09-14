@@ -99,7 +99,7 @@ import stat
 from timeit import default_timer as clock
 from contextlib import closing
 
-from .hasher import Hasher, format_digest, HashingReadStream, HashingWriteStream
+from .hasher import hash_document, format_digest, HashingReadStream, HashingWriteStream
 from .fileutils import silent_makedirs
 
 pjoin = os.path.join
@@ -163,14 +163,6 @@ class ProgressBar(object):
 
     def finish(self):
         sys.stdout.write("\n")
-
-def single_file_key(filename, contents):
-    h = Hasher()
-    h.update('file')
-    h.update({'filename': filename,
-              'contents': contents})
-    return 'file:' + h.format_digest()
-
 
 def mkdir_if_not_exists(path):
     try:

@@ -1,8 +1,34 @@
+import copy
 from StringIO import StringIO
 import re
 
 from nose.tools import eq_
 from .. import hasher
+
+
+def test_prune_nohash():
+    doc = {'a': [[{'nohash_foo': [1,2,3]},
+                 1, True, False, None, 2.3, 'asdf']],
+           'nohash_foo': True}
+    doc_copy = copy.deepcopy(doc)
+    assert {'a': [[{}, 1, True, False, None, 2.3, 'asdf']]} == hasher.prune_nohash(doc)
+    # check we didn't change anything in original
+    assert doc == doc_copy
+
+
+def test_hash_document():
+    doc_a = {'a': [[{'nohash_foo': [1,2,3]},
+                    1, True, False, None, 2.3, 'asdf']],
+             'nohash_foo': True}
+    doc_b = {'a': [[{'nohash_foo': [1,2,'inserted-string', 3]},
+                    1, True, False, None, 2.3, 'asdf']],
+             'nohash_foo': True}
+    assert hasher.hash_document('test', doc_a) == hasher.hash_document('test', doc_b)
+    assert hasher.hash_document('a', doc_a) != hasher.hash_document('b', doc_b)
+
+#
+# Hasher
+#
 
 class Sink:
     # "Hashes" the data by simply creating a string out of it
@@ -40,11 +66,3 @@ def test_hashing():
     digest = hasher.Hasher({'a' : 3, 'b' : {'c' : [1, 2]}}).format_digest()
     assert 'kwefguggpl4kiafe5v6rxs23xdptpmgv' == digest
 
-
-# If we re-introduce generic ignore capabilities
-#def test_hash_json_ignore():
-#    ignore = re.compile(r'^(/a/k/x)|(.*/nohash.*)$')
-#    assert_json_hash('dict((a)dict((i)dict((x)int(3))(k)dict((y)int(5))))', {
-#        'a' : {'i' : {'x' : 3}, 'k': {'x':4,'y':5, 'nohash-x' : {'a' : 'b'}}},
-#        'nohash-foo' : [3,4]
-#        }, ignore)

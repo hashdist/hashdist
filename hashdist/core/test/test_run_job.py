@@ -31,7 +31,7 @@ def test_run_job_environment(tempdir, sc, build_store, cfg):
             {
                 "commands": [
                     {"set": "BAR", "value": "${FOO}x"},
-                    {"set": "HI", "value": "hi"},
+                    {"set": "HI", "nohash_value": "hi"},
                     {"cmd": env_to_stderr + ["FOO"]},
                     {"cmd": env_to_stderr + ["BAR"]},
                     {"cmd": env_to_stderr + ["HI"]},
