@@ -272,7 +272,7 @@ def build_mock_packages(builder, config, packages, virtuals={}, name_to_artifact
         name_to_artifact = {} # name -> (artifact_id, path)
     for pkg in packages:
         script = ['/bin/touch ${ARTIFACT}/deps\n']
-        script += ['echo %(x)s $%(x)s_ID $%(x)s >> ${ARTIFACT}/deps' % dict(x=dep.name)
+        script += ['echo %(x)s $%(x)s_ID $%(x)s_DIR >> ${ARTIFACT}/deps' % dict(x=dep.name)
                    for dep in pkg.deps]
         spec = {"name": pkg.name, "version": "na",
                 "files" : [{"target": "build.sh", "text": script}],

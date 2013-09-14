@@ -70,8 +70,8 @@ extra allowed keys:
       imports below.
 
     * **ref**: A name to use to inject information of this dependency
-      into the environment. Above, ``$zlib`` will be the
-      absolute path to the ``zlib`` artifact, and ``$zlib_id`` will be
+      into the environment. Above, ``$ZLIB_DIR`` will be the
+      absolute path to the ``zlib`` artifact, and ``$ZLIB_ID`` will be
       the full artifact ID. This can be set to `None` in order to not
       set any environment variables for the artifact.
 
@@ -285,7 +285,7 @@ def handle_imports(logger, build_store, artifact_dir, virtuals, job_spec):
         HDIST_IMPORT.append(dep_id)
         HDIST_IMPORT_PATHS.append(dep_dir)
         if dep_ref is not None:
-            env[dep_ref] = dep_dir
+            env['%s_DIR' % dep_ref] = dep_dir
             env['%s_ID' % dep_ref] = dep_id
 
         if import_.get('in_env', True):

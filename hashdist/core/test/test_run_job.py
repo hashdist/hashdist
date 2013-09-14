@@ -119,9 +119,9 @@ def test_imports(tempdir, sc, build_store, cfg):
                 {"cmd": env_to_stderr + ["FOO"]},
                 {"cmd": env_to_stderr + ["CFLAGS"]},
 
-                {"cmd": env_to_stderr + ["FOOSOFT"]},
+                {"cmd": env_to_stderr + ["FOOSOFT_DIR"]},
                 {"cmd": env_to_stderr + ["FOOSOFT_ID"]},
-                {"cmd": env_to_stderr + ["BARSOFT"]},
+                {"cmd": env_to_stderr + ["BARSOFT_DIR"]},
                 {"cmd": env_to_stderr + ["BARSOFT_ID"]},
                 ]
         }
@@ -129,9 +129,9 @@ def test_imports(tempdir, sc, build_store, cfg):
     ret_env = run_job.run_job(logger, build_store, doc, {}, '<no-artifact>', virtuals, tempdir, cfg)
     eq_(["ARTIFACT_WAS=%r" % foo_path,
          "FOO='bar'", "CFLAGS='-O1 -O2'",
-         "FOOSOFT=%r" % foo_path,
+         "FOOSOFT_DIR=%r" % foo_path,
          "FOOSOFT_ID=%r" % foo_id,
-         "BARSOFT=%r" % bar_path,
+         "BARSOFT_DIR=%r" % bar_path,
          "BARSOFT_ID=%r" % bar_id],
         filter_out(logger.lines))
 
