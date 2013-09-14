@@ -2,7 +2,8 @@ import os
 from os.path import join as pjoin
 
 from .marked_yaml import marked_yaml_load
-from .utils import substitute_stack_parameters
+from .utils import substitute_profile_parameters
+from .. import core
 
 class PackageSpec(object):
     def __init__(self, doc, build_deps, run_deps):
@@ -118,12 +119,41 @@ def assemble_build_script(stages, parameters):
     and assembles them into the final build script, which is returned
     as a string.
     """
-    lines = ['#!/bin/bash']
+    lines = []
     stages = normalize_stages(stages)
     stages = topological_stage_sort(stages)
     for stage in stages:
         assert stage['handler'] == 'bash' # for now
         snippet = stage['bash'].strip()
-        snippet = substitute_stack_parameters(snippet, parameters)
+        snippet = substitute_profile_parameters(snippet, parameters)
         lines.append(snippet)
     return '\n'.join(lines) + '\n'
+
+def _process_on_import(action, parameters):
+    action = dict(action)
+    if not ('prepend_path' in action or 'append_path' in action or 'set' in action):
+        raise ValueError('on_import action must be one of prepend_path, append_path, set')
+    action['value'] = substitute_profile_parameters(action['value'], parameters)
+    return action
+
+def create_build_spec(pkg, parameters, dep_ids):
+    if 'BASH' not in parameters:
+        raise ValueError('BASH must be provided in profile parameters')
+    on_import = [_process_on_import(env_action, parameters)
+                 for env_action in pkg.get('on_import', [])]
+    imports = []
+    for dep_name in pkg['dependencies']['build']:
+        imports.append({'ref': dep_name.upper(), 'id': dep_ids[dep_name]})
+    build_spec = {
+        "name": pkg["name"],
+        "version": pkg.get("version", "na"),
+        "build": {
+            "import": imports,
+            "commands": [
+                {"set": "BASH", "nohash_value": parameters['BASH']},
+                {"chdir": "src"},
+                {"cmd": ["$BASH", "../build.sh"]}
+                ]
+            },
+        "on_import": on_import}
+    return core.BuildSpec(build_spec)

@@ -2,7 +2,7 @@ import re
 
 _STACK_SUBST_RE = re.compile(r'\$\{\{([^}]*)\}\}')
 
-def substitute_stack_parameters(s, parameters):
+def substitute_profile_parameters(s, parameters):
     """
     Substitutes using the syntax ``${{param}}``, leaving shell substitutions
     (`${var}`, `$var`) alone. Escapes of $, ``\$``, has no special meaning
