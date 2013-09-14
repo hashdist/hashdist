@@ -65,7 +65,9 @@ def cat(filename):
         return f.read()
 
 def dump(filename, contents):
-    os.makedirs(os.path.dirname(filename))
+    d = os.path.dirname(filename)
+    if d:
+        os.makedirs(d)
     with open(filename, 'w') as f:
         f.write(dedent(contents))
 
