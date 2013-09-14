@@ -4,16 +4,17 @@ from os.path import join as pjoin
 from .marked_yaml import marked_yaml_load
 
 class PackageSpec(object):
-    def __init__(self, doc, deps):
+    def __init__(self, doc, build_deps, run_deps):
         self.doc = doc
-        self.deps = deps
+        self.build_deps = build_deps
+        self.run_deps = run_deps        
 
     @staticmethod
-    def parse(self, filename, resolver):
-        with open(filename) as f:
-            doc = marked_yaml_load(f)
-        dep_set = PackageSpecSet(resolver, doc.get('deps', []))
-        return PackageSpec(doc, dep_set)
+    def load(doc, resolver):
+        deps = doc.get('dependencies', {})
+        build_deps = PackageSpecSet(resolver, deps.get('build', []))
+        run_deps = PackageSpecSet(resolver, deps.get('run', []))
+        return PackageSpec(doc, build_deps, run_deps)
 
 class PackageSpecSet(object):
     """
@@ -35,6 +36,12 @@ class PackageSpecSet(object):
             self._values = [self[key] for key in self.packages]
         return self._values
 
+    def keys(self):
+        return list(self.packages)
+
+    def __repr__(self):
+        return '<%s: %r>' % (self.__class__.__name__, self.packages)
+
 
 _package_spec_cache = {}
 class PackageSpecResolver(object):
@@ -45,6 +52,8 @@ class PackageSpecResolver(object):
         filename = os.path.realpath(pjoin(self.path, pkgname, '%s.yaml' % pkgname))
         obj = _package_spec_cache.get(filename, None)
         if obj is None:
-            obj = _package_spec_cache[filename] = PackageSpec.parse(filename, self)
+            with open(filename) as f:
+                doc = marked_yaml_load(f)
+            obj = _package_spec_cache[filename] = PackageSpec.load(doc, self)
         return obj
 
