@@ -20,11 +20,7 @@ def test_hash_document():
     doc_a = {'a': [[{'nohash_foo': [1,2,3]},
                     1, True, False, None, 2.3, 'asdf']],
              'nohash_foo': True}
-    doc_b = {'a': [[{'nohash_foo': [1,2,'inserted-string', 3]},
-                    1, True, False, None, 2.3, 'asdf']],
-             'nohash_foo': True}
-    assert hasher.hash_document('test', doc_a) == hasher.hash_document('test', doc_b)
-    assert hasher.hash_document('a', doc_a) != hasher.hash_document('b', doc_b)
+    assert hasher.hash_document('test', doc_a) == 'z66wztnd3htsa7eojulfehxa5vxpxkcr'
 
 #
 # Hasher
