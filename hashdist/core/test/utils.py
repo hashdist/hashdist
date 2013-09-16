@@ -6,11 +6,13 @@ import functools
 import contextlib
 import subprocess
 import hashlib
+import inspect
 from textwrap import dedent
 from contextlib import closing
 
 from nose.tools import eq_
 
+from ..fileutils import silent_makedirs
 from ...hdist_logging import Logger, null_logger, DEBUG
 from logging import getLevelName
 
@@ -67,15 +69,21 @@ def cat(filename):
 def dump(filename, contents):
     d = os.path.dirname(filename)
     if d:
-        os.makedirs(d)
+        silent_makedirs(d)
     with open(filename, 'w') as f:
         f.write(dedent(contents))
 
 def temp_working_dir_fixture(func):
-    @functools.wraps(func)
-    def replacement():
-        with temp_working_dir() as d:
-            func(d)
+    if inspect.isgeneratorfunction(func):
+        @functools.wraps(func)
+        def replacement():
+            with temp_working_dir() as d:
+                for x in func(d): yield x
+    else:
+        @functools.wraps(func)
+        def replacement():
+            with temp_working_dir() as d:
+                return func(d)
     return replacement
 
 #
