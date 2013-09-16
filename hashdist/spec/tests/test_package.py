@@ -82,16 +82,33 @@ def test_create_build_spec():
             'nohash_params': {}}}
     assert expected == build_spec.doc
 
+@temp_working_dir_fixture
+def test_assemble_stages_python_handlers(d):
+    dump('base/numberechoing.py', """\
+    from hashdist.spec import handler
+    from myutils import get_echo_string
 
-## @temp_working_dir_fixture
-## def test_assemble_with_handler(d):
-##     dump('base/toimport.py', """\
-##     from hashdist.spec
-##     """)
-##     dump('base/foobase.py', """\
-##     from hashdist.spec import handler
+    @handler()
+    def echo_number(pkg, parameters, stage_args):
+        return ['%s %s %d' % (get_echo_string(), parameters['caption'], stage_args['number'])]
 
-##     @handler
-
+    """)
+    dump('base/myutils.py', """\
+    def get_echo_string(): return 'echo'
+    """)
+    dump('base/numberechoing.yaml', """\
+    build_stages:
+        - {name: configure, before: echo_number, handler: bash, bash: echo Echo coming up}
+    """)
     
-##     """)
+    spec = dedent("""\
+    extends: [numberechoing]
+      - {name: echo_number, number: 4}
+    """)
+    parameters = {'caption': 'numero'}
+    script = package.assemble_build_script(marked_yaml_load(spec), parameters)
+    assert script == dedent("""\
+    ./configure --with-foo=somevalue
+    make
+    make install
+    """)

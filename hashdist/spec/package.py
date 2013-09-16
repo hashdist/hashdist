@@ -59,6 +59,7 @@ class PackageSpecResolver(object):
             obj = _package_spec_cache[filename] = PackageSpec.load(doc, self)
         return obj
 
+
 def normalize_stages(stages):
     def normalize_stage(stage):
         # turn before/after into lists
@@ -113,6 +114,7 @@ def topological_stage_sort(stages):
         del stage['before']
     return ordered_stages
 
+
 def assemble_build_script(stages, parameters):
     """
     Turns the complete set of build-stages (as a list of document fragments)
@@ -129,12 +131,14 @@ def assemble_build_script(stages, parameters):
         lines.append(snippet)
     return '\n'.join(lines) + '\n'
 
+
 def _process_on_import(action, parameters):
     action = dict(action)
     if not ('prepend_path' in action or 'append_path' in action or 'set' in action):
         raise ValueError('on_import action must be one of prepend_path, append_path, set')
     action['value'] = substitute_profile_parameters(action['value'], parameters)
     return action
+
 
 def create_build_spec(pkg, parameters, dep_ids):
     if 'BASH' not in parameters:
