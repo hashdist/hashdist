@@ -50,7 +50,7 @@ class Profile(object):
                 if k in self.parameters:
                     raise ConflictingProfilesError('two base profiles set same parameter %s' % k)
                 self.parameters[k] = v
-        self.parameters.update(doc['parameters'])
+        self.parameters.update(doc.get('parameters', {}).get('global', {}))
 
     def close(self):
         if self.rm_on_close:
@@ -80,6 +80,53 @@ class Profile(object):
             base.get_python_path(path)
         path.insert(0, pjoin(self.basedir, 'base'))
         return path
+
+    def get_packages(self):
+        """
+        Returns a dict of package includeded in the profile, including
+        processing of package specs by base profiles.
+
+        The key is the 'virtual' name of the package within the
+        profile. The value is a tuple ``(name, variant)``, where
+        variant is `None` if none is given. As a special case,
+        'package/skip' removes a package from the dict (which may have
+        been added by an ancestor profile).
+        """
+        def parse_entry(s):
+            parts = s.split('/')
+            if len(parts) == 1:
+                return (parts[0], None)
+            elif len(parts) == 2:
+                return tuple(parts)
+            else:
+                raise ValueError('Too many slashes in package name: %s' % s)
+
+        packages = {}
+        # import from base
+        for base in self.extends:
+            for k, v in base.get_packages().iteritems():
+                if k in packages:
+                    raise ConflictingProfilesError('package %s found in two different base profiles')
+                packages[k] = v
+        # parse this profiles packages section
+        lst = self.doc.get('packages', [])
+        for entry in lst:
+            if isinstance(entry, basestring):
+                name, variant = parse_entry(entry)
+                vname = name
+            elif len(entry) != 1:
+                raise ValueError('each package specification dict should have a single key only')
+            else:
+                vname, s = entry.items()[0]
+                name, variant = parse_entry(s)
+
+            if variant == 'skip':
+                if vname in packages:
+                    del packages[vname]
+                continue
+            packages[vname] = (name, variant)
+
+        return packages
 
     def __repr__(self):
         return '<Profile %s>' % pjoin(self.basedir, self.doc_name)

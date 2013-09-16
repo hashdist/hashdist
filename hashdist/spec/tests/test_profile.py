@@ -1,3 +1,4 @@
+from pprint import pprint
 import os
 from os.path import join as pjoin
 from nose.tools import eq_, ok_
@@ -18,19 +19,33 @@ def test_profile_resolution(d):
         dir: %(d)s/base2
     
     parameters:
-      a: 1
-      b: 2
+      global:
+        a: 1
+        b: 2
+
+    packages:
+      - gcc/host
+      - numpy
+      - to-be-deleted/skip
     """ % dict(d=d))
 
     dump("base1/profiles/linux.yaml", """\
     parameters:
-      a: 0
-      c: 3
+      global:
+        a: 0
+        c: 3
+    packages:
+      - to-be-deleted # skipped in user/profile.yaml
+      - mpi: openmpi/1.4.3
     """ % dict(d=d))
 
     dump("base2/profiles/linux.yaml", """\
     parameters:
-      d: 4
+      global:
+        d: 4
+    packages:
+      - numpy/host # changed to numpy/latest in user/profile.yaml
+      - python/host # not changed
     """ % dict(d=d))
 
     # foo.txt from base1 overridden
@@ -63,3 +78,9 @@ def test_profile_resolution(d):
     
     yield eq_, p.get_python_path(), [pjoin(d, 'user', 'base'), pjoin(d, 'base2', 'base'),
                                      pjoin(d, 'base1', 'base')]
+
+    pkgs = p.get_packages()
+    yield eq_, pkgs, {'python': ('python', 'host'),
+                      'numpy': ('numpy', None),
+                      'gcc': ('gcc', 'host'),
+                      'mpi': ('openmpi', '1.4.3')}
