@@ -18,10 +18,12 @@ The ``stable`` branch contains the latest release (currently 0.1).
     https://groups.google.com/forum/?fromgroups#!forum/hashdist
 
 **Authors:**
-    Dag Sverre Seljebotn,
+    Aron Ahmadia,
     Ondrej Certik,
     Chris Kees,
-    Fernando Perez
+    Fernando Perez,
+    Dag Sverre Seljebotn,
+    Andy Terrel
 
 **Funding:**
     Hashdist is partially funded by the International Research Office,
