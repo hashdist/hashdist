@@ -6,6 +6,7 @@ Not supported:
 
 """
 
+import tempfile
 import os
 import shutil
 from os.path import join as pjoin
@@ -53,6 +54,8 @@ class Profile(object):
         self.parameters.update(doc.get('parameters', {}).get('global', {}))
 
     def close(self):
+        for base in self.extends:
+            base.close()
         if self.rm_on_close:
             shutil.rmtree(self.basedir)
 
@@ -131,7 +134,13 @@ class Profile(object):
     def __repr__(self):
         return '<Profile %s>' % pjoin(self.basedir, self.doc_name)
 
-def load_profile(include_doc):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self.close()
+
+def load_profile(source_cache, include_doc):
     """
     Loads a Profile given an include document fragment, e.g.::
 
@@ -141,21 +150,31 @@ def load_profile(include_doc):
     or::
 
         profile: linux/profile.yaml
-        url: git://github.com/hashdist/hashstack.git
+        urls: [git://github.com/hashdist/hashstack.git]
         key: git:5aeba2c06ed1458ae4dc5d2c56bcf7092827347e
 
     The load happens recursively, including fetching any remote
     dependencies.
     """
     profile_rel_file = include_doc['profile']
-    assert 'dir' in include_doc
-    basedir = include_doc['dir']
+    if 'dir' in include_doc:
+        basedir = include_doc['dir']
+        created_basedir = False
+    else:
+        # check out git repo to temporary directory
+        assert len(include_doc['urls']) == 1
+        basedir = tempfile.mkdtemp()
+        created_basedir = True
+        source_cache.fetch(include_doc['urls'][0], include_doc['key'], 'stack-desc')
+        source_cache.unpack(include_doc['key'], basedir)
+
+
     assert os.path.isabs(basedir)
     with open(pjoin(basedir, profile_rel_file)) as f:
         doc = marked_yaml_load(f)
     if 'extends' in doc:
-        extends = [load_profile(parent_include) for parent_include in doc['extends']]
+        extends = [load_profile(source_cache, parent_include) for parent_include in doc['extends']]
         del doc['extends']
     else:
         extends = []
-    return Profile(basedir, profile_rel_file, doc, extends, rm_on_close=False)
+    return Profile(basedir, profile_rel_file, doc, extends, rm_on_close=created_basedir)

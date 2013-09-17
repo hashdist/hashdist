@@ -86,6 +86,23 @@ def temp_working_dir_fixture(func):
                 return func(d)
     return replacement
 
+
+def ctxmgr_to_fixture(ctxmgr_func):
+    def decorator(func):
+        if inspect.isgeneratorfunction(func):
+            @functools.wraps(func)
+            def replacement(*args, **kw):
+                with ctxmgr_func() as ctx:
+                    for x in func(ctx, *args, **kw): yield x
+        else:
+            @functools.wraps(func)
+            def replacement(*args, **kw):
+                with ctxmgr_func as ctx:
+                    return func(ctx, *args, **kw)
+        return replacement
+    return decorator
+
+
 #
 # Logger to use during unit-testing
 #
