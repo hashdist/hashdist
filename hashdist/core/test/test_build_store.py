@@ -79,6 +79,7 @@ def fixture(short_hash_len=SHORT_ARTIFACT_ID_LEN, dir_pattern='{name}/{shorthash
 
                 config = {
                     'sourcecache/sources': pjoin(tempdir, 'src'),
+                    'sourcecache/mirror': '',
                     'builder/artifacts': pjoin(tempdir, 'opt'),
                     'builder/build-temp': pjoin(tempdir, 'bld'),
                     'global/db': pjoin(tempdir, 'db'),
