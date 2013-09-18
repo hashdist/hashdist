@@ -29,9 +29,6 @@ to reproduce a job run, and hash the job spec. Example:
             {"ref": "UNIX", "id": "virtual:unix"},
             {"ref": "GCC", "id": "gcc/jonykztnjeqm7bxurpjuttsprphbooqt"}
          ],
-         "nohash_params" : {
-            "NCORES": "4"
-         }
          "commands" : [
              {"chdir": "src"},
              {"prepend_path": "FOOPATH", "value": "$ARTIFACT/bin"},
@@ -80,19 +77,11 @@ extra allowed keys:
       etc.). Otherwise the artifact can only be used through the
       variables ``ref`` sets up. Defaults to `True`.
 
-**nohash_params**:
-    Initial set of environment variables that do not contribute to the
-    hash. Should only be used when one is willing to trust that the
-    value does not affect the build result in any way. E.g.,
-    parallelization flags, paths to manually downloaded binary
-    installers, etc.
-
 When executing, the environment is set up as follows:
 
     * Environment is cleared (``os.environ`` has no effect)
     * The initial environment provided by caller (e.g.,
       :class:`.BuildStore` provides `$ARTIFACT` and `$BUILD`) is loaded
-    * The `nohash_params` dict (if present) is loaded into the env
     * The `import` section is processed
     * Commands executed (which may modify env)
 
@@ -129,6 +118,8 @@ See example above for basic script structure. Rules:
    variable substitution as explained below. `set` simply overwrites
    variable, while the others modify path/flag-style variables, using the
    `os.path.patsep` for `prepend/append_path` and a space for `prepend/append_flag`.
+   **NOTE:** One can use `nohash_value` instead of `value` to avoid the
+   value to enter the hash of a build specification.
 
  * `files` specifies files that are dumped to temporary files and made available
    as `$in0`, `$in1` and so on. Each file has the form ``{typestr: value}``,
@@ -360,7 +351,6 @@ def run_job(logger, build_store, job_spec, override_env, artifact_dir, virtuals,
     
     # Need to explicitly clear PATH, otherwise Popen will set it.
     env['PATH'] = ''
-    env.update(job_spec.get('nohash_params', {}))
     env.update(override_env)
     env['HDIST_VIRTUALS'] = pack_virtuals_envvar(virtuals)
     env['HDIST_CONFIG'] = json.dumps(config, separators=(',', ':'))
@@ -387,7 +377,6 @@ def canonicalize_job_spec(job_spec):
     result = dict(job_spec)
     result['import'] = [
         canonicalize_import(item) for item in result.get('import', ())]
-    result.setdefault("nohash_params", {})
     return result
     
 def substitute(x, env):

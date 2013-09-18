@@ -24,10 +24,10 @@ def test_run_job_environment(tempdir, sc, build_store, cfg):
     # works
     LD_LIBRARY_PATH = os.environ.get("LD_LIBRARY_PATH", "")
     job_spec = {
-        "nohash_params": {"BAR": "$bar"},
         "commands": [
             {"set": "LD_LIBRARY_PATH", "value": LD_LIBRARY_PATH},
             {"set": "FOO", "value": "foo"},
+            {"set": "BAR", "nohash_value": "bar"},
             {
                 "commands": [
                     {"set": "BAR", "value": "${FOO}x"},
@@ -50,7 +50,7 @@ def test_run_job_environment(tempdir, sc, build_store, cfg):
     del ret_env['PWD']
     expected = {
         'ARTIFACT': '<no-artifact>',
-        'BAR': '$bar',
+        'BAR': 'bar',
         'BAZ': 'BAZ',
         'FOO': 'foo',
         'HDIST_IMPORT': '',
@@ -61,7 +61,7 @@ def test_run_job_environment(tempdir, sc, build_store, cfg):
         }
     eq_(expected, ret_env)
     lines = filter_out(logger.lines)
-    eq_(["FOO='foo'", "BAR='foox'", "HI='hi'", "FOO='foo'", "BAR='$bar'", 'HI=None'],
+    eq_(["FOO='foo'", "BAR='foox'", "HI='hi'", "FOO='foo'", "BAR='bar'", 'HI=None'],
         lines)
 
 @build_store_fixture()
