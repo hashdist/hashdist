@@ -3,6 +3,7 @@ from ...core.test.utils import *
 from .. import package
 from ..marked_yaml import marked_yaml_load
 
+from nose import SkipTest
 
 def test_topological_stage_sort():
     stages = [dict(name='z'),
@@ -13,27 +14,6 @@ def test_topological_stage_sort():
     stages = package.normalize_stages(stages)
     stages = package.topological_stage_sort(stages)
     assert stages == [{'name': 'a'}, {'name': 'b'}, {'name': 'aa'}, {'name': 'c'}, {'name': 'z'}]
-
-@temp_working_dir_fixture
-def test_package_loading(d):
-    dump("pkgs/b/b.yaml", """\
-    name: b
-    sources:
-      - http://foo
-    dependencies:
-      build: [a]
-      run: [a]
-    """)
-
-    dump("pkgs/a/a.yaml", """\
-    name: a
-    """)
-
-    resolver = package.PackageSpecResolver("pkgs")
-    b = resolver.parse_package("b")
-    assert ['a'] == b.run_deps.keys()
-    assert ['a'] == b.build_deps.keys()
-    assert 'a' == b.run_deps['a'].doc['name']
 
 #
 # Build script assembly
@@ -84,6 +64,8 @@ def test_create_build_spec():
 
 @temp_working_dir_fixture
 def test_assemble_stages_python_handlers(d):
+    raise SkipTest("only test case written for this one")
+
     dump('base/numberechoing.py', """\
     from hashdist.spec import handler
     from myutils import get_echo_string

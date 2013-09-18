@@ -2,21 +2,29 @@ import os
 from os.path import join as pjoin
 
 from .marked_yaml import marked_yaml_load
-from .utils import substitute_profile_parameters
+from .utils import substitute_profile_parameters, topological_sort
 from .. import core
 
+_package_spec_cache = {}
+
 class PackageSpec(object):
-    def __init__(self, doc, build_deps, run_deps):
+    def __init__(self, doc):
         self.doc = doc
-        self.build_deps = build_deps
-        self.run_deps = run_deps        
+        deps = doc.get('dependencies', {})
+        self.build_deps = deps.get('build', [])
+        self.run_deps = deps.get('run', [])
 
     @staticmethod
-    def load(doc, resolver):
-        deps = doc.get('dependencies', {})
-        build_deps = PackageSpecSet(resolver, deps.get('build', []))
-        run_deps = PackageSpecSet(resolver, deps.get('run', []))
-        return PackageSpec(doc, build_deps, run_deps)
+    def load_from_file(filename):
+        filename = os.path.realpath(filename)
+        obj = _package_spec_cache.get(filename, None)
+        if obj is None:
+            with open(filename) as f:
+                doc = marked_yaml_load(f)
+            if doc is None:
+                doc = {}
+            obj = _package_spec_cache[filename] = PackageSpec(doc)
+        return obj
 
 class PackageSpecSet(object):
     """
@@ -45,7 +53,6 @@ class PackageSpecSet(object):
         return '<%s: %r>' % (self.__class__.__name__, self.packages)
 
 
-_package_spec_cache = {}
 class PackageSpecResolver(object):
     def __init__(self, path):
         self.path = path
