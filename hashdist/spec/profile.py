@@ -62,7 +62,7 @@ class Profile(object):
                 if k in self.parameters:
                     raise ConflictingProfilesError('two base profiles set same parameter %s' % k)
                 self.parameters[k] = v
-        self.parameters.update(doc.get('parameters', {}).get('global', {}))
+        self.parameters.update(doc.get('parameters', {}))
 
         d = os.path.dirname(filename)
         self._packages_dir = os.path.abspath(pjoin(d, doc['packages_dir'])) if 'packages_dir' in doc else None

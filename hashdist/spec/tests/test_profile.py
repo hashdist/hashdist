@@ -71,22 +71,19 @@ def test_profile_parameters(d):
           - profile: base1.yaml
           - profile: base2.yaml
         parameters:
-          global:
-            a: 1
-            b: 2
+          a: 1
+          b: 2
     """)
     
     dump("base1.yaml", """\
         parameters:
-          global:
-            a: 0
-            c: 3
+          a: 0
+          c: 3
     """)
 
     dump("base2.yaml", """\
         parameters:
-          global:
-            d: 4
+          d: 4
     """)
     
     p = profile.load_profile(source_cache, {"profile": "profile.yaml"})
