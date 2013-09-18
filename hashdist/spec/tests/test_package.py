@@ -1,3 +1,4 @@
+from pprint import pprint
 from textwrap import dedent
 from ...core.test.utils import *
 from .. import package
@@ -47,19 +48,22 @@ def test_create_build_spec():
           - prepend_path: PYTHONPATH
             value: foo${{X}} ${X}
     """))
-    parameters = {'X': 'x', 'BASH': '/bin/bash'}
-    build_spec = package.create_build_spec(package_spec, parameters, {'otherlib': 'otherlib/abcdefg'})
+    parameters = {"X": "x", "BASH": "/bin/bash"}
+    build_spec = package.create_build_spec(package_spec, parameters, {"otherlib": "otherlib/abcdefg"})
     expected = {
-        'name': 'mylib',
-        'version': 'na',
-        'on_import': [{'prepend_path': 'PYTHONPATH', 'value': 'foox ${X}'}],
-        'build': {
-            'import': [{'in_env': True, 'ref': 'OTHERLIB', 'id': 'otherlib/abcdefg'}],
-            'commands': [
-                {'set': 'BASH', 'nohash_value': '/bin/bash'},
-                {'chdir': 'src'},
-                {'cmd': ['$BASH', '../build.sh']}],
-            'nohash_params': {}}}
+        "name": "mylib",
+        "version": "na",
+        "on_import": [{"prepend_path": "PYTHONPATH", "value": "foox ${X}"}],
+        "build": {
+            "import": [{"in_env": True, "ref": "OTHERLIB", "id": "otherlib/abcdefg"}],
+            "commands": [
+                {"set": "BASH", "nohash_value": "/bin/bash"},
+                {"chdir": "src"},
+                {"cmd": ["$BASH", "../build.sh"]}],
+            "nohash_params": {}},
+        "sources": [
+            {"key": "git:a3c39a03e7b8e9a3321d69ff877338f99ebb4aa2", "target": "src"}
+            ]}
     assert expected == build_spec.doc
 
 @temp_working_dir_fixture
