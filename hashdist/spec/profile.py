@@ -187,6 +187,9 @@ def load_profile(source_cache, include_doc, cwd=None):
                 cwd = os.getcwd()
             p = os.path.abspath(pjoin(cwd, p))
         return p
+
+    if isinstance(include_doc, str):
+        include_doc = {'profile': include_doc}
     
     if 'key' in include_doc:
         # Check out git repo to temporary directory. cwd is relative to checked out root.

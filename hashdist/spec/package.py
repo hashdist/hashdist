@@ -8,14 +8,18 @@ from .. import core
 _package_spec_cache = {}
 
 class PackageSpec(object):
-    def __init__(self, doc):
+    def __init__(self, name, doc):
+        self.name = name
         self.doc = doc
         deps = doc.get('dependencies', {})
         self.build_deps = deps.get('build', [])
         self.run_deps = deps.get('run', [])
+        if not isinstance(self.build_deps, list) or not isinstance(self.run_deps, list):
+            raise TypeError('dependencies must be a list')
+
 
     @staticmethod
-    def load_from_file(filename):
+    def load_from_file(name, filename):
         filename = os.path.realpath(filename)
         obj = _package_spec_cache.get(filename, None)
         if obj is None:
@@ -23,8 +27,30 @@ class PackageSpec(object):
                 doc = marked_yaml_load(f)
             if doc is None:
                 doc = {}
-            obj = _package_spec_cache[filename] = PackageSpec(doc)
+            obj = _package_spec_cache[filename] = PackageSpec(name, doc)
         return obj
+
+    def fetch_sources(self, source_cache):
+        for source_clause in self.doc.get('sources', []):
+            source_cache.fetch(source_clause['url'], source_clause['key'], self.name)
+
+    def assemble_build_script(self, parameters):
+        """
+        Return build script (Bash script) that should be run to build package.
+        """
+        build_stages = self.doc.get('build_stages', [])
+        return assemble_build_script(build_stages, parameters)
+
+    def assemble_build_spec(self, source_cache, parameters, dependency_id_map):
+        """
+        Returns the build.json for building the package. Also, the build script (Bash script)
+        that should be run to build the package is uploaded to the given source cache.
+        """
+        build_script = self.assemble_build_script(parameters)
+        build_script_key = source_cache.put({'build.sh': build_script})
+        build_spec = create_build_spec(self.name, self.doc, parameters, dependency_id_map,
+                                       [{'target': '.', 'key': build_script_key}])
+        return build_spec
 
 class PackageSpecSet(object):
     """
@@ -117,7 +143,7 @@ def assemble_build_script(stages, parameters):
     and assembles them into the final build script, which is returned
     as a string.
     """
-    lines = []
+    lines = ['set -e']
     stages = normalize_stages(stages)
     stages = topological_stage_sort(stages)
     for stage in stages:
@@ -136,24 +162,63 @@ def _process_on_import(action, parameters):
     return action
 
 
-def create_build_spec(pkg, parameters, dep_ids):
+def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map, extra_sources=()):
+    if isinstance(dependency_id_map, dict):
+        dependency_id_map = dependency_id_map.__getitem__
+                  
     if 'BASH' not in parameters:
         raise ValueError('BASH must be provided in profile parameters')
+
+    # dependencies
     on_import = [_process_on_import(env_action, parameters)
-                 for env_action in pkg.get('on_import', [])]
+                 for env_action in pkg_doc.get('on_import', [])]
     imports = []
-    for dep_name in pkg['dependencies']['build']:
-        imports.append({'ref': dep_name.upper(), 'id': dep_ids[dep_name]})
+    build_deps = pkg_doc.get('dependencies', {}).get('build', [])
+    for dep_name in build_deps:
+        imports.append({'ref': '%s' % dep_name.upper(), 'id': dependency_id_map(dep_name)})
+
+    # sources
+    sources = list(extra_sources)
+    for source_clause in pkg_doc.get("sources", []):
+        sources.append({"target": "src", "key": source_clause["key"]})
+
+    # build commands
+    commands = []
+    commands.append({"set": "BASH", "nohash_value": parameters['BASH']})
+    if 'PATH' in parameters:
+        commands.append({"set": "PATH", "nohash_value": parameters['PATH']})
+    commands.append({"chdir": "src"})
+    commands.append({"cmd": ["$BASH", "../build.sh"]})
+
+    # install
+    install_link_rules = [
+        {"action": "relative_symlink",
+         "select": "$ARTIFACT/lib/python*/site-packages/*",
+         "prefix": "$ARTIFACT",
+         "target": "$PROFILE",
+         "dirs": True},
+        {"action": "exclude",
+         "select": "$ARTIFACT/lib/python*/site-packages/**/*"},
+        {"action": "relative_symlink",
+         "select": "$ARTIFACT/*/**/*",
+         "prefix": "$ARTIFACT",
+         "target": "$PROFILE"}
+        ]
+
+    # assemble
     build_spec = {
-        "name": pkg["name"],
-        "version": pkg.get("version", "na"),
+        "name": pkg_name,
+        "version": pkg_doc.get("version", "na"),
         "build": {
             "import": imports,
-            "commands": [
-                {"set": "BASH", "nohash_value": parameters['BASH']},
-                {"chdir": "src"},
-                {"cmd": ["$BASH", "../build.sh"]}
-                ]
+            "commands": commands,
             },
-        "on_import": on_import}
+        "sources": sources,
+        "on_import": on_import,
+        "profile_install": {
+            "commands": [{"hit": ["create-links", "$in0"],
+                          "inputs": [{"json": install_link_rules}]}],
+            }
+        }
+        
     return core.BuildSpec(build_spec)
