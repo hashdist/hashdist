@@ -95,25 +95,14 @@ def topological_stage_sort(stages):
 
     visited = set()
     visiting = set()
-    ordered_stages = []
-    def toposort(stage_name):
-        if stage_name in visiting:
-            raise ValueError('stage %s participates in stage ordering cycle' % stage_name)
-        if stage_name not in visited:
-            stage = stage_by_name[stage_name]
-            visiting.add(stage_name)
-            for earlier_stage_name in stage['after']:
-                toposort(earlier_stage_name)
-            visiting.remove(stage_name)
-            visited.add(stage_name)
-            ordered_stages.append(stage)
-    for stage_name in sorted(stage_by_name.keys()):
-        toposort(stage_name)
+    ordered_stage_names = topological_sort(
+        sorted(stage_by_name.keys()),
+        lambda stage_name: sorted(stage_by_name[stage_name]['after']))
+    ordered_stages = [stage_by_name[stage_name] for stage_name in ordered_stage_names]
     for stage in ordered_stages:
         del stage['after']
         del stage['before']
     return ordered_stages
-
 
 def assemble_build_script(stages, parameters):
     """
