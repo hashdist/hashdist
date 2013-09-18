@@ -7,7 +7,7 @@ from nose.tools import eq_, ok_
 
 
 from ...core.test import utils
-
+from ...core.test.utils import which
 from ...core.test.test_build_store import fixture
 
 
@@ -87,23 +87,16 @@ def test_build_profile(tempdir, sc, bldr, cfg):
     # 3) That "share" does not disappear (contains another file created in meantime),
     #    but "should-be-removed" does (empty after popping profile).
 
-    if os.path.exists('/usr/bin/readlink'):
-        readlink = '/usr/bin/readlink'
-    elif os.path.exists('/bin/readlink'):
-        readlink = '/bin/readlink'
-    else:
-        raise OSError('Unable to find system readlink')
-
     app_spec = {
         "name": "app",
         "version": "n",
         "build": {
             "import": [{"id": corelib_id}],
             "commands": [
-                {"cmd": ["/bin/echo", "hello world"], "append_to_file": "$ARTIFACT/hello"}, # must not be removed by pop
+                {"cmd": [which("echo"), "hello world"], "append_to_file": "$ARTIFACT/hello"}, # must not be removed by pop
                 {"hit": ["build-profile", "push"]},
-                {"cmd": ["/bin/echo", "hello world"], "append_to_file": "$ARTIFACT/share/foo"}, # preserve "share" dir
-                {"cmd": [readlink, "$ARTIFACT/should-be-removed/hello"], "append_to_file": "$ARTIFACT/result"},
+                {"cmd": [which("echo"), "hello world"], "append_to_file": "$ARTIFACT/share/foo"}, # preserve "share" dir
+                {"cmd": [which("readlink"), "$ARTIFACT/should-be-removed/hello"], "append_to_file": "$ARTIFACT/result"},
                 {"hit": ["build-profile", "pop"]},
                 ]
             }

@@ -14,7 +14,7 @@ from pprint import pprint
 from nose.tools import eq_
 from nose import SkipTest
 
-from .utils import logger, temp_dir, temp_working_dir, assert_raises
+from .utils import which, logger, temp_dir, temp_working_dir, assert_raises
 from . import utils
 
 from .. import source_cache, build_store, InvalidBuildSpecError, BuildFailedError, InvalidJobSpecError
@@ -101,7 +101,7 @@ def test_basic(tempdir, sc, bldr, config):
     script_key = sc.put({'build.sh': dedent("""\
     echo hi stdout path=[$PATH]
     echo hi stderr>&2
-    /usr/bin/find > ${ARTIFACT}/hello
+    /usr/bin/find . > ${ARTIFACT}/hello
     """)})
     spec = {
         "name": "foo",
@@ -166,9 +166,9 @@ def test_failing_build_and_multiple_commands(tempdir, sc, bldr, config):
     spec = {"name": "foo", "version": "na",
             "build": {
                 "commands": [
-                    {"cmd": ["/bin/echo", "test"], "append_to_file": "foo2"},
-                    {"cmd": ["/bin/true"]},
-                    {"cmd": ["/bin/false"]},
+                    {"cmd": [which("echo"), "test"], "append_to_file": "foo2"},
+                    {"cmd": [which("true")]},
+                    {"cmd": [which("false")]},
                 ]
            }}
     try:
@@ -211,7 +211,7 @@ def test_hash_prefix_collision(tempdir, sc, bldr, config):
         for k in range(15):
             spec = {"name": "foo", "version": "na",
                     "build": {
-                        "commands": [{"cmd": ["/bin/echo", "hello", str(k)]}]
+                        "commands": [{"cmd": [which("echo"), "hello", str(k)]}]
                         }
                     }
             artifact_id, path = bldr.ensure_present(spec, config)
@@ -272,7 +272,7 @@ def build_mock_packages(builder, config, packages, virtuals={}, name_to_artifact
     if name_to_artifact is None:
         name_to_artifact = {} # name -> (artifact_id, path)
     for pkg in packages:
-        script = ['/bin/touch ${ARTIFACT}/deps\n']
+        script = [which('touch') + ' ${ARTIFACT}/deps\n']
         script += ['echo %(x)s $%(x)s_ID $%(x)s >> ${ARTIFACT}/deps' % dict(x=dep.name)
                    for dep in pkg.deps]
         spec = {"name": pkg.name, "version": "na",

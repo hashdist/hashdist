@@ -10,7 +10,7 @@ from nose import SkipTest
 from .. import run_job
 from .test_build_store import fixture as build_store_fixture
 
-from .utils import MemoryLogger, logger as test_logger, assert_raises
+from .utils import which, MemoryLogger, logger as test_logger, assert_raises
 
 env_to_stderr = [sys.executable, '-c',
                  "import os, sys; sys.stderr.write("
@@ -220,7 +220,7 @@ def test_attach_log(tempdir, sc, build_store, cfg):
 def test_error_exit(tempdir, sc, build_store, cfg):
     job_spec = {
         "commands": [
-            {"cmd": ["/bin/false"]},
+            {"cmd": [which("false")]},
         ]}
     logger = MemoryLogger()
     with assert_raises(CalledProcessError):

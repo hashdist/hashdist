@@ -438,7 +438,7 @@ class CommandTreeExecution(object):
         self.log_fifo_filenames = {}
         if temp_dir is None:
             self.rm_temp_dir = True
-            temp_dir = tempfile.mkdtemp(prefix='hashdist-run-job-')
+            temp_dir = os.path.realpath(tempfile.mkdtemp(prefix='hashdist-run-job-'))
         else:
             if os.listdir(temp_dir) != []:
                 raise Exception('temp_dir must be an empty directory')

@@ -15,9 +15,21 @@ from logging import getLevelName
 
 from os.path import join as pjoin
 
+def which(filename):
+    """Checks PATH for the location of filename"""
+
+    locations = os.environ.get("PATH").split(os.pathsep)
+    for location in locations:
+        candidate = os.path.join(location, filename)
+        if os.path.isfile(candidate):
+            return candidate
+    raise OSError('Unable to find system %s' % filename,)
+
 
 def make_abs_temp_dir():
+    """Create a temporary directory and get its absolute path"""
     return os.path.realpath(tempfile.mkdtemp())
+
 
 # Make our own assert_raises, as nose.tools doesn't have it on Python 2.6
 # We always use the context manager form
