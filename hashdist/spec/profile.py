@@ -49,17 +49,15 @@ class Profile(object):
     """
     Profiles acts as nodes in a tree, with `extends` containing the
     parent profiles (which are child nodes in a DAG).
-
-    Other nodes in the DAG are PackageFiles and BaseFiles.
     """
-    def __init__(self, filename, doc, includes, hold_ref_to=None):
+    def __init__(self, filename, doc, parents, hold_ref_to=None):
         self.filename = filename
         self.doc = doc
-        self.includes = includes
+        self.parents = parents
         self._hold_ref_to = hold_ref_to
         # for now, we require that bases have non-overlapping parameter keys
         self.parameters = {}
-        for base in includes:
+        for base in parents:
             for k, v in base.parameters.iteritems():
                 if k in self.parameters:
                     raise ConflictingProfilesError('two base profiles set same parameter %s' % k)
@@ -70,15 +68,15 @@ class Profile(object):
         self._packages_dir = os.path.abspath(pjoin(d, doc['packages_dir'])) if 'packages_dir' in doc else None
         self._base_dir = os.path.abspath(pjoin(d, doc['base_dir'])) if 'base_dir' in doc else None
 
-    def _find_resource_in_includes(self, resource_type, resource_getter_name, resource_name):
+    def _find_resource_in_parents(self, resource_type, resource_getter_name, resource_name):
         filename = None
-        for child in self.includes:
-            child_filename = getattr(child, resource_getter_name)(resource_name)
-            if child_filename is not None:
+        for parent in self.parents:
+            parent_filename = getattr(parent, resource_getter_name)(resource_name)
+            if parent_filename is not None:
                 if filename is not None:
                     raise ConflictingProfilesError('%s %s found in sibling included profiles' %
                                                    (resource_type, resource_name))
-            filename = child_filename
+            filename = parent_filename
         return filename
 
     def find_package_file(self, name):
@@ -94,7 +92,7 @@ class Profile(object):
 
         if filename is None:
             # try included profiles; only allow it to come from one of them
-            filename = self._find_resource_in_includes('package', 'find_package_file', name)
+            filename = self._find_resource_in_parents('package', 'find_package_file', name)
         return filename
 
     def find_base_file(self, name):
@@ -104,7 +102,7 @@ class Profile(object):
             if not os.path.exists(filename):
                 filename = None
         if filename is None:
-            filename = self._find_resource_in_includes('base file', 'find_base_file', name)
+            filename = self._find_resource_in_parents('base file', 'find_base_file', name)
         return filename
 
     def get_python_path(self, path=None):
@@ -115,9 +113,10 @@ class Profile(object):
         """
         if path is None:
             path = []
-        for base in self.extends:
+        for base in self.parents:
             base.get_python_path(path)
-        path.insert(0, pjoin(self.basedir, 'base'))
+        if self._base_dir is not None:
+            path.insert(0, self._base_dir)
         return path
 
     def get_packages(self):
@@ -131,18 +130,19 @@ class Profile(object):
         'package/skip' removes a package from the dict (which may have
         been added by an ancestor profile).
         """
-        def parse_entry(s):
-            parts = s.split('/')
-            if len(parts) == 1:
-                return (parts[0], None)
-            elif len(parts) == 2:
-                return tuple(parts)
+        def parse_package(pkg):
+            if isinstance(pkg, basestring):
+                return pkg, {}
+            elif isinstance(pkg, dict):
+                if len(pkg) != 1:
+                    raise ValueError('package must be given as a single {name : attr-dict} dict')
+                return pkg.keys()[0], pkg.values()[0]
             else:
-                raise ValueError('Too many slashes in package name: %s' % s)
+                raise TypeError('Not a package: %s' % pkg)
 
         packages = {}
         # import from base
-        for base in self.extends:
+        for base in self.parents:
             for k, v in base.get_packages().iteritems():
                 if k in packages:
                     raise ConflictingProfilesError('package %s found in two different base profiles')
@@ -150,20 +150,15 @@ class Profile(object):
         # parse this profiles packages section
         lst = self.doc.get('packages', [])
         for entry in lst:
-            if isinstance(entry, basestring):
-                name, variant = parse_entry(entry)
-                vname = name
-            elif len(entry) != 1:
-                raise ValueError('each package specification dict should have a single key only')
-            else:
-                vname, s = entry.items()[0]
-                name, variant = parse_entry(s)
-
-            if variant == 'skip':
-                if vname in packages:
-                    del packages[vname]
+            name, settings = parse_package(entry)
+            if settings.get('skip', False):
+                if name in packages:
+                    del packages[name]
                 continue
-            packages[vname] = (name, variant)
+            if name in packages:
+                packages[name].update(settings)
+            else:
+                packages[name] = settings
 
         return packages
 
@@ -209,10 +204,10 @@ def load_profile(source_cache, include_doc, cwd=None):
         doc = marked_yaml_load(f)
     if doc is None:
         doc = {}
-    if 'include' in doc:
+    if 'extends' in doc:
         new_cwd = os.path.dirname(profile)
-        includes = [load_profile(source_cache, include, cwd=new_cwd) for include in doc['include']]
-        del doc['include']
+        parents = [load_profile(source_cache, ancestor, cwd=new_cwd) for ancestor in doc['extends']]
+        del doc['extends']
     else:
-        includes = []
-    return Profile(profile, doc, includes, hold_ref_to=dir_remover)
+        parents = []
+    return Profile(profile, doc, parents, hold_ref_to=dir_remover)
