@@ -16,8 +16,12 @@ class DebianHostPackages(HostPackages):
     def __init__(self, logger, cache):
         self.cache = cache
         self.logger = logger
-        # Invalidate cache if host system package state has changed
-        mtime = os.stat('/var/lib/dpkg/status').st_mtime
+
+        try:
+            # Invalidate cache if host system package state has changed
+            mtime = os.stat('/var/lib/dpkg/status').st_mtime
+        except OSError, e:
+            raise WrongHostTypeError('Not a Debian-based system')
         if cache.get(_CACHE_DOMAIN, 'mtime', None) != mtime:
             logger.debug('Debian package state changed, invalidating cache')
             cache.invalidate(_CACHE_DOMAIN)
