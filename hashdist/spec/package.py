@@ -7,19 +7,40 @@ from .. import core
 
 _package_spec_cache = {}
 
+class IllegalPackageSpecError(Exception):
+    pass
+
 class PackageSpec(object):
-    def __init__(self, name, doc):
+    """
+
+    ancestor_docs: dict of {ancestor_name: document of ancestor}
+
+    """
+    def __init__(self, name, doc, ancestor_docs):
         self.name = name
-        self.doc = doc
+        self.doc = dict(doc)  # copy, we want to modify it to remove processed stages
+
+        # Extract ancestor docs
+        self.ancestor_docs = {}
+        extends = doc.get('extends', [])
+        for name in extends:
+            try:
+                self.ancestor_docs[name] = ancestor_docs[name]
+            except KeyError:
+                raise ValueError('Missing "%s" in ancestor_docs' % name)
+
         deps = doc.get('dependencies', {})
         self.build_deps = deps.get('build', [])
         self.run_deps = deps.get('run', [])
         if not isinstance(self.build_deps, list) or not isinstance(self.run_deps, list):
             raise TypeError('dependencies must be a list')
-
+        self._inherit()
 
     @staticmethod
     def load_from_file(name, filename):
+        """
+        Loads a single package from file; no ancestors (extends) allowed
+        """
         filename = os.path.realpath(filename)
         obj = _package_spec_cache.get(filename, None)
         if obj is None:
@@ -27,8 +48,22 @@ class PackageSpec(object):
                 doc = marked_yaml_load(f)
             if doc is None:
                 doc = {}
-            obj = _package_spec_cache[filename] = PackageSpec(name, doc)
+            obj = _package_spec_cache[filename] = PackageSpec(name, doc, {})
         return obj
+
+    def _inherit(self):
+        """
+        Merge build_stages and profile_links stages
+        """
+        for key in ['build_stages', 'profile_links']:
+            self_stages = self.doc.get(key, [])
+            if key in self.doc:
+                del self.doc[key]
+            ancestor_stages = [ancestor_doc.get(key, []) for ancestor_doc
+                               in self.ancestor_docs.values()]
+            combined_stages = inherit_stages(self_stages, ancestor_stages)
+            sorted_stages = topological_stage_sort(combined_stages)
+            setattr(self, key, sorted_stages)        
 
     def fetch_sources(self, source_cache):
         for source_clause in self.doc.get('sources', []):
@@ -38,8 +73,7 @@ class PackageSpec(object):
         """
         Return build script (Bash script) that should be run to build package.
         """
-        build_stages = self.doc.get('build_stages', [])
-        return assemble_build_script(build_stages, parameters)
+        return assemble_build_script(self.build_stages, parameters)
 
     def assemble_build_spec(self, source_cache, parameters, dependency_id_map):
         """
@@ -49,7 +83,8 @@ class PackageSpec(object):
         build_script = self.assemble_build_script(parameters)
         build_script_key = source_cache.put({'build.sh': build_script})
         build_spec = create_build_spec(self.name, self.doc, parameters, dependency_id_map,
-                                       [{'target': '.', 'key': build_script_key}])
+                                       [{'target': '.', 'key': build_script_key}],
+                                       self.profile_links)
         return build_spec
 
 class PackageSpecSet(object):
@@ -143,6 +178,7 @@ def topological_stage_sort(stages):
         del stage['before']
     return ordered_stages
 
+
 def assemble_build_script(stages, parameters):
     """
     Turns the complete set of build-stages (as a list of document fragments)
@@ -150,7 +186,6 @@ def assemble_build_script(stages, parameters):
     as a string.
     """
     lines = ['set -e']
-    stages = topological_stage_sort(stages)
     for stage in stages:
         assert stage['handler'] == 'bash' # for now
         snippet = stage['bash'].strip()
@@ -158,9 +193,9 @@ def assemble_build_script(stages, parameters):
         lines.append(snippet)
     return '\n'.join(lines) + '\n'
 
+
 def assemble_link_dsl(stages, parameters):
     rules = []
-    stages = topological_stage_sort(stages)
     for in_stage in stages:
         out_stage = {}
         if 'link' in in_stage:
@@ -178,7 +213,47 @@ def assemble_link_dsl(stages, parameters):
         else:
             raise ValueError('Need either "link" or "exclude" key in profile_links entries')
     return rules
-    
+
+
+def inherit_stages(descendant_stages, ancestors):
+    """
+    Merges together stage-lists from several ancestors and a single descendant.
+    `descendant_stages` is a single list of stages, while `ancestors` is a list
+    of lists of stages, one for each ancestor.
+    """
+    # First make sure ancestors do not conflict; that is, stages in
+    # ancestors are not allowed to have the same name. Merge them all
+    # together in a name-to-stage dict.
+    stages = {} # { name : stage_list }
+    for ancestor_stages in ancestors:
+        for stage in ancestor_stages:
+            if stage['name'] in stages:
+                raise IllegalPackageSpecError('"%s" used as the name for a stage in two separate package ancestors' %
+                                              stage['name'])
+            stages[stage['name']] = stage
+    # Move on to merge the descendant with the inherited stages. We remove the mode attribute.
+    for stage in descendant_stages:
+        name = stage['name']
+        if 'mode' in stage:
+            mode = stage['mode']
+            stage = dict(stage)
+            del stage['mode']
+        else:
+            mode = 'override'
+        
+        if mode == 'override':
+            x = stages.get(name, {})
+            x.update(stage)
+            stages[name] = x
+        elif mode == 'replace':
+            stages[name] = stage
+        elif mode == 'remove':
+            if name in stages:
+                del stages[name]
+        else:
+            raise IllegalPackageSpecError('illegal mode: %s' % mode)
+    # We don't care about order, will be topologically sorted later...
+    return stages.values()
 
 def _process_on_import(action, parameters):
     action = dict(action)
@@ -188,7 +263,8 @@ def _process_on_import(action, parameters):
     return action
 
 
-def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map, extra_sources=()):
+def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map, extra_sources=(),
+                      profile_links=()):
     if isinstance(dependency_id_map, dict):
         dependency_id_map = dependency_id_map.__getitem__
                   
@@ -217,7 +293,7 @@ def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map, extra_so
     commands.append({"cmd": ["$BASH", "../build.sh"]})
 
     # install
-    install_link_rules = assemble_link_dsl(pkg_doc.get('profile_links', []), parameters)
+    install_link_rules = assemble_link_dsl(profile_links, parameters)
     if install_link_rules:
         profile_install = {
             "commands": [{"hit": ["create-links", "$in0"],

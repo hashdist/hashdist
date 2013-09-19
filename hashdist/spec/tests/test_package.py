@@ -20,13 +20,15 @@ def test_topological_stage_sort():
 # Build script assembly
 #
 def test_assemble_stages():
-    spec = dedent("""\
-      - {name: install, handler: bash, bash: make install}
-      - {name: make, handler: bash, before: install, after: configure, bash: make}
-      - {name: configure, handler: bash, bash: './configure --with-foo=${{foo}}'}
+    spec = marked_yaml_load("""\
+        build_stages:
+          - {name: install, handler: bash, bash: make install}
+          - {name: make, handler: bash, before: install, after: configure, bash: make}
+          - {name: configure, handler: bash, bash: './configure --with-foo=${{foo}}'}
     """)
     parameters = {'foo': 'somevalue'}
-    script = package.assemble_build_script(marked_yaml_load(spec), parameters)
+    p = package.PackageSpec("mypackage", spec, {})
+    script = p.assemble_build_script(parameters)
     assert script == dedent("""\
     set -e
     ./configure --with-foo=somevalue
@@ -100,3 +102,56 @@ def test_assemble_stages_python_handlers(d):
     make
     make install
     """)
+
+
+class MockProfile(object):
+    def __init__(self, dir):
+        self.dir = dir
+
+def test_inheritance_happy_day():
+    child_doc = marked_yaml_load("""\
+    extends: [base1, base2]
+    build_stages:
+      - name: stage1_override
+        # mode defaults to override
+        a: 1
+      - name: stage3_override
+        mode: override
+        a: 1
+      - name: stage_to_remove
+        mode: remove
+      - name: stage4_replace
+        mode: replace
+        a: 1
+      - name: stage_2_inserted
+        after: stage1_override
+        before: stage3_override
+        a: 1
+    """)
+
+    base1_doc = marked_yaml_load("""\
+    build_stages:
+      - {name: stage1_override, a: 2, b: 3}
+      - {name: stage_to_remove, after: stage1_override, a: 2, b: 3}
+    """)
+
+    base2_doc = marked_yaml_load("""\
+    build_stages:
+      - {name: stage3_override, after: stage1_override, a: 2, b: 3}
+      - {name: stage4_replace, after: stage3_override, a: 2, b: 3}
+    """)
+
+    p = package.PackageSpec('mypackage', child_doc, {'base1': base1_doc, 'base2': base2_doc})
+    assert p.build_stages == [
+        {'name': 'stage1_override', 'a': 1, 'b': 3},
+        {'name': 'stage_2_inserted', 'a': 1},
+        {'name': 'stage3_override', 'a': 1, 'b': 3},
+        {'name': 'stage4_replace', 'a': 1}]
+
+def test_inheritance_collision():
+    child_doc = marked_yaml_load("extends: [base1, base2]")
+    base1_doc = marked_yaml_load("build_stages: [{name: stage1}]")
+    base2_doc = marked_yaml_load("build_stages: [{name: stage1}]")
+    with assert_raises(package.IllegalPackageSpecError):
+        package.PackageSpec('mypackage', child_doc, {'base1': base1_doc, 'base2': base2_doc})
+    

@@ -1,5 +1,6 @@
 from pprint import pprint
 from . import package
+from .marked_yaml import marked_yaml_load
 from ..core import BuildSpec
 
 class IllegalProfileError(Exception):
@@ -20,6 +21,7 @@ class ProfileBuilder(object):
         self._built = set()  # cache for build_store
         self._in_progress = set()
         self._build_specs = {} # { pkgname : BuildSpec }
+        self._ancestor_docs = {}
 
         self._load_packages()
         self._compute_specs()
@@ -32,7 +34,20 @@ class ProfileBuilder(object):
             filename = self.profile.find_package_file(pkgname)
             if filename is None:
                 raise IllegalProfileError('no spec found for package %s' % pkgname)
-            self._package_specs[pkgname] = package.PackageSpec.load_from_file(pkgname, filename)
+            with open(filename) as f:
+                doc = marked_yaml_load(f)
+                if doc is None:
+                    doc = {}
+            for ancestor in doc.get('extends', []):
+                self._load_ancestor_doc(ancestor)
+            self._package_specs[pkgname] = package.PackageSpec(pkgname, doc, self._ancestor_docs)
+
+    def _load_ancestor_doc(self, pkgname):
+        if pkgname not in self._ancestor_docs:
+            filename = self.profile.find_base_file(pkgname + '.yaml')
+            with open(filename) as f:
+                doc = marked_yaml_load(f)
+            self._ancestor_docs[pkgname] = doc
 
     def _compute_specs(self):
         """
