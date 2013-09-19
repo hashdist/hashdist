@@ -5,7 +5,7 @@ Not supported:
  - Diamond inheritance
 
 """
-
+from pprint import pprint
 import tempfile
 import os
 import shutil

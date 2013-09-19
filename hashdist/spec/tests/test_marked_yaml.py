@@ -21,12 +21,3 @@ def test_marked_yaml():
     assert isinstance(d['f'], dict)
     assert isinstance(d['a'], list)
 
-
-def test_scalars():
-    def check(x):
-        got = marked_yaml_load(x)
-        assert isinstance(got, unicode)
-        assert x == got
-    check('3')
-    check('yes')
-    check('3.3')

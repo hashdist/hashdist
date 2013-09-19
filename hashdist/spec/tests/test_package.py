@@ -28,6 +28,7 @@ def test_assemble_stages():
     parameters = {'foo': 'somevalue'}
     script = package.assemble_build_script(marked_yaml_load(spec), parameters)
     assert script == dedent("""\
+    set -e
     ./configure --with-foo=somevalue
     make
     make install
@@ -49,7 +50,8 @@ def test_create_build_spec():
             value: foo${{X}} ${X}
     """))
     parameters = {"X": "x", "BASH": "/bin/bash"}
-    build_spec = package.create_build_spec(package_spec, parameters, {"otherlib": "otherlib/abcdefg"})
+    build_spec = package.create_build_spec("mylib", package_spec,
+                                           parameters, {"otherlib": "otherlib/abcdefg"})
     expected = {
         "name": "mylib",
         "version": "na",
@@ -59,8 +61,8 @@ def test_create_build_spec():
             "commands": [
                 {"set": "BASH", "nohash_value": "/bin/bash"},
                 {"chdir": "src"},
-                {"cmd": ["$BASH", "../build.sh"]}],
-            "nohash_params": {}},
+                {"cmd": ["$BASH", "../build.sh"]}]},
+        "profile_install": {},
         "sources": [
             {"key": "git:a3c39a03e7b8e9a3321d69ff877338f99ebb4aa2", "target": "src"}
             ]}

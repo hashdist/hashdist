@@ -94,6 +94,11 @@ class PackageSpecResolver(object):
 
 
 def normalize_stages(stages):
+    """
+    Given a list of 'stages' (dicts with before/after keys), make sure every stage
+    has both before/after and that they are lists (a string is made into
+    a 1-length list).
+    """
     def normalize_stage(stage):
         # turn before/after into lists
         stage = dict(stage)
@@ -114,6 +119,7 @@ def topological_stage_sort(stages):
     alphabetically.
     """
     # note that each stage is shallow-copied for modification below
+    stages = normalize_stages(stages)
     stage_by_name = dict((stage['name'], dict(stage)) for stage in stages)
     if len(stage_by_name) != len(stages):
         raise ValueError('`stages` has entries with the same name')
@@ -144,7 +150,6 @@ def assemble_build_script(stages, parameters):
     as a string.
     """
     lines = ['set -e']
-    stages = normalize_stages(stages)
     stages = topological_stage_sort(stages)
     for stage in stages:
         assert stage['handler'] == 'bash' # for now
@@ -153,6 +158,27 @@ def assemble_build_script(stages, parameters):
         lines.append(snippet)
     return '\n'.join(lines) + '\n'
 
+def assemble_link_dsl(stages, parameters):
+    rules = []
+    stages = topological_stage_sort(stages)
+    for in_stage in stages:
+        out_stage = {}
+        if 'link' in in_stage:
+            select = substitute_profile_parameters(in_stage["link"], parameters)
+            rules.append({
+                "action": "relative_symlink",
+                "select": "${ARTIFACT}/%s" % select,
+                "prefix": "${ARTIFACT}",
+                "target": "${PROFILE}",
+                "dirs": in_stage.get("dirs", False)})
+        elif 'exclude' in in_stage:
+            select = substitute_profile_parameters(in_stage["exclude"], parameters)
+            rules.append({"action": "exclude",
+                          "select": select})
+        else:
+            raise ValueError('Need either "link" or "exclude" key in profile_links entries')
+    return rules
+    
 
 def _process_on_import(action, parameters):
     action = dict(action)
@@ -191,19 +217,14 @@ def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map, extra_so
     commands.append({"cmd": ["$BASH", "../build.sh"]})
 
     # install
-    install_link_rules = [
-        {"action": "relative_symlink",
-         "select": "$ARTIFACT/lib/python*/site-packages/*",
-         "prefix": "$ARTIFACT",
-         "target": "$PROFILE",
-         "dirs": True},
-        {"action": "exclude",
-         "select": "$ARTIFACT/lib/python*/site-packages/**/*"},
-        {"action": "relative_symlink",
-         "select": "$ARTIFACT/*/**/*",
-         "prefix": "$ARTIFACT",
-         "target": "$PROFILE"}
-        ]
+    install_link_rules = assemble_link_dsl(pkg_doc.get('profile_links', []), parameters)
+    if install_link_rules:
+        profile_install = {
+            "commands": [{"hit": ["create-links", "$in0"],
+                          "inputs": [{"json": install_link_rules}]}],
+            }
+    else:
+        profile_install = {}
 
     # assemble
     build_spec = {
@@ -215,10 +236,7 @@ def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map, extra_so
             },
         "sources": sources,
         "on_import": on_import,
-        "profile_install": {
-            "commands": [{"hit": ["create-links", "$in0"],
-                          "inputs": [{"json": install_link_rules}]}],
-            }
+        "profile_install": profile_install
         }
         
     return core.BuildSpec(build_spec)

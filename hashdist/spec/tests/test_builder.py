@@ -21,6 +21,11 @@ def setup():
 def teardown():
     shutil.rmtree(mock_tarball_tmpdir)
 
+
+class MockSourceCache:
+    def put(self, x):
+        pass
+
 @temp_working_dir_fixture
 def test_ready(d):
     dump(pjoin(d, 'profile.yaml'), """\
@@ -32,9 +37,13 @@ def test_ready(d):
     dump(pjoin(d, 'pkgs', 'b.yaml'), "dependencies: {build: [d]}")
     dump(pjoin(d, 'pkgs', 'c.yaml'), "dependencies: {build: [d]}")
     dump(pjoin(d, 'pkgs', 'd.yaml'), "")
+
+    class ProfileBuilderSubclass(builder.ProfileBuilder):
+        def _compute_specs(self):
+            pass
     
     p = profile.load_profile(None, {"profile": pjoin(d, "profile.yaml")})
-    pb = builder.ProfileBuildState(None, p)
+    pb = ProfileBuilderSubclass(None, MockSourceCache(), None, p)
     assert ['d'] == pb.get_ready_list()
     pb._built.add('d')
     assert ['b', 'c'] == sorted(pb.get_ready_list())
@@ -82,7 +91,6 @@ def test_basic_build(tmpdir, sc, bldr, config):
     
     p = profile.load_profile(None, {"profile": pjoin(d, "profile.yaml")})
     pb = builder.ProfileBuilder(logger, sc, bldr, p)
-    pprint(pb.get_build_spec('the_dependency').doc)
     pb.build('the_dependency', config)
     pb.build('copy_readme', config)
 
