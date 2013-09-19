@@ -49,7 +49,6 @@ def test_canonical_build_spec():
               {'id': 'c', 'in_env': False, 'ref': "the_c"},
               {'id': 'a', 'in_env': True, 'ref': None},
             ],
-            "nohash_params": {},
           },
           "name" : "foo", "version": "r0"
         }
