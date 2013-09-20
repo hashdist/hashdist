@@ -26,7 +26,7 @@ def topological_sort(roots, get_deps):
             raise GraphCycleError()
         if node not in visited:
             visiting.add(node)
-            for dep in get_deps(node):
+            for dep in sorted(get_deps(node)):
                 toposort(dep)
             visiting.remove(node)
             visited.add(node)
@@ -35,7 +35,7 @@ def topological_sort(roots, get_deps):
     visited = set()
     visiting = set()
     result = []
-    for node in roots:
+    for node in sorted(roots):
         toposort(node)
     return result
     
