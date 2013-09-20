@@ -471,6 +471,19 @@ class BuildStore(object):
     def remove_build_dir(self, build_dir):
         self.logger.debug('Removing build dir: %s' % build_dir)
         shutil.rmtree(build_dir)
+
+    def prepare_build_dir(self, source_cache, build_spec, target_dir):
+        self.serialize_build_spec(build_spec, target_dir)
+        unpack_sources(self.logger, source_cache, build_spec.doc.get('sources', []), target_dir)
+
+    def serialize_build_spec(self, build_spec, target_dir):
+        fname = pjoin(target_dir, 'build.json')
+        with file(fname, 'w') as f:
+            json.dump(build_spec.doc, f, **json_formatting_options)
+            f.write('\n')
+        write_protect(fname)
+
+        
  
 class ArtifactBuilder(object):
     def __init__(self, build_store, build_spec, virtuals):
@@ -501,17 +514,13 @@ class ArtifactBuilder(object):
         try:
             env = {}
             env['BUILD'] = build_dir
-            self.serialize_build_spec(build_dir)
-
             source_cache = SourceCache.create_from_config(config, self.logger)
-            unpack_sources(self.logger, source_cache,
-                           self.build_spec.doc.get('sources', []),
-                           build_dir)
+            self.build_store.prepare_build_dir(source_cache, self.build_spec, build_dir)
 
             should_keep = (keep_build == 'always')
             try:
                 self.run_build_commands(build_dir, artifact_dir, env, config)
-                self.serialize_build_spec(artifact_dir)
+                self.build_store.serialize_build_spec(self.build_spec, artifact_dir)
             except:
                 should_keep = (keep_build in ('always', 'error'))
                 raise
@@ -519,13 +528,6 @@ class ArtifactBuilder(object):
             if not should_keep:
                 self.build_store.remove_build_dir(build_dir)
         return artifact_dir
-
-    def serialize_build_spec(self, d):
-        fname = pjoin(d, 'build.json')
-        with file(fname, 'w') as f:
-            json.dump(self.build_spec.doc, f, **json_formatting_options)
-            f.write('\n')
-        write_protect(fname)
 
     def make_artifact_json(self, artifact_dir):
         fname = pjoin(artifact_dir, 'artifact.json')

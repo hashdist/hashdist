@@ -23,8 +23,8 @@ class PackageSpec(object):
 
         # Extract ancestor docs
         self.ancestor_docs = {}
-        extends = doc.get('extends', [])
-        for name in extends:
+        self.extends = doc.get('extends', [])
+        for name in self.extends:
             try:
                 self.ancestor_docs[name] = ancestor_docs[name]
             except KeyError:
@@ -87,7 +87,7 @@ class PackageSpec(object):
             commands += dep_pkg.assemble_build_import_commands(parameters, ref=dep_name.upper())
 
         build_script = self.assemble_build_script(parameters)
-        build_script_key = source_cache.put({'build.sh': build_script})
+        build_script_key = source_cache.put({'_hashdist/build.sh': build_script})
         build_spec = create_build_spec(self.name, self.doc, parameters, dependency_id_map,
                                        commands, [{'target': '.', 'key': build_script_key}])
         return build_spec
@@ -123,7 +123,7 @@ class PackageSpec(object):
         return rules
 
     def assemble_build_import_commands(self, parameters, ref):
-        return [_process_on_import(env_action, parameters, ref)
+        return [_process_when_build_dependency(env_action, parameters, ref)
                 for env_action in self.doc.get('when_build_dependency', [])]
 
 class PackageSpecSet(object):
@@ -273,10 +273,10 @@ def inherit_stages(descendant_stages, ancestors):
     # We don't care about order, will be topologically sorted later...
     return stages.values()
 
-def _process_on_import(action, parameters, ref):
+def _process_when_build_dependency(action, parameters, ref):
     action = dict(action)
     if not ('prepend_path' in action or 'append_path' in action or 'set' in action):
-        raise ValueError('on_import action must be one of prepend_path, append_path, set')
+        raise ValueError('when_build_dependency action must be one of prepend_path, append_path, set')
     value = substitute_profile_parameters(action['value'], parameters)
     value = value.replace('${ARTIFACT}', '${%s}' % ref)
     if '$' in value.replace('${', ''):
@@ -304,15 +304,15 @@ def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map,
     # sources
     sources = list(extra_sources)
     for source_clause in pkg_doc.get("sources", []):
-        sources.append({"target": "src", "key": source_clause["key"]})
+        target = source_clause.get("target", ".")
+        sources.append({"target": target, "key": source_clause["key"]})
 
     # build commands
     commands = []
     commands.append({"set": "BASH", "nohash_value": parameters['BASH']})
     if 'PATH' in parameters:
         commands.append({"set": "PATH", "nohash_value": parameters['PATH']})
-    commands.append({"chdir": "src"})
-    commands.append({"cmd": ["$BASH", "../build.sh"]})
+    commands.append({"cmd": ["$BASH", "_hashdist/build.sh"]})
 
     # assemble
     build_spec = {
