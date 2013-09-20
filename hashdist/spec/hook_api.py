@@ -1,6 +1,7 @@
 """
 The API exported to Python hook files that are part of stack descriptions.
-
+A significant portion of the package building logic should eventually find
+its way into here.
 
 Hook files are re-loaded for every package build, and so decorators etc.
 are run again. The machinery used to Hashdist to load hook files is
@@ -10,11 +11,16 @@ found in .hook.
 class IllegalHookFileError(Exception):
     pass
 
+class IllegalPackageSpecError(Exception):
+    pass
+
 
 class PackageBuildContext(object):
     def __init__(self):
-        self._build_stage_handlers = {}
+        import hook
+        self._build_stage_handlers = {'bash': hook.bash_handler}
         self._modules = []
+        self.parameters = {}
 
     def register_build_stage_handler(self, handler_name, handler_func):
         """
@@ -31,6 +37,13 @@ class PackageBuildContext(object):
         in sys.modules.
         """
         self._modules.append(mod)
+
+    def dispatch_build_stage(self, stage):
+        handler = stage.get('handler', stage['name'])
+        if handler not in self._build_stage_handlers:
+            raise IllegalPackageSpecError('build stage handler "%s" not registered' % handler)
+        return self._build_stage_handlers[handler](self, stage)
+
 
 def build_stage(handler_name=None):
     """

@@ -52,3 +52,6 @@ def python_path_and_modules_sandbox(python_path_entries=()):
         sys.path[:] = old_sys_path
         sys.modules.clear()
         sys.modules.update(old_modules)
+
+def bash_handler(ctx, stage):
+    return stage['bash'].strip().split('\n')

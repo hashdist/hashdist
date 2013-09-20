@@ -5,11 +5,9 @@ from os.path import join as pjoin
 from .marked_yaml import marked_yaml_load
 from .utils import substitute_profile_parameters, topological_sort
 from .. import core
+from .hook_api import IllegalPackageSpecError
 
 _package_spec_cache = {}
-
-class IllegalPackageSpecError(Exception):
-    pass
 
 class PackageSpec(object):
     """
@@ -70,13 +68,16 @@ class PackageSpec(object):
         for source_clause in self.doc.get('sources', []):
             source_cache.fetch(source_clause['url'], source_clause['key'], self.name)
 
-    def assemble_build_script(self, parameters):
+    def assemble_build_script(self, ctx):
         """
         Return build script (Bash script) that should be run to build package.
         """
-        return assemble_build_script(self.build_stages, parameters)
+        lines = ['set -e']
+        for stage in self.build_stages:
+            lines += ctx.dispatch_build_stage(stage)
+        return '\n'.join(lines) + '\n'
 
-    def assemble_build_spec(self, source_cache, parameters, dependency_id_map, dependency_packages):
+    def assemble_build_spec(self, source_cache, ctx, dependency_id_map, dependency_packages):
         """
         Returns the build.json for building the package. Also, the build script (Bash script)
         that should be run to build the package is uploaded to the given source cache.
@@ -84,11 +85,11 @@ class PackageSpec(object):
         commands = []
         for dep_name in self.build_deps:
             dep_pkg = dependency_packages[dep_name]
-            commands += dep_pkg.assemble_build_import_commands(parameters, ref=dep_name.upper())
+            commands += dep_pkg.assemble_build_import_commands(ctx.parameters, ref=dep_name.upper())
 
-        build_script = self.assemble_build_script(parameters)
+        build_script = self.assemble_build_script(ctx)
         build_script_key = source_cache.put({'_hashdist/build.sh': build_script})
-        build_spec = create_build_spec(self.name, self.doc, parameters, dependency_id_map,
+        build_spec = create_build_spec(self.name, self.doc, ctx.parameters, dependency_id_map,
                                        commands, [{'target': '.', 'key': build_script_key}])
         return build_spec
 
@@ -217,20 +218,6 @@ def topological_stage_sort(stages):
         del stage['before']
     return ordered_stages
 
-
-def assemble_build_script(stages, parameters):
-    """
-    Turns the complete set of build-stages (as a list of document fragments)
-    and assembles them into the final build script, which is returned
-    as a string.
-    """
-    lines = ['set -e']
-    for stage in stages:
-        assert stage['handler'] == 'bash' # for now
-        snippet = stage['bash'].strip()
-        snippet = substitute_profile_parameters(snippet, parameters)
-        lines.append(snippet)
-    return '\n'.join(lines) + '\n'
 
 
 def inherit_stages(descendant_stages, ancestors):

@@ -68,10 +68,10 @@ class Profile(object):
         self._packages_dir = os.path.abspath(pjoin(d, doc['packages_dir'])) if 'packages_dir' in doc else None
         self._base_dir = os.path.abspath(pjoin(d, doc['base_dir'])) if 'base_dir' in doc else None
 
-    def _find_resource_in_parents(self, resource_type, resource_getter_name, resource_name):
+    def _find_resource_in_parents(self, resource_type, resource_getter_name, resource_name, *args):
         filename = None
         for parent in self.parents:
-            parent_filename = getattr(parent, resource_getter_name)(resource_name)
+            parent_filename = getattr(parent, resource_getter_name)(resource_name, *args)
             if parent_filename is not None:
                 if filename is not None:
                     raise ConflictingProfilesError('%s %s found in sibling included profiles' %
@@ -92,7 +92,7 @@ class Profile(object):
 
         if filename is None:
             # try included profiles; only allow it to come from one of them
-            filename = self._find_resource_in_parents('package', 'find_package_file', name)
+            filename = self._find_resource_in_parents('package', 'find_package_file', name, ext)
         return filename
 
     def find_base_file(self, name):

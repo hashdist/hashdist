@@ -54,31 +54,37 @@ class ProfileBuilder(object):
     def _compute_specs(self):
         """
         Do a depth first walk to compute build specs/artifact IDs/upload build scripts for
-        each package, in order required.
+        each package, in order required (artifact ID of dependencies needed to compute
+        build spec of dependants).
         """
-        def df(pkgname):
+        python_path = self.profile.get_python_path()
+
+        def process(pkgname, pkgspec):
+            with hook.python_path_and_modules_sandbox(python_path):
+                ctx = self._load_package_build_context(pkgname)
+                self._build_specs[pkgname] = pkgspec.assemble_build_spec(
+                    self.source_cache,
+                    ctx,
+                    lambda dep_name: self._build_specs[dep_name].artifact_id,
+                    self._package_specs)
+            # check whether package is already built, and update self._built
+            if self.build_store.is_present(self._build_specs[pkgname]):
+                self._built.add(pkgname)
+
+        def traverse_depth_first(pkgname):
             if pkgname not in self._build_specs:
-                # depth-first traversal logic
                 if pkgname in visiting:
-                    raise IllegalProfileError('dependency cycle between packages')
+                    raise IllegalProfileError('dependency cycle between packages, including package "%s"' % pkgname)
                 visiting.add(pkgname)
                 pkgspec = self._package_specs[pkgname]
                 for depname in pkgspec.build_deps:
-                    df(depname)
+                    traverse_depth_first(depname)
                 visiting.remove(pkgname)
-                # generate build.json
-                self._build_specs[pkgname] = pkgspec.assemble_build_spec(
-                    self.source_cache,
-                    self.profile.parameters,
-                    lambda dep_name: self._build_specs[dep_name].artifact_id,
-                    self._package_specs)
-                # check whether package is already built, and update self._built
-                if self.build_store.is_present(self._build_specs[pkgname]):
-                    self._built.add(pkgname)
+                process(pkgname, pkgspec)
 
         visiting = set()
         for pkgname in self._package_specs:
-            df(pkgname)
+            traverse_depth_first(pkgname)
 
     def get_ready_list(self):
         ready = []
@@ -93,7 +99,10 @@ class ProfileBuilder(object):
         return self._build_specs[pkgname]
 
     def get_build_script(self, pkgname):
-        return self._package_specs[pkgname].assemble_build_script(self.profile.parameters)
+        python_path = self.profile.get_python_path()
+        with hook.python_path_and_modules_sandbox(python_path):
+            ctx = self._load_package_build_context(pkgname)
+            return self._package_specs[pkgname].assemble_build_script(ctx)
 
     def get_status_report(self):
         """
@@ -141,7 +150,7 @@ class ProfileBuilder(object):
             })
         return self.build_store.ensure_present(profile_build_spec, config)
         
-    def _load_hooks(self, pkgname):
+    def _load_package_build_context(self, pkgname):
         hook_files = []
         for ancestor in self._package_specs[pkgname].extends:
             py = self.profile.find_base_file(ancestor + '.py')
@@ -150,4 +159,6 @@ class ProfileBuilder(object):
         py = self.profile.find_package_file(pkgname, '.py')
         if py:
             hook_files.append(py)
-        return hook.load_hooks(hook_files, self.profile.get_python_path())
+        ctx = hook.load_hooks(hook_files)
+        ctx.parameters.update(self.profile.parameters)
+        return ctx
