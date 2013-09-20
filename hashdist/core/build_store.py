@@ -55,7 +55,6 @@ An example build spec:
     
     {
         "name" : "<name of piece of software>",
-        "version" : "<version>",
         "description": "<what makes this build special>",
         "build": {
             "import" : [
@@ -66,7 +65,6 @@ An example build spec:
                  {"ref": "gcc", "id": "gcc/host-4.6.3/q0VSL7JmzH1P17meqITYc4kMbnIjIexrWPdlAlqPn3s", "before": ["virtual:unix"]},
              ],
              "commands" : [
-                 {"hit", ["build-write-files"]},
                  {"cmd": ["bash", "build.sh"]}
              ],
          },
@@ -74,16 +72,6 @@ An example build spec:
              {"key": "git:c5ccca92c5f136833ad85614feb2aa4f5bd8b7c3"},
              {"key": "tar.bz2:RB1JbykVljxdvL07mN60y9V9BVCruWRky2FpK2QCCow", "target": "sources"},
              {"key": "files:5fcANXHsmjPpukSffBZF913JEnMwzcCoysn-RZEX7cM"}
-         ],
-         "files" : [
-             { "target": "build.sh",
-               "text": [
-                 "set -e",
-                 "./configure --prefix=\\"${ARTIFACT}\\"",
-                 "make",
-                 "make install"
-               ]
-             }
          ],
     }
 
@@ -198,7 +186,6 @@ class BuildSpec(object):
     def __init__(self, build_spec):
         self.doc = canonicalize_build_spec(build_spec)
         self.name = self.doc['name']
-        self.version = self.doc['version']
         digest = hash_document('build-spec', prune_nohash(self.doc))
         self.digest = digest
         self.artifact_id = '%s/%s' % (self.name, digest)
@@ -226,7 +213,7 @@ def canonicalize_build_spec(spec):
     """
     result = dict(spec) # shallow copy
     assert_safe_name(result['name'])
-    assert_safe_name(result['version'])
+    assert_safe_name(result.get('version', 'n'))
     result['build'] = run_job.canonicalize_job_spec(result['build'])
 
     return result
@@ -414,8 +401,7 @@ class BuildStore(object):
         """
         # try to make shortened dir and symlink to it; incrementally
         # lengthen the name in the case of hash collision
-        vars = dict(name=build_spec.doc['name'],
-                    version=build_spec.doc['version'])
+        vars = dict(name=build_spec.doc['name'])
         root = self.artifact_root
         hashlen = self.short_hash_len
         while True:
@@ -464,8 +450,7 @@ class BuildStore(object):
         Just to get a nicer name than mkdtemp would. The caller is responsible
         for removal.
         """
-        name = '%s-%s-%s' % (build_spec.doc['name'], build_spec.doc['version'],
-                             build_spec.digest[:self.short_hash_len])
+        name = '%s-%s' % (build_spec.doc['name'], build_spec.digest[:self.short_hash_len])
         build_dir = orig_build_dir = pjoin(self.temp_build_dir, name)
         i = 0
         # Try to make build_dir, if not then increment a -%d suffix until we
@@ -544,10 +529,10 @@ class ArtifactBuilder(object):
 
     def make_artifact_json(self, artifact_dir):
         fname = pjoin(artifact_dir, 'artifact.json')
-        artifact_doc = {}
-        for key in ['name', 'version']:
-            if key in self.build_spec.doc:
-                artifact_doc[key] = self.build_spec.doc[key]
+        doc = self.build_spec.doc
+        artifact_doc = {'name': doc['name']}
+        if 'version' in doc:
+            artifact_doc['version'] = doc['version']
         with open(fname, 'w') as f:
             json.dump(artifact_doc, f, **json_formatting_options)
 

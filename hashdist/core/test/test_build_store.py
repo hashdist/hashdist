@@ -104,7 +104,6 @@ def test_basic(tempdir, sc, bldr, config):
     """)})
     spec = {
         "name": "foo",
-        "version": "na",
         "sources": [
             {"target": ".", "key": script_key},
             {"target": "subdir", "key": script_key}
@@ -148,7 +147,6 @@ def test_basic(tempdir, sc, bldr, config):
 def test_artifact_json(tempdir, sc, bldr, config):
     artifact = {
         "name": "fooname",
-        "version": "na"
         }
     spec = dict(artifact)
     spec.update({"build":{"commands": []}})
@@ -160,7 +158,7 @@ def test_artifact_json(tempdir, sc, bldr, config):
 
 @fixture()
 def test_failing_build_and_multiple_commands(tempdir, sc, bldr, config):
-    spec = {"name": "foo", "version": "na",
+    spec = {"name": "foo",
             "build": {
                 "commands": [
                     {"cmd": ["/bin/echo", "test"], "append_to_file": "foo2"},
@@ -189,7 +187,7 @@ def test_failing_build_and_multiple_commands(tempdir, sc, bldr, config):
 @fixture()
 def test_fail_to_find_dependency(tempdir, sc, bldr, config):
     for target in ["..", "/etc"]:
-        spec = {"name": "foo", "version": "na",
+        spec = {"name": "foo",
                 "build": {
                     "import": [{"ref": "bar", "id": "foo/01234567890123456789012345678901"}]}
                 }
@@ -206,7 +204,7 @@ def test_hash_prefix_collision(tempdir, sc, bldr, config):
         # warn in those cases
         hashparts = []
         for k in range(15):
-            spec = {"name": "foo", "version": "na",
+            spec = {"name": "foo",
                     "build": {
                         "commands": [{"cmd": ["/bin/echo", "hello", str(k)]}]
                         }
@@ -238,7 +236,6 @@ def test_source_unpack_options(tempdir, sc, bldr, config):
         shutil.rmtree(container_dir)
     spec = {
             "name": "foo",
-            "version": "na",
             "sources": [
                 {"target": ".", "key": tarball_key},
                 {"target": "subdir", "key": tarball_key},
@@ -272,7 +269,7 @@ def build_mock_packages(builder, config, packages, virtuals={}, name_to_artifact
         script = ['/bin/touch ${ARTIFACT}/deps\n']
         script += ['echo %(x)s $%(x)s_ID $%(x)s_DIR >> ${ARTIFACT}/deps' % dict(x=dep.name)
                    for dep in pkg.deps]
-        spec = {"name": pkg.name, "version": "na",
+        spec = {"name": pkg.name,
                 "files" : [{"target": "build.sh", "text": script}],
                 "build": {
                     "import": [{"ref": dep.name, "id": name_to_artifact[dep.name][0]}

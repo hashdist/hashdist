@@ -317,7 +317,6 @@ def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map,
     # assemble
     build_spec = {
         "name": pkg_name,
-        "version": pkg_doc.get("version", "na"),
         "build": {
             "import": imports,
             "commands": commands,

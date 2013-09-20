@@ -56,7 +56,6 @@ def test_create_build_spec():
                                            parameters, {"otherlib": "otherlib/abcdefg"}, {})
     expected = {
         "name": "mylib",
-        "version": "na",
         "build": {
             "import": [{"ref": "OTHERLIB", "id": "otherlib/abcdefg"}],
             "commands": [
