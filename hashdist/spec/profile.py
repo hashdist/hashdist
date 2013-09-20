@@ -79,14 +79,14 @@ class Profile(object):
             filename = parent_filename
         return filename
 
-    def find_package_file(self, name):
+    def find_package_file(self, name, ext='.yaml'):
         # try pkgs/foo.yaml
         filename = None
         if self._packages_dir is not None:
-            filename = pjoin(self._packages_dir, name + '.yaml')
+            filename = pjoin(self._packages_dir, name + ext)
             if not os.path.exists(filename):
                 # try pkgs/foo/foo.yaml
-                filename = pjoin(self._packages_dir, name, name + '.yaml')
+                filename = pjoin(self._packages_dir, name, name + ext)
                 if not os.path.exists(filename):
                     filename = None
 

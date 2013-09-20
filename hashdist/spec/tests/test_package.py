@@ -67,39 +67,6 @@ def test_create_build_spec():
             ]}
     assert expected == build_spec.doc
 
-@temp_working_dir_fixture
-def test_assemble_stages_python_handlers(d):
-    raise SkipTest("only test case written for this one")
-
-    dump('base/numberechoing.py', """\
-    from hashdist.spec import handler
-    from myutils import get_echo_string
-
-    @handler()
-    def echo_number(pkg, parameters, stage_args):
-        return ['%s %s %d' % (get_echo_string(), parameters['caption'], stage_args['number'])]
-
-    """)
-    dump('base/myutils.py', """\
-    def get_echo_string(): return 'echo'
-    """)
-    dump('base/numberechoing.yaml', """\
-    build_stages:
-        - {name: configure, before: echo_number, handler: bash, bash: echo Echo coming up}
-    """)
-    
-    spec = dedent("""\
-    extends: [numberechoing]
-      - {name: echo_number, number: 4}
-    """)
-    parameters = {'caption': 'numero'}
-    script = package.assemble_build_script(marked_yaml_load(spec), parameters)
-    assert script == dedent("""\
-    ./configure --with-foo=somevalue
-    make
-    make install
-    """)
-
 
 class MockProfile(object):
     def __init__(self, dir):

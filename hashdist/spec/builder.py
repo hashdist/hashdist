@@ -1,6 +1,7 @@
 from pprint import pprint
 from . import package
 from . import utils
+from . import hook
 from .marked_yaml import marked_yaml_load
 from ..core import BuildSpec
 
@@ -140,3 +141,13 @@ class ProfileBuilder(object):
             })
         return self.build_store.ensure_present(profile_build_spec, config)
         
+    def _load_hooks(self, pkgname):
+        hook_files = []
+        for ancestor in self._package_specs[pkgname].extends:
+            py = self.profile.find_base_file(ancestor + '.py')
+            if py:
+                hook_files.append(py)
+        py = self.profile.find_package_file(pkgname, '.py')
+        if py:
+            hook_files.append(py)
+        return hook.load_hooks(hook_files, self.profile.get_python_path())
