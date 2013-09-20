@@ -44,7 +44,7 @@ class Build(ProfileFrontendBase):
             self.ctx.error('profile filename must end with yaml')
         profile_symlink = self.args.profile[:-len('.yaml')]
         if self.args.package is not None:
-            self.builder.build(args.package, self.ctx.config)
+            self.builder.build(self.args.package, self.ctx.config)
         else:
             while True:
                 ready = self.builder.get_ready_list()
@@ -91,9 +91,9 @@ class Show(ProfileFrontendBase):
     
     def profile_builder_action(self):
         if self.args.subcommand == 'buildspec':
-            pprint(self.builder.get_build_spec(args.package).doc)
+            pprint(self.builder.get_build_spec(self.args.package).doc)
         elif self.args.subcommand == 'script':
-            sys.stdout.write(self.builder.get_build_script(args.package))
+            sys.stdout.write(self.builder.get_build_script(self.args.package))
         else:
             raise AssertionError()
 
