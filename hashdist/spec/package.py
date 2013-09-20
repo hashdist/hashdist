@@ -235,7 +235,7 @@ def inherit_stages(descendant_stages, ancestors):
             if stage['name'] in stages:
                 raise IllegalPackageSpecError('"%s" used as the name for a stage in two separate package ancestors' %
                                               stage['name'])
-            stages[stage['name']] = stage
+            stages[stage['name']] = dict(stage)
     # Move on to merge the descendant with the inherited stages. We remove the mode attribute.
     for stage in descendant_stages:
         name = stage['name']
