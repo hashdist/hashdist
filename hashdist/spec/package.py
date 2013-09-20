@@ -1,3 +1,4 @@
+from pprint import pprint
 import os
 from os.path import join as pjoin
 
@@ -75,17 +76,55 @@ class PackageSpec(object):
         """
         return assemble_build_script(self.build_stages, parameters)
 
-    def assemble_build_spec(self, source_cache, parameters, dependency_id_map):
+    def assemble_build_spec(self, source_cache, parameters, dependency_id_map, dependency_packages):
         """
         Returns the build.json for building the package. Also, the build script (Bash script)
         that should be run to build the package is uploaded to the given source cache.
         """
+        commands = []
+        for dep_name in self.build_deps:
+            dep_pkg = dependency_packages[dep_name]
+            commands += dep_pkg.assemble_build_import_commands(parameters, ref=dep_name.upper())
+
         build_script = self.assemble_build_script(parameters)
         build_script_key = source_cache.put({'build.sh': build_script})
         build_spec = create_build_spec(self.name, self.doc, parameters, dependency_id_map,
-                                       [{'target': '.', 'key': build_script_key}],
-                                       self.profile_links)
+                                       commands, [{'target': '.', 'key': build_script_key}])
         return build_spec
+
+    def assemble_link_dsl(self, parameters, ref, target):
+        """
+        Creates the input document to ``hit create-links`` from the information in a package
+        description.
+        """
+        rules = []
+        for in_stage in self.profile_links:
+            out_stage = {}
+            if 'link' in in_stage:
+                select = substitute_profile_parameters(in_stage["link"], parameters)
+                rules.append({
+                    "action": "relative_symlink",
+                    "select": "${%s}/%s" % (ref, select),
+                    "prefix": "${%s}" % ref,
+                    "target": target,
+                    "dirs": in_stage.get("dirs", False)})
+            elif 'exclude' in in_stage:
+                select = substitute_profile_parameters(in_stage["exclude"], parameters)
+                rules.append({"action": "exclude",
+                              "select": select})
+            elif 'launcher' in in_stage:
+                select = substitute_profile_parameters(in_stage["launcher"], parameters)
+                rules.append({"action": "launcher",
+                              "select": "${%s}/%s" % (ref, select),
+                              "prefix": "${%s}" % ref,
+                              "target": target})
+            else:
+                raise ValueError('Need either "link", "launcher" or "exclude" key in profile_links entries')
+        return rules
+
+    def assemble_build_import_commands(self, parameters, ref):
+        return [_process_on_import(env_action, parameters, ref)
+                for env_action in self.doc.get('when_build_dependency', [])]
 
 class PackageSpecSet(object):
     """
@@ -194,27 +233,6 @@ def assemble_build_script(stages, parameters):
     return '\n'.join(lines) + '\n'
 
 
-def assemble_link_dsl(stages, parameters):
-    rules = []
-    for in_stage in stages:
-        out_stage = {}
-        if 'link' in in_stage:
-            select = substitute_profile_parameters(in_stage["link"], parameters)
-            rules.append({
-                "action": "relative_symlink",
-                "select": "${ARTIFACT}/%s" % select,
-                "prefix": "${ARTIFACT}",
-                "target": "${PROFILE}",
-                "dirs": in_stage.get("dirs", False)})
-        elif 'exclude' in in_stage:
-            select = substitute_profile_parameters(in_stage["exclude"], parameters)
-            rules.append({"action": "exclude",
-                          "select": select})
-        else:
-            raise ValueError('Need either "link" or "exclude" key in profile_links entries')
-    return rules
-
-
 def inherit_stages(descendant_stages, ancestors):
     """
     Merges together stage-lists from several ancestors and a single descendant.
@@ -255,16 +273,22 @@ def inherit_stages(descendant_stages, ancestors):
     # We don't care about order, will be topologically sorted later...
     return stages.values()
 
-def _process_on_import(action, parameters):
+def _process_on_import(action, parameters, ref):
     action = dict(action)
     if not ('prepend_path' in action or 'append_path' in action or 'set' in action):
         raise ValueError('on_import action must be one of prepend_path, append_path, set')
-    action['value'] = substitute_profile_parameters(action['value'], parameters)
+    value = substitute_profile_parameters(action['value'], parameters)
+    value = value.replace('${ARTIFACT}', '${%s}' % ref)
+    if '$' in value.replace('${', ''):
+        # a bit crude, but works for now -- should properly disallow non-${}-variables,
+        # in order to prevent $ARTIFACT from cropping up
+        raise IllegalPackageSpecError('Please use "${VAR}", not $VAR')
+    action['value'] = value
     return action
 
 
-def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map, extra_sources=(),
-                      profile_links=()):
+def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map,
+                      dependency_commands, extra_sources=()):
     if isinstance(dependency_id_map, dict):
         dependency_id_map = dependency_id_map.__getitem__
                   
@@ -272,8 +296,6 @@ def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map, extra_so
         raise ValueError('BASH must be provided in profile parameters')
 
     # dependencies
-    on_import = [_process_on_import(env_action, parameters)
-                 for env_action in pkg_doc.get('on_import', [])]
     imports = []
     build_deps = pkg_doc.get('dependencies', {}).get('build', [])
     for dep_name in build_deps:
@@ -292,16 +314,6 @@ def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map, extra_so
     commands.append({"chdir": "src"})
     commands.append({"cmd": ["$BASH", "../build.sh"]})
 
-    # install
-    install_link_rules = assemble_link_dsl(profile_links, parameters)
-    if install_link_rules:
-        profile_install = {
-            "commands": [{"hit": ["create-links", "$in0"],
-                          "inputs": [{"json": install_link_rules}]}],
-            }
-    else:
-        profile_install = {}
-
     # assemble
     build_spec = {
         "name": pkg_name,
@@ -311,8 +323,7 @@ def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map, extra_so
             "commands": commands,
             },
         "sources": sources,
-        "on_import": on_import,
-        "profile_install": profile_install
         }
         
     return core.BuildSpec(build_spec)
+

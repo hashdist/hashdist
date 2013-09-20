@@ -120,16 +120,6 @@ class Profile(object):
         return path
 
     def get_packages(self):
-        """
-        Returns a dict of package includeded in the profile, including
-        processing of package specs by base profiles.
-
-        The key is the 'virtual' name of the package within the
-        profile. The value is a tuple ``(name, variant)``, where
-        variant is `None` if none is given. As a special case,
-        'package/skip' removes a package from the dict (which may have
-        been added by an ancestor profile).
-        """
         def parse_package(pkg):
             if isinstance(pkg, basestring):
                 return pkg, {}

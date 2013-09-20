@@ -1,5 +1,6 @@
 from pprint import pprint
 from . import package
+from . import utils
 from .marked_yaml import marked_yaml_load
 from ..core import BuildSpec
 
@@ -68,7 +69,8 @@ class ProfileBuilder(object):
                 self._build_specs[pkgname] = pkgspec.assemble_build_spec(
                     self.source_cache,
                     self.profile.parameters,
-                    lambda dep_name: self._build_specs[dep_name].artifact_id)
+                    lambda dep_name: self._build_specs[dep_name].artifact_id,
+                    self._package_specs)
                 # check whether package is already built, and update self._built
                 if self.build_store.is_present(self._build_specs[pkgname]):
                     self._built.add(pkgname)
@@ -108,14 +110,32 @@ class ProfileBuilder(object):
     def build_profile(self, config):
         profile_list = [{"id": build_spec.artifact_id} for build_spec in self._build_specs.values()]
 
+        # Topologically sort by run-time dependencies
+        def get_run_deps(pkgname):
+            return self._package_specs[pkgname].doc.get('dependencies', {}).get('run', [])
+        sorted_packages = utils.topological_sort(self._package_specs.keys(), get_run_deps)
+
+        imports = []
+        for pkgname in sorted_packages:
+            imports.append({'ref': '%s' % pkgname.upper(), 'id': self._build_specs[pkgname].artifact_id})
+
+        commands = []
+        install_link_rules = []
+        for pkgname in sorted_packages:
+            pkg = self._package_specs[pkgname]
+            ref = '%s_DIR' % pkgname.upper()
+            commands += pkg.assemble_build_import_commands(self.profile.parameters, ref)
+            install_link_rules += pkg.assemble_link_dsl(self.profile.parameters, ref, '${ARTIFACT}')
+        commands.extend([{"hit": ["create-links", "$in0"],
+                          "inputs": [{"json": install_link_rules}]},
+                         {"hit": ["build-postprocess", "--write-protect"]}])
+
         profile_build_spec = BuildSpec({
             "name": "profile",
             "version": "n",
             "build": {
-                "commands": [
-                    {"hit": ["create-profile", "$in0", "$ARTIFACT"],
-                     "inputs": [{"json": profile_list}]}
-                    ]
+                "import": imports,
+                "commands": commands,
                 }
             })
         return self.build_store.ensure_present(profile_build_spec, config)
