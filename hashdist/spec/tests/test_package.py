@@ -47,24 +47,22 @@ def test_create_build_spec():
           run: [foolib] # should be ignored
         build_stages:
           - {name: make, handler: bash, bash: make}
-        on_import:
+        on_import:  # ignored below, only used in build spec of dependency
           - prepend_path: PYTHONPATH
             value: foo${{X}} ${X}
     """))
     parameters = {"X": "x", "BASH": "/bin/bash"}
     build_spec = package.create_build_spec("mylib", package_spec,
-                                           parameters, {"otherlib": "otherlib/abcdefg"})
+                                           parameters, {"otherlib": "otherlib/abcdefg"}, {})
     expected = {
         "name": "mylib",
         "version": "na",
-        "on_import": [{"prepend_path": "PYTHONPATH", "value": "foox ${X}"}],
         "build": {
             "import": [{"in_env": True, "ref": "OTHERLIB", "id": "otherlib/abcdefg"}],
             "commands": [
                 {"set": "BASH", "nohash_value": "/bin/bash"},
                 {"chdir": "src"},
                 {"cmd": ["$BASH", "../build.sh"]}]},
-        "profile_install": {},
         "sources": [
             {"key": "git:a3c39a03e7b8e9a3321d69ff877338f99ebb4aa2", "target": "src"}
             ]}
