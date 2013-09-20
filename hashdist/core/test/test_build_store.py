@@ -149,7 +149,6 @@ def test_artifact_json(tempdir, sc, bldr, config):
     artifact = {
         "name": "fooname",
         "version": "na",
-        "profile_install": {"foo": "bar"},
         "on_import": ["baz"],
         }
     spec = dict(artifact)

@@ -187,38 +187,6 @@ class BuildWhitelist(object):
         build_whitelist(build_store, artifacts, sys.stdout)
 
 @register_subcommand
-class BuildProfile(object):
-    """
-    A temporary profile for use during builds.
-
-    pop removes all the files again, and any directories that are now empty
-    """
-
-    command = 'build-profile'
-
-    @staticmethod
-    def setup(ap):
-        ap.add_argument('action', choices=['push', 'pop'])
-
-    @staticmethod
-    def run(ctx, args):
-        from ..core.build_tools import push_build_profile, pop_build_profile
-        from ..core.run_job import unpack_virtuals_envvar
-        virtuals = unpack_virtuals_envvar(ctx.env.get('HDIST_VIRTUALS', ''))
-        manifest = pjoin(ctx.env['BUILD'], 'temp_build_profile_manifest.json')
-        if args.action == 'push':
-            push_build_profile(ctx.config,
-                               ctx.logger,
-                               virtuals,
-                               pjoin(ctx.env['BUILD'], 'build.json'),
-                               manifest,
-                               ctx.env['ARTIFACT'])
-        elif args.action == 'pop':
-            pop_build_profile(manifest, ctx.env['ARTIFACT'])
-        else:
-            assert False
-
-@register_subcommand
 class BuildPostprocess(object):
     """
     Walks through directories to perform the actions given by flags
