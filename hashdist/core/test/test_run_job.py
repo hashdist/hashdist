@@ -91,20 +91,11 @@ def test_imports(tempdir, sc, build_store, cfg):
     # Make dependencies
     doc = {
         "name": "foosoft", "version": "na", "build": {"commands": []},
-        "on_import": [
-            {"set": "FOO", "value": "foo"},
-            {"set": "ARTIFACT_WAS", "value": "$ARTIFACT"},
-            {"append_flag": "CFLAGS", "value": "-O1"},
-            ]
         }
     foo_id, foo_path = build_store.ensure_present(doc, cfg)
 
     doc = {
         "name": "barsoft", "version": "na", "build": {"commands": []},
-        "on_import": [
-            {"set": "FOO", "value": "bar"},
-            {"append_flag": "CFLAGS", "value": "-O2"},
-            ]
         }
     bar_id, bar_path = build_store.ensure_present(doc, cfg)
 
@@ -115,10 +106,6 @@ def test_imports(tempdir, sc, build_store, cfg):
     doc = {
             "import": [{"ref": "FOOSOFT", "id": foo_id}, {"ref": "BARSOFT", "id": "virtual:bar"}],
             "commands": [
-                {"cmd": env_to_stderr + ["ARTIFACT_WAS"]},
-                {"cmd": env_to_stderr + ["FOO"]},
-                {"cmd": env_to_stderr + ["CFLAGS"]},
-
                 {"cmd": env_to_stderr + ["FOOSOFT_DIR"]},
                 {"cmd": env_to_stderr + ["FOOSOFT_ID"]},
                 {"cmd": env_to_stderr + ["BARSOFT_DIR"]},
@@ -127,9 +114,7 @@ def test_imports(tempdir, sc, build_store, cfg):
         }
     logger = MemoryLogger()
     ret_env = run_job.run_job(logger, build_store, doc, {}, '<no-artifact>', virtuals, tempdir, cfg)
-    eq_(["ARTIFACT_WAS=%r" % foo_path,
-         "FOO='bar'", "CFLAGS='-O1 -O2'",
-         "FOOSOFT_DIR=%r" % foo_path,
+    eq_(["FOOSOFT_DIR=%r" % foo_path,
          "FOOSOFT_ID=%r" % foo_id,
          "BARSOFT_DIR=%r" % bar_path,
          "BARSOFT_ID=%r" % bar_id],

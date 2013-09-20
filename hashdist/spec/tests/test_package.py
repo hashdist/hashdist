@@ -58,7 +58,7 @@ def test_create_build_spec():
         "name": "mylib",
         "version": "na",
         "build": {
-            "import": [{"in_env": True, "ref": "OTHERLIB", "id": "otherlib/abcdefg"}],
+            "import": [{"ref": "OTHERLIB", "id": "otherlib/abcdefg"}],
             "commands": [
                 {"set": "BASH", "nohash_value": "/bin/bash"},
                 {"chdir": "src"},

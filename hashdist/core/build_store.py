@@ -104,9 +104,6 @@ An example build spec:
     A job to run to perform the build. See :mod:`hashdist.core.run_job`
     for the documentation of this sub-document.
 
-**on_import**:
-    Copied to `$ARTIFACT/artifact.json` before the build.
-
 **sources**:
     Sources are unpacked; documentation for now in 'hit unpack-sources'
 
@@ -548,7 +545,7 @@ class ArtifactBuilder(object):
     def make_artifact_json(self, artifact_dir):
         fname = pjoin(artifact_dir, 'artifact.json')
         artifact_doc = {}
-        for key in ['name', 'version', 'on_import']:
+        for key in ['name', 'version']:
             if key in self.build_spec.doc:
                 artifact_doc[key] = self.build_spec.doc[key]
         with open(fname, 'w') as f:

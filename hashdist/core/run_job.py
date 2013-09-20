@@ -72,11 +72,6 @@ extra allowed keys:
       the full artifact ID. This can be set to `None` in order to not
       set any environment variables for the artifact.
 
-    * **in_env**: Whether to run the "on_import" section of the artifact
-      (typically to set up ``$PATH``
-      etc.). Otherwise the artifact can only be used through the
-      variables ``ref`` sets up. Defaults to `True`.
-
 When executing, the environment is set up as follows:
 
     * Environment is cleared (``os.environ`` has no effect)
@@ -230,15 +225,8 @@ def substitute(logger, x, env):
         raise ValueError(msg)
 
 def handle_imports(logger, build_store, artifact_dir, virtuals, job_spec):
-    """Assembles a job script by inlining "on_import" sections from imported artifacts
-
-    For each entry in the import section, look up the "on_import" section
-    in the corresponding ``artifact.json`` and inline it in the job spec
-    together with a statement setting ARTIFACT so that it always points
-    to the artifact currently running its code.
-    
-    For the moment, imports are *not* done recursively, i.e., an "import"
-    key is disallowed in the "on_import" section.
+    """Sets up environment variables for a job. This includes $MYIMPORT_DIR, $MYIMPORT_ID,
+    $ARTIFACT, $HDIST_IMPORT, $HDIST_IMPORT_PATHS.
 
     Returns
     -------
@@ -279,16 +267,6 @@ def handle_imports(logger, build_store, artifact_dir, virtuals, job_spec):
             env['%s_DIR' % dep_ref] = dep_dir
             env['%s_ID' % dep_ref] = dep_id
 
-        if import_.get('in_env', True):
-            artifact_json = pjoin(dep_dir, 'artifact.json')
-            with open(artifact_json) as f:
-                import_doc = json.load(f)
-            if 'on_import' not in import_doc:
-                continue
-            on_import = import_doc['on_import']
-            if len(on_import) > 0:
-                result.append({'set': 'ARTIFACT', 'value': dep_dir})
-                result.extend(on_import)
     result.append({'set': 'ARTIFACT', 'value': artifact_dir})
     result.extend(job_spec['commands'])
     env['HDIST_IMPORT'] = ' '.join(HDIST_IMPORT)
@@ -369,7 +347,6 @@ def canonicalize_job_spec(job_spec):
     """
     def canonicalize_import(item):
         item = dict(item)
-        item.setdefault('in_env', True)
         if item.setdefault('ref', None) == '':
             raise ValueError('Empty ref should be None, not ""')
         return item

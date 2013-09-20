@@ -36,7 +36,7 @@ def test_canonical_build_spec():
             "build": {
                 "import": [
                     {"id": "b"},
-                    {"id": "c", "in_env": False, "ref": "the_c"},
+                    {"id": "c", "ref": "the_c"},
                     {"id": "a"}
                 ]
             }
@@ -45,9 +45,9 @@ def test_canonical_build_spec():
     exp = {
           "build": {
             "import": [
-              {'id': 'b', 'in_env': True, 'ref': None},
-              {'id': 'c', 'in_env': False, 'ref': "the_c"},
-              {'id': 'a', 'in_env': True, 'ref': None},
+              {'id': 'b', 'ref': None},
+              {'id': 'c', 'ref': "the_c"},
+              {'id': 'a', 'ref': None},
             ],
           },
           "name" : "foo", "version": "r0"
@@ -148,8 +148,7 @@ def test_basic(tempdir, sc, bldr, config):
 def test_artifact_json(tempdir, sc, bldr, config):
     artifact = {
         "name": "fooname",
-        "version": "na",
-        "on_import": ["baz"],
+        "version": "na"
         }
     spec = dict(artifact)
     spec.update({"build":{"commands": []}})
