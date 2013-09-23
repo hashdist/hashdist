@@ -28,7 +28,7 @@ def test_assemble_stages():
           - {name: make, handler: bash, before: install, after: configure, bash: make}
           - {name: configure, handler: bash, bash: './configure --with-foo=${{foo}}'}
     """)
-    ctx = hook_api.PackageBuildContext()
+    ctx = hook_api.PackageBuildContext(None, {}, {})
     ctx.parameters['foo'] = 'somevalue'
     p = package.PackageSpec("mypackage", spec, {})
     script = p.assemble_build_script(ctx)

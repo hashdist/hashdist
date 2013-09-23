@@ -13,7 +13,8 @@ def substitute_profile_parameters(s, parameters):
         try:
             return parameters[m.group(1)]
         except KeyError:
-            raise ProfileError(s.start_mark, 'Tried to substitute undefined parameter "%s"' % m.group(1))
+            raise ProfileError(getattr(s, 'start_mark', None),
+                               'Tried to substitute undefined parameter "%s"' % m.group(1))
     return _STACK_SUBST_RE.subn(repl, s)[0]
 
 
