@@ -2,6 +2,10 @@
 
 import sys
 import os
+
+hashdist_dir = os.path.realpath(os.path.join(os.path.dirname(os.path.realpath(__file__)), '..'))
+sys.path.insert(0, hashdist_dir)
+
 from hashdist.hdist_logging import Logger, DEBUG
 from hashdist.cli.main import main, help_on_exceptions
 
