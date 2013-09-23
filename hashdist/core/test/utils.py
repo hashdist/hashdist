@@ -18,6 +18,22 @@ from logging import getLevelName
 
 from os.path import join as pjoin
 
+def which(filename):
+    """Checks PATH for the location of filename"""
+
+    locations = os.environ.get("PATH").split(os.pathsep)
+    for location in locations:
+        candidate = os.path.join(location, filename)
+        if os.path.isfile(candidate):
+            return candidate
+    raise OSError('Unable to find system %s' % filename,)
+
+
+def make_abs_temp_dir():
+    """Create a temporary directory and get its absolute path"""
+    return os.path.realpath(tempfile.mkdtemp())
+
+
 # Make our own assert_raises, as nose.tools doesn't have it on Python 2.6
 # We always use the context manager form
 @contextlib.contextmanager
@@ -35,7 +51,7 @@ def assert_raises(wanted_exc_type):
 
 @contextlib.contextmanager
 def temp_dir():
-    tempdir = tempfile.mkdtemp()
+    tempdir = make_abs_temp_dir()
     try:
         yield tempdir
     finally:
@@ -43,7 +59,7 @@ def temp_dir():
 
 @contextlib.contextmanager
 def temp_working_dir():
-    tempdir = tempfile.mkdtemp()
+    tempdir = make_abs_temp_dir()
     try:
         with working_directory(tempdir):
             yield tempdir
@@ -145,10 +161,10 @@ def make_temporary_tarball(files):
     from ..source_cache import scatter_files
     from ..hasher import format_digest
     
-    container_dir = tempfile.mkdtemp()
+    container_dir = make_abs_temp_dir()
     archive_filename = pjoin(container_dir, 'archive.tar.gz')
 
-    tmp_d = tempfile.mkdtemp()
+    tmp_d = make_abs_temp_dir()
     try:
         scatter_files(files, tmp_d)
         with closing(tarfile.open(archive_filename, 'w:gz')) as archive:

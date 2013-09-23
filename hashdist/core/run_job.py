@@ -100,7 +100,7 @@ See example above for basic script structure. Rules:
    execute sub-commands, and pop the stack.
 
  * `cmd`: The list is passed straight to :func:`subprocess.Popen` as is
-   (after variable substiution). I.e., no quoting, no globbing.
+   (after variable substitution). I.e., no quoting, no globbing.
 
  * `hit`: executes the `hit` tool *in-process*. It acts like `cmd` otherwise,
    e.g., `to_var` works.
@@ -162,7 +162,7 @@ with the job runner:
 Virtual imports
 ---------------
 
-Some times one do not wish some imports to become part of the hash.
+Some times it is not desirable for some imports to become part of the hash.
 For instance, if the ``cp`` tool is used in the job, one is normally
 ready to trust that the result wouldn't have been different if a newer
 version of the ``cp`` tool was used instead.
@@ -234,7 +234,7 @@ def handle_imports(logger, build_store, artifact_dir, virtuals, job_spec):
     env : dict
         Environment containing HDIST_IMPORT{,_PATHS} and variables for each import.
     script : list
-        Instructions to execte; imports first and the job_spec commands afterwards.
+        Instructions to execute; imports first and the job_spec commands afterwards.
     """
     job_spec = canonicalize_job_spec(job_spec)
 
@@ -404,7 +404,7 @@ class CommandTreeExecution(object):
         self.log_fifo_filenames = {}
         if temp_dir is None:
             self.rm_temp_dir = True
-            temp_dir = tempfile.mkdtemp(prefix='hashdist-run-job-')
+            temp_dir = os.path.realpath(tempfile.mkdtemp(prefix='hashdist-run-job-'))
         else:
             if os.listdir(temp_dir) != []:
                 raise Exception('temp_dir must be an empty directory')

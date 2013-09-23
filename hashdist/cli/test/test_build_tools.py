@@ -7,7 +7,7 @@ from nose.tools import eq_, ok_
 
 
 from ...core.test import utils
-
+from ...core.test.utils import which
 from ...core.test.test_build_store import fixture
 
 
