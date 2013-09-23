@@ -57,8 +57,9 @@ class PackageSpec(object):
             self_stages = self.doc.get(key, [])
             if key in self.doc:
                 del self.doc[key]
-            ancestor_stages = [ancestor_doc.get(key, []) for ancestor_doc
-                               in self.ancestor_docs.values()]
+            sorted_ancestors = sorted(self.ancestor_docs.items())
+            ancestor_stages = [ancestor_doc.get(key, []) for _, ancestor_doc
+                               in sorted_ancestors]
             combined_stages = inherit_stages(self_stages, ancestor_stages)
             sorted_stages = topological_stage_sort(combined_stages)
             setattr(self, key, sorted_stages)        
@@ -232,20 +233,29 @@ def inherit_stages(descendant_stages, ancestors):
     Merges together stage-lists from several ancestors and a single descendant.
     `descendant_stages` is a single list of stages, while `ancestors` is a list
     of lists of stages, one for each ancestor.
+
+    Stages without name will be assigned a unique name here.
     """
     # First make sure ancestors do not conflict; that is, stages in
     # ancestors are not allowed to have the same name. Merge them all
     # together in a name-to-stage dict.
     stages = {} # { name : stage_list }
-    for ancestor_stages in ancestors:
-        for stage in ancestor_stages:
+    for i, ancestor_stages in enumerate(ancestors):
+        for j, stage in enumerate(ancestor_stages):
+            stage = dict(stage) # copy from ancestor
+            if 'name' not in stage:
+                stage['name'] = '_%04d_%04d' % (i, j)
+
             if stage['name'] in stages:
                 raise IllegalPackageSpecError('"%s" used as the name for a stage in two separate package ancestors' %
                                               stage['name'])
-            stages[stage['name']] = dict(stage)
+            stages[stage['name']] = stage
+
     # Move on to merge the descendant with the inherited stages. We remove the mode attribute.
-    for stage in descendant_stages:
-        name = stage['name']
+    for i, stage in enumerate(descendant_stages):
+        if 'name' not in stage:
+            stage['name'] = '__%04d' % i
+        name = stage.get('name', None)
         if 'mode' in stage:
             mode = stage['mode']
             stage = dict(stage)
