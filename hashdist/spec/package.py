@@ -76,7 +76,7 @@ class PackageSpec(object):
             lines += ctx.dispatch_build_stage(stage)
         return '\n'.join(lines) + '\n'
 
-    def assemble_build_spec(self, source_cache, ctx, dependency_id_map, dependency_packages):
+    def assemble_build_spec(self, source_cache, ctx, dependency_id_map, dependency_packages, profile):
         """
         Returns the build.json for building the package. Also, the build script (Bash script)
         that should be run to build the package is uploaded to the given source cache.
@@ -86,7 +86,17 @@ class PackageSpec(object):
             dep_pkg = dependency_packages[dep_name]
             commands += dep_pkg.assemble_build_import_commands(ctx.parameters, ref=to_env_var(dep_name))
         build_script = self.assemble_build_script(ctx)
-        build_script_key = source_cache.put({'_hashdist/build.sh': build_script})
+
+        files = {}
+        print ctx._bundled_files
+        for to_name, from_name in ctx._bundled_files.iteritems():
+            p = profile.find_package_file(self.name, from_name)
+            if p is None:
+                raise IllegalPackageSpecError('file "%s" not found' % from_name)
+            with open(p) as f:
+                files['_hashdist/' + to_name] = f.read()
+        files['_hashdist/build.sh'] = build_script
+        build_script_key = source_cache.put(files)
         build_spec = create_build_spec(self.name, self.doc, ctx.parameters, dependency_id_map,
                                        commands, [{'target': '.', 'key': build_script_key}])
         return build_spec

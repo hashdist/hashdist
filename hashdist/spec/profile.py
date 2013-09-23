@@ -79,21 +79,22 @@ class Profile(object):
             filename = parent_filename
         return filename
 
-    def find_package_file(self, name, ext='.yaml'):
-        # try pkgs/foo.yaml
-        filename = None
-        if self._packages_dir is not None:
-            filename = pjoin(self._packages_dir, name + ext)
-            if not os.path.exists(filename):
-                # try pkgs/foo/foo.yaml
-                filename = pjoin(self._packages_dir, name, name + ext)
-                if not os.path.exists(filename):
-                    filename = None
-
+    def find_package_file(self, pkgname, filename=None):
         if filename is None:
+            filename = pkgname + '.yaml'
+        # try pkgs/foo.yaml
+        p = None
+        if self._packages_dir is not None:
+            p = pjoin(self._packages_dir, filename)
+            if not os.path.exists(p):
+                # try pkgs/foo/foo.yaml
+                p = pjoin(self._packages_dir, pkgname, filename)
+                if not os.path.exists(p):
+                    p = None
+        if p is None:
             # try included profiles; only allow it to come from one of them
-            filename = self._find_resource_in_parents('package', 'find_package_file', name, ext)
-        return filename
+            p = self._find_resource_in_parents('package', 'find_package_file', pkgname, filename)
+        return p
 
     def find_base_file(self, name):
         filename = None

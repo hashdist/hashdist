@@ -54,4 +54,7 @@ def python_path_and_modules_sandbox(python_path_entries=()):
         sys.modules.update(old_modules)
 
 def bash_handler(ctx, stage):
+    if 'files' in stage:
+        for f in stage['files']:
+            ctx.bundle_file(f)
     return stage['bash'].strip().split('\n')

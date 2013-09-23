@@ -34,7 +34,7 @@ class ProfileBuilder(object):
         package_includes = self.profile.get_packages()
         self._package_specs = {}
         for pkgname, settings in package_includes.iteritems():
-            filename = self.profile.find_package_file(pkgname)
+            filename = self.profile.find_package_file(pkgname, pkgname + '.yaml')
             if filename is None:
                 raise IllegalProfileError('no spec found for package %s' % pkgname)
             doc = load_yaml_from_file(filename)
@@ -65,7 +65,8 @@ class ProfileBuilder(object):
                     self.source_cache,
                     ctx,
                     lambda dep_name: self._build_specs[dep_name].artifact_id,
-                    self._package_specs)
+                    self._package_specs,
+                    self.profile)
             # check whether package is already built, and update self._built
             if self.build_store.is_present(self._build_specs[pkgname]):
                 self._built.add(pkgname)
@@ -158,7 +159,7 @@ class ProfileBuilder(object):
             py = self.profile.find_base_file(ancestor + '.py')
             if py:
                 hook_files.append(py)
-        py = self.profile.find_package_file(pkgname, '.py')
+        py = self.profile.find_package_file(pkgname, pkgname +'.py')
         if py:
             hook_files.append(py)
         ctx = hook.load_hooks(hook_files)

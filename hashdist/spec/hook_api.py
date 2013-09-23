@@ -22,6 +22,7 @@ class PackageBuildContext(object):
         import hook
         self._build_stage_handlers = {'bash': hook.bash_handler}
         self._modules = []
+        self._bundled_files = {}
         self.parameters = {}
 
     def register_build_stage_handler(self, handler_name, handler_func):
@@ -70,7 +71,16 @@ class PackageBuildContext(object):
             return doc
         else:
             raise TypeError("unexpected item in documents of type %r: %s" % (type(doc), doc))
-        
+
+    def bundle_file(self, filename, target_name=None):
+        """
+        Makes sure that a file located in the same directory as the
+        package spec YAML-file can be found in the ``_hastdist``
+        sub-directory of the build directory during the build.
+        """
+        if target_name is None:
+            target_name = filename
+        self._bundled_files[target_name] = filename
 
 
 def build_stage(handler_name=None):
