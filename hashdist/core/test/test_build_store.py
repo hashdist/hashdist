@@ -77,12 +77,10 @@ def fixture(short_hash_len=SHORT_ARTIFACT_ID_LEN, dir_pattern='{name}/{shorthash
                 os.makedirs(pjoin(tempdir, 'db'))
 
                 config = {
-                    'sourcecache/sources': pjoin(tempdir, 'src'),
-                    'sourcecache/mirror': '',
-                    'builder/artifacts': pjoin(tempdir, 'opt'),
-                    'builder/build-temp': pjoin(tempdir, 'bld'),
-                    'global/db': pjoin(tempdir, 'db'),
-                    'builder/artifact-dir-pattern': dir_pattern,
+                    'source_caches': [{'dir': pjoin(tempdir, 'src')}],
+                    'build_stores': [{'dir': pjoin(tempdir, 'ba')}],
+                    'build_temp': pjoin(tempdir, 'bld'),
+                    'db': pjoin(tempdir, 'db'),
                     }
                 
                 sc = source_cache.SourceCache.create_from_config(config, logger)

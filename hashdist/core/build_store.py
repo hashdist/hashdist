@@ -313,10 +313,14 @@ class BuildStore(object):
     def create_from_config(config, logger, **kw):
         """Creates a SourceCache from the settings in the configuration
         """
-        return BuildStore(config['builder/build-temp'],
-                          config['global/db'],
-                          config['builder/artifacts'],
-                          config['builder/artifact-dir-pattern'],
+        if len(config['build_stores']) != 1:
+            logger.error("Only a single build store currently supported")
+            raise NotImplementedError()
+
+        return BuildStore(config['build_temp'],
+                          config['db'],
+                          config['build_stores'][0]['dir'],
+                          '{name}/{shorthash}',
                           logger,
                           **kw)
 

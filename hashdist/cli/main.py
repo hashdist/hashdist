@@ -13,7 +13,8 @@ import os
 import json
 import traceback
 
-from ..core import load_configuration_from_inifile, DEFAULT_CONFIG_FILENAME
+from ..formats.config import (load_config_file, DEFAULT_CONFIG_FILENAME_REPR, DEFAULT_CONFIG_FILENAME,
+                              ValidationError)
 from ..hdist_logging import Logger, DEBUG, INFO
 
 try:
@@ -72,7 +73,7 @@ def main(unparsed_argv, env, logger, default_config_filename=None):
     """The main ``hit`` command-line entry point
     """
     if default_config_filename is None:
-        default_config_filename = os.path.expanduser(DEFAULT_CONFIG_FILENAME)
+        default_config_filename = DEFAULT_CONFIG_FILENAME
 
     description = textwrap.dedent('''
     Entry-point for various Hashdist command-line tools
@@ -110,7 +111,10 @@ def main(unparsed_argv, env, logger, default_config_filename=None):
         else:
             if args.config_file is None:
                 args.config_file = default_config_filename
-            config = load_configuration_from_inifile(args.config_file)
+            try:
+                config = load_config_file(args.config_file)
+            except ValidationError as e:
+                logger.error(str(e))
         
         ctx = HashdistCommandContext(parser, subcmd_parsers, sys.stdout, config, env, logger)
 

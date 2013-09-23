@@ -198,9 +198,16 @@ class SourceCache(object):
     def create_from_config(config, logger, create_dirs=False):
         """Creates a SourceCache from the settings in the configuration
         """
-        mirror = config['sourcecache/mirror'].strip()
-        mirrors = [mirror] if mirror else []
-        return SourceCache(config['sourcecache/sources'], logger, mirrors, create_dirs)
+        if 'dir' not in config['source_caches'][0]:
+            logger.error('First source cache need to be a local directory')
+            raise NotImplementedError()
+        mirrors = []
+        for entry in config['source_caches'][1:]:
+            if 'url' not in entry:
+                logger.error('All but first source cache currently needs to be remote')
+                raise NotImplementedError()
+            mirrors.append(entry['url'])
+        return SourceCache(config['source_caches'][0]['dir'], logger, mirrors, create_dirs)
 
     def fetch_git(self, repository, rev, repo_name):
         """Fetches source code from git repository
