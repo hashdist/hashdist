@@ -385,15 +385,23 @@ class BuildStore(object):
         build_spec = as_build_spec(build_spec)
         return self.resolve(build_spec.artifact_id) is not None
 
-    def ensure_present(self, build_spec, config, virtuals=None, keep_build='never'):
+    def ensure_present(self, build_spec, config, extra_env=None, virtuals=None, keep_build='never'):
+        """
+        Builds an artifact (if it is not already present).
+
+        extra_env: dict (optional)
+            Extra environment variables to pass to the build environment. These are *NOT* hashed!
+        """
         if virtuals is None:
             virtuals = {}
+        if extra_env is None:
+            extra_env = {}
         if keep_build not in ('never', 'error', 'always'):
             raise ValueError("invalid keep_build value")
         build_spec = as_build_spec(build_spec)
         artifact_dir = self.resolve(build_spec.artifact_id)
         if artifact_dir is None:
-            builder = ArtifactBuilder(self, build_spec, virtuals)
+            builder = ArtifactBuilder(self, build_spec, extra_env, virtuals)
             artifact_dir = builder.build(config, keep_build)
         return build_spec.artifact_id, artifact_dir
 
@@ -490,12 +498,13 @@ class BuildStore(object):
         
  
 class ArtifactBuilder(object):
-    def __init__(self, build_store, build_spec, virtuals):
+    def __init__(self, build_store, build_spec, extra_env, virtuals):
         self.build_store = build_store
         self.logger = build_store.logger.get_sub_logger(build_spec.doc['name'])
         self.build_spec = build_spec
         self.artifact_id = build_spec.artifact_id
         self.virtuals = virtuals
+        self.extra_env = extra_env
 
     def build(self, config, keep_build):
         assert isinstance(config, dict), "caller not refactored"
@@ -516,7 +525,7 @@ class ArtifactBuilder(object):
         build_dir = self.build_store.make_build_dir(self.build_spec)
         should_keep = False # failures in init are bugs in hashdist itself, no need to keep dir
         try:
-            env = {}
+            env = dict(self.extra_env)
             env['BUILD'] = build_dir
             source_cache = SourceCache.create_from_config(config, self.logger)
             self.build_store.prepare_build_dir(source_cache, self.build_spec, build_dir)

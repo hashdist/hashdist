@@ -96,7 +96,7 @@ def fixture(short_hash_len=SHORT_ARTIFACT_ID_LEN, dir_pattern='{name}/{shorthash
 @fixture()
 def test_basic(tempdir, sc, bldr, config):
     script_key = sc.put({'build.sh': dedent("""\
-    echo hi stdout path=[$PATH]
+    echo hi stdout path=[$PATH] $EXTRA
     echo hi stderr>&2
     /usr/bin/find . > ${ARTIFACT}/hello
     """)})
@@ -117,7 +117,7 @@ def test_basic(tempdir, sc, bldr, config):
         }
 
     assert not bldr.is_present(spec)
-    name, path = bldr.ensure_present(spec, config)
+    name, path = bldr.ensure_present(spec, config, extra_env={'EXTRA': 'extra'})
     assert bldr.is_present(spec)
     assert ['artifact.json', 'bar', 'build.json', 'build.log.gz', 'hello'] == sorted(os.listdir(path))
     with file(pjoin(path, 'hello')) as f:
@@ -133,7 +133,7 @@ def test_basic(tempdir, sc, bldr, config):
         '''))
     with closing(gzip.open(pjoin(path, 'build.log.gz'))) as f:
         s = f.read()
-        assert 'hi stdout path=[]' in s
+        assert 'hi stdout path=[] extra' in s
         assert 'hi stderr' in s
 
     # files section
