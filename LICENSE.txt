@@ -4,6 +4,7 @@ Overview
 There are 3 licenses:
 
  * Hashdist: BSD 3-clause
+ * jsonschema: MIT
  * pyyaml: MIT
  * sh: MIT
  * distlib: Python license
@@ -73,6 +74,31 @@ due to license compatibility issues between Apache License 2.0 and GNU GPL v2.
 
 The project repository then had a clean start with some files taken from
 Python 2.7.1, so definitely all files are under Python License now.
+
+
+##################################################################
+# jsonschema                                                     #
+##################################################################
+
+Copyright (c) 2013 Julian Berman
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 
 
 ##################################################################
