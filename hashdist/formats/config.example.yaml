@@ -1,0 +1,38 @@
+## Configuration file for Hashdist
+
+## All relative paths are relative to the directory containing this
+## configuration file.
+
+## Where to store the built software
+
+build_stores:
+ - dir: ./ba
+
+
+## Location where temporary directories for building software are created.
+## Such directories are by default removed again once the build is done.
+
+build_temp: ./bld
+
+
+## Locations of downloaded tarballs and git repositories.  A location
+## can either be a local filesystem, or a URL to an online, read-only
+## mirror. Only the first location, which should be a local directory,
+## will be written to.
+
+source_caches:
+ - dir: ./src
+## For additional source cache mirror:
+## - url: https://some.server.org/hashdist/src
+
+
+## The cache directory is used for misc. caching (e.g., probing of host
+## system).  The contents can always be wiped without resulting in rebuilds.
+
+cache: ./cache
+
+
+## The db directory contains the filesystem-based database for Hashdist,
+## linking to the build artifacts.
+
+db: ./db

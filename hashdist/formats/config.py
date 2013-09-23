@@ -70,3 +70,6 @@ def load_config_file(filename):
     for key in ['build_temp', 'cache', 'db']:
         doc[key] = _make_abs(basedir, doc[key])
     return doc
+
+def get_config_example_filename():
+    return pjoin(os.path.dirname(__file__), 'config.example.yaml')

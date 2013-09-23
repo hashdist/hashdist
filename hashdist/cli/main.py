@@ -95,7 +95,8 @@ def main(unparsed_argv, env, logger, default_config_filename=None):
 
         cls.setup(subcmd_parser)
         
-        subcmd_parser.set_defaults(subcommand_handler=cls.run, parser=parser)
+        subcmd_parser.set_defaults(subcommand_handler=cls.run, parser=parser,
+                                   subcommand=name)
         # Can't find an API to access subparsers through parser? Pass along explicitly in ctx
         # (needed by Help)
         subcmd_parsers[name] = subcmd_parser
@@ -106,15 +107,19 @@ def main(unparsed_argv, env, logger, default_config_filename=None):
         retcode = 1
     else:
         args = parser.parse_args(unparsed_argv[1:])
-        if args.config_file is None and 'HDIST_CONFIG' in env:
-            config = json.loads(env['HDIST_CONFIG'])
+        if args.subcommand == 'init-home':
+            # do not try to load config in the init-home command, since we're about to create it
+            config = None
         else:
-            if args.config_file is None:
-                args.config_file = default_config_filename
-            try:
-                config = load_config_file(args.config_file)
-            except ValidationError as e:
-                logger.error(str(e))
+            if args.config_file is None and 'HDIST_CONFIG' in env:
+                config = json.loads(env['HDIST_CONFIG'])
+            else:
+                if args.config_file is None:
+                    args.config_file = default_config_filename
+                try:
+                    config = load_config_file(args.config_file)
+                except ValidationError as e:
+                    logger.error(str(e))
         
         ctx = HashdistCommandContext(parser, subcmd_parsers, sys.stdout, config, env, logger)
 

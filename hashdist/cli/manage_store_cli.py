@@ -1,16 +1,20 @@
 import sys
 import os
+import shutil
 from os.path import join as pjoin, exists as pexists
 from textwrap import dedent
 
+from ..formats.config import DEFAULT_CONFIG_FILENAME_REPR, DEFAULT_CONFIG_FILENAME, get_config_example_filename
 from .main import register_subcommand
 
 @register_subcommand
 class InitHome(object):
-    """
+    __doc__ = """
     Initializes the current user's home directory for Hashdist by
-    creating ~/.hitconfig configuration file and ~/.hit directory.
-    """
+    creating the ~/.hashdist directory. Further configuration can then
+    by done by modifying %s.
+    """ % DEFAULT_CONFIG_FILENAME_REPR
+    command = 'init-home'
     
     @staticmethod
     def setup(ap):
@@ -18,29 +22,17 @@ class InitHome(object):
 
     @staticmethod
     def run(ctx, args):
-        config_file = os.path.expanduser('~/.hitconfig')
-        store_dir = os.path.expanduser('~/.hit')
-        for x in [config_file, store_dir]:
+        store_dir = os.path.expanduser('~/.hashdist')
+        for x in [DEFAULT_CONFIG_FILENAME, store_dir]:
             if pexists(x):
-                sys.stderr.write('%s already exists, aborting\n' % x)
+                ctx.logger.error('%s already exists, aborting\n' % x)
                 return 2
 
-        for x in ['opt', 'bld', 'src', 'db', 'cache']:
+        for x in ['ba', 'bld', 'src', 'db', 'cache']:
             os.makedirs(pjoin(store_dir, x))
-        with file(config_file, 'w') as f:
-            f.write(dedent("""\
-            [global]
-            cache = ~/.hit/cache
-            db = ~/.hit/db
-            
-            [sourcecache]
-            sources = ~/.hit/src
-
-            [builder]
-            build-temp = ~/.hit/bld
-            artifacts = ~/.hit/opt
-            artifact-dir-pattern = {name}/{shorthash}
-            """))
+        sys.stdout.write('Directory %s created.\n' % store_dir)
+        shutil.copyfile(get_config_example_filename(), DEFAULT_CONFIG_FILENAME)
+        sys.stdout.write('Default configuration file %s written.\n' % DEFAULT_CONFIG_FILENAME)
 
 @register_subcommand
 class ClearBuilds(object):
