@@ -7,6 +7,8 @@ Hook files are re-loaded for every package build, and so decorators etc.
 are run again. The machinery used to Hashdist to load hook files is
 found in .hook.
 """
+import types
+from .utils import substitute_profile_parameters
 
 class IllegalHookFileError(Exception):
     pass
@@ -39,10 +41,36 @@ class PackageBuildContext(object):
         self._modules.append(mod)
 
     def dispatch_build_stage(self, stage):
+        # Copy stage dict and substitute all string arguments
+        stage = self.deep_sub(stage)
         handler = stage.get('handler', stage['name'])
         if handler not in self._build_stage_handlers:
             raise IllegalPackageSpecError('build stage handler "%s" not registered' % handler)
         return self._build_stage_handlers[handler](self, stage)
+
+    def sub(self, s):
+        """
+        Substitute ``${{var}}`` in `s` with variables from `self.parameters` in `s`,
+        and return resulting string.
+        """
+        return substitute_profile_parameters(s, self.parameters)
+
+    def deep_sub(self, doc):
+        """
+        Recursively walk the document `doc`, and for all non-key strings, make
+        a substitution as described in `sub`. A deep copy is returned.
+        """
+        if isinstance(doc, dict):
+            return dict((key, self.deep_sub(value)) for key, value in doc.iteritems())
+        elif isinstance(doc, (list, tuple)):
+            return [self.deep_sub(item) for item in doc]
+        elif isinstance(doc, basestring):
+            return self.sub(doc)
+        elif isinstance(doc, (int, bool, float, NoneType)):
+            return doc
+        else:
+            raise TypeError("unexpected item in documents of type %r: %s" % (type(doc), doc))
+        
 
 
 def build_stage(handler_name=None):

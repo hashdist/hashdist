@@ -27,9 +27,10 @@ def test_assemble_stages():
           - {name: make, handler: bash, before: install, after: configure, bash: make}
           - {name: configure, handler: bash, bash: './configure --with-foo=${{foo}}'}
     """)
-    parameters = {'foo': 'somevalue'}
+    ctx = hook_api.PackageBuildContext()
+    ctx.parameters['foo'] = 'somevalue'
     p = package.PackageSpec("mypackage", spec, {})
-    script = p.assemble_build_script(parameters)
+    script = p.assemble_build_script(ctx)
     assert script == dedent("""\
     set -e
     ./configure --with-foo=somevalue
@@ -61,11 +62,11 @@ def test_create_build_spec():
             "import": [{"ref": "OTHERLIB", "id": "otherlib/abcdefg"}],
             "commands": [
                 {"set": "BASH", "nohash_value": "/bin/bash"},
-                {"chdir": "src"},
-                {"cmd": ["$BASH", "../build.sh"]}]},
+                {"cmd": ["$BASH", "_hashdist/build.sh"]}]},
         "sources": [
-            {"key": "git:a3c39a03e7b8e9a3321d69ff877338f99ebb4aa2", "target": "src"}
+            {"key": "git:a3c39a03e7b8e9a3321d69ff877338f99ebb4aa2", "target": "."}
             ]}
+    
     assert expected == build_spec.doc
 
 
