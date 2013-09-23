@@ -46,8 +46,7 @@ class ProfileBuilder(object):
     def _load_ancestor_doc(self, pkgname):
         if pkgname not in self._ancestor_docs:
             filename = self.profile.find_base_file(pkgname + '.yaml')
-            with open(filename) as f:
-                doc = marked_yaml_load(f)
+            doc = load_yaml_from_file(filename)
             self._ancestor_docs[pkgname] = doc
 
     def _compute_specs(self):
