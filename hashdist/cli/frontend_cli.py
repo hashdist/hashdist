@@ -4,6 +4,9 @@ import shutil
 from pprint import pprint
 from .main import register_subcommand
 
+def add_build_args(ap):
+    ap.add_argument('-j', metavar='CPUCOUNT', default=1, type=int, help='number of CPU cores to utilize')
+
 class ProfileFrontendBase(object):
     def __init__(self, ctx, args):
         from ..spec import Profile, ProfileBuilder, load_profile
@@ -14,7 +17,7 @@ class ProfileFrontendBase(object):
         self.build_store = BuildStore.create_from_config(ctx.config, ctx.logger)
         self.profile = load_profile(self.source_cache, args.profile)
         self.builder = ProfileBuilder(self.ctx.logger, self.source_cache, self.build_store, self.profile)
-        
+
     @classmethod
     def run(cls, ctx, args):
         cls(ctx, args).profile_builder_action()
@@ -34,6 +37,7 @@ class Build(ProfileFrontendBase):
 
     @classmethod
     def setup(cls, ap):
+        add_build_args(ap)
         ap.add_argument('profile', help='profile yaml file')
         ap.add_argument('package', nargs='?', help='package to build (default: build all)')
     
@@ -44,13 +48,13 @@ class Build(ProfileFrontendBase):
             self.ctx.error('profile filename must end with yaml')
         profile_symlink = self.args.profile[:-len('.yaml')]
         if self.args.package is not None:
-            self.builder.build(self.args.package, self.ctx.config)
+            self.builder.build(self.args.package, self.ctx.config, self.args.j)
         else:
             while True:
                 ready = self.builder.get_ready_list()
                 if len(ready) == 0:
                     break
-                self.builder.build(ready[0], self.ctx.config)
+                self.builder.build(ready[0], self.ctx.config, self.args.j)
             artifact_id, artifact_dir = self.builder.build_profile(self.ctx.config)
             atomic_symlink(artifact_dir, profile_symlink)
         
