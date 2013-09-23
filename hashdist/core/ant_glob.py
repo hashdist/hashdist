@@ -57,7 +57,7 @@ def ant_iglob(pattern, cwd='', include_dirs=True):
         if include_dirs:
             return True
         else:
-            return os.path.isfile(fname)
+            return os.path.isfile(fname) or os.path.islink(fname)
         
     if isinstance(pattern, (str, unicode)):
         if pattern.startswith('/'):
