@@ -89,7 +89,6 @@ class PackageSpec(object):
         build_script = self.assemble_build_script(ctx)
 
         files = {}
-        print ctx._bundled_files
         for to_name, from_name in ctx._bundled_files.iteritems():
             p = profile.find_package_file(self.name, from_name)
             if p is None:
