@@ -17,7 +17,6 @@ import re
 
 from .common import json_formatting_options
 from .build_store import BuildStore
-from .profile import make_profile
 from .fileutils import rmdir_empty_up_to, write_protect
 
 def execute_files_dsl(files, env):
