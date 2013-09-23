@@ -110,7 +110,7 @@ class BuildDir(ProfileFrontendBase):
     """
     Creates the build directory, ready for build, in a given location, for debugging purposes
     """
-    command = 'builddir'
+    command = 'bdir'
 
     @classmethod
     def setup(cls, ap):
