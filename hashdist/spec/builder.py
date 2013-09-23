@@ -2,7 +2,7 @@ from pprint import pprint
 from . import package
 from . import utils
 from . import hook
-from .marked_yaml import marked_yaml_load
+from ..formats.marked_yaml import load_yaml_from_file
 from ..core import BuildSpec
 
 class IllegalProfileError(Exception):
@@ -36,10 +36,9 @@ class ProfileBuilder(object):
             filename = self.profile.find_package_file(pkgname)
             if filename is None:
                 raise IllegalProfileError('no spec found for package %s' % pkgname)
-            with open(filename) as f:
-                doc = marked_yaml_load(f)
-                if doc is None:
-                    doc = {}
+            doc = load_yaml_from_file(filename)
+            if doc is None:
+                doc = {}
             for ancestor in doc.get('extends', []):
                 self._load_ancestor_doc(ancestor)
             self._package_specs[pkgname] = package.PackageSpec(pkgname, doc, self._ancestor_docs)

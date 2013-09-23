@@ -3,7 +3,7 @@ from pprint import pprint
 from textwrap import dedent
 from ...core.test.utils import *
 from .. import hook
-from ..marked_yaml import marked_yaml_load
+from ...formats.marked_yaml import marked_yaml_load
 
 @temp_working_dir_fixture
 def test_hook_loading(d):

@@ -2,7 +2,8 @@ from pprint import pprint
 from textwrap import dedent
 from ...core.test.utils import *
 from .. import package
-from ..marked_yaml import marked_yaml_load
+from .. import hook_api
+from ...formats.marked_yaml import marked_yaml_load
 
 from nose import SkipTest
 

@@ -11,7 +11,7 @@ import os
 import shutil
 from os.path import join as pjoin
 
-from .marked_yaml import marked_yaml_load
+from ..formats.marked_yaml import load_yaml_from_file
 from .utils import substitute_profile_parameters
 from .. import core
 
@@ -193,8 +193,7 @@ def load_profile(source_cache, include_doc, cwd=None):
 
     profile = resolve_path(cwd, include_doc['profile'])
 
-    with open(profile) as f:
-        doc = marked_yaml_load(f)
+    doc = load_yaml_from_file(profile)
     if doc is None:
         doc = {}
     if 'extends' in doc:

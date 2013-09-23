@@ -2,7 +2,7 @@ from pprint import pprint
 import os
 from os.path import join as pjoin
 
-from .marked_yaml import marked_yaml_load
+from ..formats.marked_yaml import load_yaml_from_file
 from .utils import substitute_profile_parameters, topological_sort
 from .. import core
 from .hook_api import IllegalPackageSpecError
@@ -43,8 +43,7 @@ class PackageSpec(object):
         filename = os.path.realpath(filename)
         obj = _package_spec_cache.get(filename, None)
         if obj is None:
-            with open(filename) as f:
-                doc = marked_yaml_load(f)
+            doc = load_yaml_from_file(filename)
             if doc is None:
                 doc = {}
             obj = _package_spec_cache[filename] = PackageSpec(name, doc, {})
@@ -162,8 +161,7 @@ class PackageSpecResolver(object):
         filename = os.path.realpath(pjoin(self.path, pkgname, '%s.yaml' % pkgname))
         obj = _package_spec_cache.get(filename, None)
         if obj is None:
-            with open(filename) as f:
-                doc = marked_yaml_load(f)
+            doc = load_yaml_from_file(filename)
             obj = _package_spec_cache[filename] = PackageSpec.load(doc, self)
         return obj
 
