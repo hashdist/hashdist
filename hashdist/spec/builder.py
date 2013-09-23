@@ -4,6 +4,7 @@ from . import utils
 from . import hook
 from ..formats.marked_yaml import load_yaml_from_file
 from ..core import BuildSpec
+from .utils import to_env_var
 
 class IllegalProfileError(Exception):
     pass
@@ -120,13 +121,13 @@ class ProfileBuilder(object):
 
         imports = []
         for pkgname in sorted_packages:
-            imports.append({'ref': '%s' % pkgname.upper(), 'id': self._build_specs[pkgname].artifact_id})
+            imports.append({'ref': '%s' % to_env_var(pkgname), 'id': self._build_specs[pkgname].artifact_id})
 
         commands = []
         install_link_rules = []
         for pkgname in sorted_packages:
             pkg = self._package_specs[pkgname]
-            ref = '%s_DIR' % pkgname.upper()
+            ref = '%s_DIR' % to_env_var(pkgname)
             commands += pkg.assemble_build_import_commands(self.profile.parameters, ref)
             install_link_rules += pkg.assemble_link_dsl(self.profile.parameters, ref, '${ARTIFACT}')
         commands.extend([{"hit": ["create-links", "$in0"],

@@ -39,3 +39,5 @@ def topological_sort(roots, get_deps):
         toposort(node)
     return result
     
+def to_env_var(x):
+    return x.upper().replace('-', '_')

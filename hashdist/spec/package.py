@@ -3,7 +3,7 @@ import os
 from os.path import join as pjoin
 
 from ..formats.marked_yaml import load_yaml_from_file
-from .utils import substitute_profile_parameters, topological_sort
+from .utils import substitute_profile_parameters, topological_sort, to_env_var
 from .. import core
 from .hook_api import IllegalPackageSpecError
 
@@ -84,8 +84,7 @@ class PackageSpec(object):
         commands = []
         for dep_name in self.build_deps:
             dep_pkg = dependency_packages[dep_name]
-            commands += dep_pkg.assemble_build_import_commands(ctx.parameters, ref=dep_name.upper())
-
+            commands += dep_pkg.assemble_build_import_commands(ctx.parameters, ref=to_env_var(dep_name))
         build_script = self.assemble_build_script(ctx)
         build_script_key = source_cache.put({'_hashdist/build.sh': build_script})
         build_spec = create_build_spec(self.name, self.doc, ctx.parameters, dependency_id_map,
@@ -284,7 +283,7 @@ def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map,
     imports = []
     build_deps = pkg_doc.get('dependencies', {}).get('build', [])
     for dep_name in build_deps:
-        imports.append({'ref': '%s' % dep_name.upper(), 'id': dependency_id_map(dep_name)})
+        imports.append({'ref': '%s' % to_env_var(dep_name), 'id': dependency_id_map(dep_name)})
 
     # sources
     sources = list(extra_sources)
