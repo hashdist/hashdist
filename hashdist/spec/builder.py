@@ -110,12 +110,7 @@ class ProfileBuilder(object):
                       for pkgname, build_spec in self._build_specs.iteritems())
         return report
 
-    def build(self, pkgname, config):
-        self._package_specs[pkgname].fetch_sources(self.source_cache)
-        self.build_store.ensure_present(self._build_specs[pkgname], config)
-        self._built.add(pkgname)
-
-    def build_profile(self, config):
+    def get_profile_build_spec(self):
         profile_list = [{"id": build_spec.artifact_id} for build_spec in self._build_specs.values()]
 
         # Topologically sort by run-time dependencies
@@ -138,7 +133,7 @@ class ProfileBuilder(object):
                           "inputs": [{"json": install_link_rules}]},
                          {"hit": ["build-postprocess", "--write-protect"]}])
 
-        profile_build_spec = BuildSpec({
+        return BuildSpec({
             "name": "profile",
             "version": "n",
             "build": {
@@ -146,6 +141,14 @@ class ProfileBuilder(object):
                 "commands": commands,
                 }
             })
+
+    def build(self, pkgname, config):
+        self._package_specs[pkgname].fetch_sources(self.source_cache)
+        self.build_store.ensure_present(self._build_specs[pkgname], config)
+        self._built.add(pkgname)
+
+    def build_profile(self, config):
+        profile_build_spec = self.get_profile_build_spec()
         return self.build_store.ensure_present(profile_build_spec, config)
         
     def _load_package_build_context(self, pkgname):

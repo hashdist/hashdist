@@ -91,7 +91,11 @@ class Show(ProfileFrontendBase):
     
     def profile_builder_action(self):
         if self.args.subcommand == 'buildspec':
-            pprint(self.builder.get_build_spec(self.args.package).doc)
+            if self.args.package == 'profile':
+                spec = self.builder.get_profile_build_spec()
+            else:
+                spec = self.builder.get_build_spec(self.args.package)
+            pprint(spec.doc)
         elif self.args.subcommand == 'script':
             sys.stdout.write(self.builder.get_build_script(self.args.package))
         else:
