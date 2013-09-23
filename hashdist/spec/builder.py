@@ -2,6 +2,7 @@ from pprint import pprint
 from . import package
 from . import utils
 from . import hook
+from . import hook_api
 from ..formats.marked_yaml import load_yaml_from_file
 from ..core import BuildSpec
 from .utils import to_env_var
@@ -163,6 +164,8 @@ class ProfileBuilder(object):
         py = self.profile.find_package_file(pkgname, pkgname +'.py')
         if py:
             hook_files.append(py)
-        ctx = hook.load_hooks(hook_files)
+        dep_vars = [to_env_var(x) for x in self._package_specs[pkgname].build_deps]
+        ctx = hook_api.PackageBuildContext(pkgname, dep_vars, self.profile.parameters)
+        hook.load_hooks(ctx, hook_files)
         ctx.parameters.update(self.profile.parameters)
         return ctx

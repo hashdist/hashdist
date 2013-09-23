@@ -11,14 +11,17 @@ import types
 from .utils import substitute_profile_parameters
 from .exceptions import ProfileError, IllegalHookFileError
 
-
 class PackageBuildContext(object):
-    def __init__(self):
+    def __init__(self, package_name, dependency_dir_vars, parameters):
         import hook
         self._build_stage_handlers = {'bash': hook.bash_handler}
         self._modules = []
         self._bundled_files = {}
-        self.parameters = {}
+
+        # Available in API
+        self.package_name = package_name
+        self.parameters = dict(parameters)
+        self.dependency_dir_vars = list(dependency_dir_vars)
 
     def register_build_stage_handler(self, handler_name, handler_func):
         """
@@ -62,7 +65,7 @@ class PackageBuildContext(object):
             return [self.deep_sub(item) for item in doc]
         elif isinstance(doc, basestring):
             return self.sub(doc)
-        elif isinstance(doc, (int, bool, float, NoneType)):
+        elif isinstance(doc, (int, bool, float, types.NoneType)):
             return doc
         else:
             raise TypeError("unexpected item in documents of type %r: %s" % (type(doc), doc))

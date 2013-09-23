@@ -15,23 +15,22 @@ HOOK_MOD_NAME = '__hashdist_build_hook__'
 
 current_package_context = None
 
-def load_hooks(hook_files):
+def load_hooks(ctx, hook_files):
     """
-    Constructs a new PackageBuildContext that includes the Python scripts given
-    in hook_files.
+    Takes a newly constructed PackageBuildContext `ctx` and runs hook files given in `hook_files`; these
+    will register callbacks in `ctx` when ran.
     """
     global current_package_context
     assert current_package_context is None
     assert HOOK_MOD_NAME not in sys.modules
     imp.acquire_lock()
     try:
-        current_package_context = hook_api.PackageBuildContext()
+        current_package_context = ctx  # assign to global var
         # call imports, which uses decorators that register with current_package_context
         for filename in hook_files:
             mod = imp.load_source(HOOK_MOD_NAME, filename)
             current_package_context.register_module(mod)
             del sys.modules[HOOK_MOD_NAME]
-        return current_package_context
     finally:
         imp.release_lock()
         current_package_context = None
