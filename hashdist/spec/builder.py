@@ -34,7 +34,8 @@ class ProfileBuilder(object):
         package_includes = self.profile.get_packages()
         self._package_specs = {}
         for pkgname, settings in package_includes.iteritems():
-            filename = self.profile.find_package_file(pkgname, pkgname + '.yaml')
+            use = settings.get('use', pkgname)
+            filename = self.profile.find_package_file(use, use + '.yaml')
             if filename is None:
                 raise IllegalProfileError('no spec found for package %s' % pkgname)
             doc = load_yaml_from_file(filename)
@@ -42,7 +43,7 @@ class ProfileBuilder(object):
                 doc = {}
             for ancestor in doc.get('extends', []):
                 self._load_ancestor_doc(ancestor)
-            self._package_specs[pkgname] = package.PackageSpec(pkgname, doc, self._ancestor_docs)
+            self._package_specs[pkgname] = package.PackageSpec(use, doc, self._ancestor_docs)
 
     def _load_ancestor_doc(self, pkgname):
         if pkgname not in self._ancestor_docs:
