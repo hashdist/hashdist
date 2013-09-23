@@ -1,8 +1,8 @@
 import re
 
-from jsonschema import _utils
-from jsonschema.exceptions import FormatError, ValidationError
-from jsonschema.compat import iteritems
+from . import _utils
+from .exceptions import FormatError, ValidationError
+from .compat import iteritems
 
 
 FLOAT_TOLERANCE = 10 ** -15

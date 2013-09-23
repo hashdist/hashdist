@@ -2,7 +2,7 @@ import datetime
 import re
 import socket
 
-from jsonschema.exceptions import FormatError
+from .exceptions import FormatError
 
 
 class FormatChecker(object):
