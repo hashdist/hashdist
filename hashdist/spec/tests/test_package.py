@@ -4,6 +4,7 @@ from ...core.test.utils import *
 from .. import package
 from .. import hook_api
 from ...formats.marked_yaml import marked_yaml_load
+from ..exceptions import ProfileError
 
 from nose import SkipTest
 
@@ -118,6 +119,6 @@ def test_inheritance_collision():
     child_doc = marked_yaml_load("extends: [base1, base2]")
     base1_doc = marked_yaml_load("build_stages: [{name: stage1}]")
     base2_doc = marked_yaml_load("build_stages: [{name: stage1}]")
-    with assert_raises(package.IllegalPackageSpecError):
+    with assert_raises(ProfileError):
         package.PackageSpec('mypackage', child_doc, {'base1': base1_doc, 'base2': base2_doc})
     

@@ -1,4 +1,5 @@
 import re
+from .exceptions import ProfileError
 
 _STACK_SUBST_RE = re.compile(r'\$\{\{([^}]*)\}\}')
 
@@ -11,10 +12,9 @@ def substitute_profile_parameters(s, parameters):
     def repl(m):
         try:
             return parameters[m.group(1)]
-        except:
-            raise KeyError('Tried to substitute undefined parameter "%s"' % m.group(1))
+        except KeyError:
+            raise ProfileError(s.start_mark, 'Tried to substitute undefined parameter "%s"' % m.group(1))
     return _STACK_SUBST_RE.subn(repl, s)[0]
-
 
 
 class GraphCycleError(Exception):

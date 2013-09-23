@@ -15,6 +15,7 @@ import traceback
 
 from ..formats.config import (load_config_file, DEFAULT_CONFIG_FILENAME_REPR, DEFAULT_CONFIG_FILENAME,
                               ValidationError)
+from ..formats.marked_yaml import ValidationError
 from ..hdist_logging import Logger, DEBUG, INFO
 
 try:
@@ -148,8 +149,14 @@ def help_on_exceptions(logger, func, *args, **kw):
         return 127
     except SystemExit:
         raise
+    except ValidationError as e:
+        if os.environ.get('DEBUG', ''):
+            raise
+        else:
+            logger.error(str(e))
+            return 127
     except:
-        if len(os.environ.get('DEBUG', '')) > 0:
+        if os.environ.get('DEBUG', ''):
             raise
         else:
             if not logger.error_occurred:

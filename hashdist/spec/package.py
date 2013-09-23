@@ -5,7 +5,7 @@ from os.path import join as pjoin
 from ..formats.marked_yaml import load_yaml_from_file
 from .utils import substitute_profile_parameters, topological_sort, to_env_var
 from .. import core
-from .hook_api import IllegalPackageSpecError
+from .exceptions import ProfileError
 
 _package_spec_cache = {}
 
@@ -92,7 +92,7 @@ class PackageSpec(object):
         for to_name, from_name in ctx._bundled_files.iteritems():
             p = profile.find_package_file(self.name, from_name)
             if p is None:
-                raise IllegalPackageSpecError('file "%s" not found' % from_name)
+                raise ProfileError(from_name.start_mark, 'file "%s" not found' % from_name)
             with open(p) as f:
                 files['_hashdist/' + to_name] = f.read()
         files['_hashdist/build.sh'] = build_script
@@ -246,8 +246,8 @@ def inherit_stages(descendant_stages, ancestors):
                 stage['name'] = '_%04d_%04d' % (i, j)
 
             if stage['name'] in stages:
-                raise IllegalPackageSpecError('"%s" used as the name for a stage in two separate package ancestors' %
-                                              stage['name'])
+                raise ProfileError(stage['name'].start_mark,
+                                   '"%s" used as the name for a stage in two separate package ancestors' % stage['name'])
             stages[stage['name']] = stage
 
     # Move on to merge the descendant with the inherited stages. We remove the mode attribute.
@@ -272,7 +272,7 @@ def inherit_stages(descendant_stages, ancestors):
             if name in stages:
                 del stages[name]
         else:
-            raise IllegalPackageSpecError('illegal mode: %s' % mode)
+            raise ProfileError(mode, 'illegal mode: %s' % mode)
     # We don't care about order, will be topologically sorted later...
     return stages.values()
 
@@ -285,7 +285,7 @@ def _process_when_build_dependency(action, parameters, ref):
     if '$' in value.replace('${', ''):
         # a bit crude, but works for now -- should properly disallow non-${}-variables,
         # in order to prevent $ARTIFACT from cropping up
-        raise IllegalPackageSpecError('Please use "${VAR}", not $VAR')
+        raise ProfileError(action['value'].start_mark, 'Please use "${VAR}", not $VAR')
     action['value'] = value
     return action
 

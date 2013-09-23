@@ -9,12 +9,7 @@ found in .hook.
 """
 import types
 from .utils import substitute_profile_parameters
-
-class IllegalHookFileError(Exception):
-    pass
-
-class IllegalPackageSpecError(Exception):
-    pass
+from .exceptions import ProfileError, IllegalHookFileError
 
 
 class PackageBuildContext(object):
@@ -46,7 +41,7 @@ class PackageBuildContext(object):
         stage = self.deep_sub(stage)
         handler = stage.get('handler', stage['name'])
         if handler not in self._build_stage_handlers:
-            raise IllegalPackageSpecError('build stage handler "%s" not registered' % handler)
+            raise ProfileError(stage.start_mark, 'build stage handler "%s" not registered' % handler)
         return self._build_stage_handlers[handler](self, stage)
 
     def sub(self, s):
