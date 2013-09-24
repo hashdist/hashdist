@@ -132,8 +132,9 @@ class PackageSpec(object):
         return rules
 
     def assemble_build_import_commands(self, parameters, ref):
-        return [_process_when_build_dependency(env_action, parameters, ref)
+        cmds = [_process_when_build_dependency(env_action, parameters, ref)
                 for env_action in self.doc.get('when_build_dependency', [])]
+        return cmds
 
 class PackageSpecSet(object):
     """
@@ -311,7 +312,7 @@ def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map,
         sources.append({"target": target, "key": source_clause["key"]})
 
     # build commands
-    commands = []
+    commands = list(dependency_commands)
     commands.append({"set": "BASH", "nohash_value": parameters['BASH']})
     if 'PATH' in parameters:
         commands.append({"set": "PATH", "nohash_value": parameters['PATH']})

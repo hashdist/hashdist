@@ -50,9 +50,9 @@ def test_create_build_spec():
           run: [foolib] # should be ignored
         build_stages:
           - {name: make, handler: bash, bash: make}
-        on_import:  # ignored below, only used in build spec of dependency
-          - prepend_path: PYTHONPATH
-            value: foo${{X}} ${X}
+        when_build_dependency:  # ignored below, only used in build spec of dependency
+          - prepend_path: FOO
+            value: value-of-FOO
     """))
     parameters = {"X": "x", "BASH": "/bin/bash"}
     build_spec = package.create_build_spec("mylib", package_spec,
