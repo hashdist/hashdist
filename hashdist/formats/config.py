@@ -6,7 +6,6 @@ Handles reading the Hashdist configuration file. By default this is
 import os
 from os.path import join as pjoin
 from ..deps import jsonschema
-from ..formats.config_schema import config_schema
 from .marked_yaml import (load_yaml_from_file, validate_yaml, ValidationError)
 
 DEFAULT_CONFIG_FILENAME_REPR = '~/.hashdist/config.yaml'
