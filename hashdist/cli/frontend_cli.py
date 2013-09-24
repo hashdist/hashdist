@@ -28,7 +28,7 @@ class Build(ProfileFrontendBase):
     """
     Builds a profile in the Hashdist YAML profile spec format, and
     outputs a symlink to the resulting profile at the same location
-    without the .yaml suffix.
+    as the profile yaml file, but without the .yaml suffix.
 
     If you provide the package argument to build a single package, the
     profile symlink will NOT be updated.
@@ -38,7 +38,7 @@ class Build(ProfileFrontendBase):
     @classmethod
     def setup(cls, ap):
         add_build_args(ap)
-        ap.add_argument('profile', help='profile yaml file')
+        ap.add_argument('-p', '--profile', default='default.yaml', help='yaml file describing profile to build (default: default.yaml)')
         ap.add_argument('package', nargs='?', help='package to build (default: build all)')
     
     def profile_builder_action(self):
@@ -46,15 +46,19 @@ class Build(ProfileFrontendBase):
 
         if not self.args.profile.endswith('.yaml'):
             self.ctx.error('profile filename must end with yaml')
+
         profile_symlink = self.args.profile[:-len('.yaml')]
         if self.args.package is not None:
             self.builder.build(self.args.package, self.ctx.config, self.args.j)
         else:
-            while True:
-                ready = self.builder.get_ready_list()
-                if len(ready) == 0:
-                    break
-                self.builder.build(ready[0], self.ctx.config, self.args.j)
+            ready = self.builder.get_ready_list()
+            if len(ready) == 0:
+                sys.stdout.write('Up to date, link at: %s\n' % profile_symlink)
+            else:
+                while len(ready) != 0:
+                    self.builder.build(ready[0], self.ctx.config, self.args.j)
+                    ready = self.builder.get_ready_list()
+                sys.stdout.write('Profile build successful, link at: %s\n' % profile_symlink)
             artifact_id, artifact_dir = self.builder.build_profile(self.ctx.config)
             atomic_symlink(artifact_dir, profile_symlink)
         
