@@ -7,6 +7,9 @@ from .main import register_subcommand
 def add_build_args(ap):
     ap.add_argument('-j', metavar='CPUCOUNT', default=1, type=int, help='number of CPU cores to utilize')
 
+def add_profile_args(ap):
+    ap.add_argument('-p', '--profile', default='default.yaml', help='yaml file describing profile to build (default: default.yaml)')
+
 class ProfileFrontendBase(object):
     def __init__(self, ctx, args):
         from ..spec import Profile, ProfileBuilder, load_profile
@@ -37,8 +40,8 @@ class Build(ProfileFrontendBase):
 
     @classmethod
     def setup(cls, ap):
+        add_profile_args(ap)
         add_build_args(ap)
-        ap.add_argument('-p', '--profile', default='default.yaml', help='yaml file describing profile to build (default: default.yaml)')
         ap.add_argument('package', nargs='?', help='package to build (default: build all)')
     
     def profile_builder_action(self):
@@ -74,7 +77,7 @@ class Status(ProfileFrontendBase):
 
     @classmethod
     def setup(cls, ap):
-        ap.add_argument('profile', help='profile yaml file')
+        add_profile_args(ap)
     
     def profile_builder_action(self):
         report = self.builder.get_status_report()
@@ -93,8 +96,8 @@ class Show(ProfileFrontendBase):
 
     @classmethod
     def setup(cls, ap):
+        add_profile_args(ap)
         ap.add_argument('subcommand', choices=['buildspec', 'script'])
-        ap.add_argument('profile', help='profile yaml file')
         ap.add_argument('package', help='package to show information about')
     
     def profile_builder_action(self):
@@ -118,8 +121,8 @@ class BuildDir(ProfileFrontendBase):
 
     @classmethod
     def setup(cls, ap):
+        add_profile_args(ap)
         ap.add_argument('-f', '--force', action='store_true', help='overwrite output directory')
-        ap.add_argument('profile', help='profile yaml file')
         ap.add_argument('package', help='package to show information about')
         ap.add_argument('target', help='directory to use for build dir')
 
