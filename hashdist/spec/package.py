@@ -113,8 +113,8 @@ class PackageSpec(object):
                 select = substitute_profile_parameters(in_stage["link"], parameters)
                 rules.append({
                     "action": "relative_symlink",
-                    "select": "${%s}/%s" % (ref, select),
-                    "prefix": "${%s}" % ref,
+                    "select": "${%s_DIR}/%s" % (ref, select),
+                    "prefix": "${%s_DIR}" % ref,
                     "target": target,
                     "dirs": in_stage.get("dirs", False)})
             elif 'exclude' in in_stage:
@@ -124,8 +124,8 @@ class PackageSpec(object):
             elif 'launcher' in in_stage:
                 select = substitute_profile_parameters(in_stage["launcher"], parameters)
                 rules.append({"action": "launcher",
-                              "select": "${%s}/%s" % (ref, select),
-                              "prefix": "${%s}" % ref,
+                              "select": "${%s_DIR}/%s" % (ref, select),
+                              "prefix": "${%s_DIR}" % ref,
                               "target": target})
             else:
                 raise ValueError('Need either "link", "launcher" or "exclude" key in profile_links entries')
@@ -282,7 +282,7 @@ def _process_when_build_dependency(action, parameters, ref):
     if not ('prepend_path' in action or 'append_path' in action or 'set' in action):
         raise ValueError('when_build_dependency action must be one of prepend_path, append_path, set')
     value = substitute_profile_parameters(action['value'], parameters)
-    value = value.replace('${ARTIFACT}', '${%s}' % ref)
+    value = value.replace('${ARTIFACT}', '${%s_DIR}' % ref)
     if '$' in value.replace('${', ''):
         # a bit crude, but works for now -- should properly disallow non-${}-variables,
         # in order to prevent $ARTIFACT from cropping up
@@ -317,7 +317,6 @@ def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map,
     if 'PATH' in parameters:
         commands.append({"set": "PATH", "nohash_value": parameters['PATH']})
     commands.append({"cmd": ["$BASH", "_hashdist/build.sh"]})
-
     # assemble
     build_spec = {
         "name": pkg_name,

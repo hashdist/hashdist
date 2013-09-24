@@ -130,7 +130,7 @@ class ProfileBuilder(object):
         install_link_rules = []
         for pkgname in sorted_packages:
             pkg = self._package_specs[pkgname]
-            ref = '%s_DIR' % to_env_var(pkgname)
+            ref = to_env_var(pkgname)
             commands += pkg.assemble_build_import_commands(self.profile.parameters, ref)
             install_link_rules += pkg.assemble_link_dsl(self.profile.parameters, ref, '${ARTIFACT}')
         commands.extend([{"hit": ["create-links", "$in0"],
