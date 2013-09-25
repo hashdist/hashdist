@@ -7,62 +7,37 @@ from .utils import substitute_profile_parameters, topological_sort, to_env_var
 from .. import core
 from .exceptions import ProfileError
 
-_package_spec_cache = {}
+_STAGE_SECTIONS = ['build_stages', 'profile_links', 'when_build_dependency']
 
 class PackageSpec(object):
     """
+    Wraps a package spec document to provide some facilities (act on it/understand it).
 
-    ancestor_docs: dict of {ancestor_name: document of ancestor}
-
+    The document provided to the constructor should be a complete stand-alone
+    specification. The `load` staticmethod is available to load a package spec
+    from a profile, this includes pre-preprocessing to assemble together the
+    package spec with its ancestor specifications (given in the `extends` clause).
     """
-    def __init__(self, name, doc, ancestor_docs):
+    def __init__(self, name, doc, hook_files):
         self.name = name
-        self.doc = dict(doc)  # copy, we want to modify it to remove processed stages
-
-        # Extract ancestor docs
-        self.ancestor_docs = {}
-        self.extends = doc.get('extends', [])
-        for name in self.extends:
-            try:
-                self.ancestor_docs[name] = ancestor_docs[name]
-            except KeyError:
-                raise ValueError('Missing "%s" in ancestor_docs' % name)
-
+        self.doc = doc
+        self.hook_files = hook_files
         deps = doc.get('dependencies', {})
         self.build_deps = deps.get('build', [])
         self.run_deps = deps.get('run', [])
         if not isinstance(self.build_deps, list) or not isinstance(self.run_deps, list):
             raise TypeError('dependencies must be a list')
-        self._inherit()
 
     @staticmethod
-    def load_from_file(name, filename):
+    def load(profile, name):
         """
-        Loads a single package from file; no ancestors (extends) allowed
+        Loads a single package from a profile, including ancestors. This involves
+        a transform pipeline to put the spec on a simple format where all information
+        in ancestors is inlined, and stages are ordered.
         """
-        filename = os.path.realpath(filename)
-        obj = _package_spec_cache.get(filename, None)
-        if obj is None:
-            doc = load_yaml_from_file(filename)
-            if doc is None:
-                doc = {}
-            obj = _package_spec_cache[filename] = PackageSpec(name, doc, {})
-        return obj
-
-    def _inherit(self):
-        """
-        Merge build_stages and profile_links stages
-        """
-        for key in ['build_stages', 'profile_links']:
-            self_stages = self.doc.get(key, [])
-            if key in self.doc:
-                del self.doc[key]
-            sorted_ancestors = sorted(self.ancestor_docs.items())
-            ancestor_stages = [ancestor_doc.get(key, []) for _, ancestor_doc
-                               in sorted_ancestors]
-            combined_stages = inherit_stages(self_stages, ancestor_stages)
-            sorted_stages = topological_stage_sort(combined_stages)
-            setattr(self, key, sorted_stages)        
+        doc, hook_files = load_and_inherit_package(profile, name)
+        doc = order_package_stages(doc)
+        return PackageSpec(name, doc, hook_files)
 
     def fetch_sources(self, source_cache):
         for source_clause in self.doc.get('sources', []):
@@ -73,7 +48,7 @@ class PackageSpec(object):
         Return build script (Bash script) that should be run to build package.
         """
         lines = ['set -e']
-        for stage in self.build_stages:
+        for stage in self.doc['build_stages']:
             lines += ctx.dispatch_build_stage(stage)
         return '\n'.join(lines) + '\n'
 
@@ -92,7 +67,7 @@ class PackageSpec(object):
         for to_name, from_name in ctx._bundled_files.iteritems():
             p = profile.find_package_file(self.name, from_name)
             if p is None:
-                raise ProfileError(from_name.start_mark, 'file "%s" not found' % from_name)
+                raise ProfileError(from_name, 'file "%s" not found' % from_name)
             with open(p) as f:
                 files['_hashdist/' + to_name] = f.read()
         files['_hashdist/build.sh'] = build_script
@@ -136,31 +111,113 @@ class PackageSpec(object):
                 for env_action in self.doc.get('when_build_dependency', [])]
         return cmds
 
-class PackageSpecSet(object):
+
+def _extend_list(to_insert, lst):
+    """Removes items from `lst` that can be found in `to_insert`, and then
+    returns a list with `to_insert` at the front and `lst` at the end.
     """
-    A dict-like representing a subset of packages, but they are lazily
-    loaded
+    lst = [x for x in lst if x not in to_insert]
+    return to_insert + lst
+
+
+def name_anonymous_stages(stages):
     """
-    def __init__(self, resolver, packages):
-        self.resolver = resolver
-        self.packages = packages
-        self._values = None
+    Returns a copy of stages (a list of dicts), where every stage without a 'name'
+    attribute is given a generated name which depends on the contents of the
+    dict. This is used to give a stable ordering. The attributes 'before' and 'after'
+    are not considered, as they should not lead to differences in actions/generated
+    scripts from the stages.
+    """
+    def process(stage):
+        if 'name' not in stage:
+            d = dict(stage)
+            for key in ['before', 'after']:
+                if key in d:
+                    del d[key]
+            stage = dict(stage)
+            stage['name'] = '__' + core.hash_document('generated_stage_name', d)
+        return stage            
+    return [process(stage) for stage in stages]
+    
 
-    def __getitem__(self, key):
-        if key not in self.packages:
-            raise KeyError('Package %s not found' % key)
-        return self.resolver.parse_package(key)
+def load_and_inherit_package(profile, package_name, is_parent=False, encountered=None):
+    """
+    Loads a package from the given profile, and transforms the package spec to
+    include the parts of the spec inherited through the `extends` section.
+    The `extends` section is removed.
 
-    def values(self):
-        if self._values is None:
-            self._values = [self[key] for key in self.packages]
-        return self._values
+    Returns ``(spec_doc, hook_files)``. `hook_files` is a list of
+    Python hooks to load; max. one per package/proto-package involved
+    """
+    if encountered is None:
+        encountered = set()
+    if package_name in encountered:
+        raise ProfileError(package_name, 'Diamond-pattern inheritance not yet supported, package "%s" shows up'
+                           'twice when traversing parents' % package_name)
+    encountered.add(package_name)
+    hook_files = []
+    if is_parent:
+        doc = profile.load_base_yaml(package_name)
+        hook = profile.find_base_file(package_name + '.py')
+    else:
+        doc = profile.load_package_yaml(package_name)
+        hook = profile.find_package_file(package_name, package_name + '.py')
+    if doc is None:
+        raise ProfileError(package_name, 'Package specification not found: %s' % package_name)
+    doc = dict(doc)  # shallow copy
+    if hook is not None:
+        hook_files.append(hook)
 
-    def keys(self):
-        return list(self.packages)
+    # Since we don't support diamond inheritance so far, we simply merge again for every
+    # level. This strategy must be changed if we want to support diamond inheritance.
+    parent_docs = []
+    for parent_name in sorted(doc.get('extends', [])):
+        parent_doc, parent_hook_files = load_and_inherit_package(
+            profile, parent_name, is_parent=True, encountered=encountered)
+        parent_docs.append(parent_doc)
+        hook_files[0:0] = parent_hook_files
 
-    def __repr__(self):
-        return '<%s: %r>' % (self.__class__.__name__, self.packages)
+
+    # Merge stages lists
+    for key in _STAGE_SECTIONS:
+        stages = name_anonymous_stages(doc.get(key, []))
+        parent_stages = [name_anonymous_stages(parent_doc.get(key, [])) for parent_doc in parent_docs]
+        combined_stages = inherit_stages(stages, parent_stages)
+        doc[key] = combined_stages
+
+    # Merge dependencies
+    deps_section = doc.setdefault('dependencies', {})
+    for key in ['build', 'run']:
+        deps = set()
+        for parent_doc in parent_docs:
+            deps.update(parent_doc.get('dependencies', {}).get(key, []))
+        deps.update(deps_section.get(key, []))
+        deps_section[key] = sorted(deps)
+
+    if 'extends' in doc:
+        del doc['extends']
+    return doc, hook_files
+
+def order_package_stages(package_spec):
+    """
+    Topologically sort the stages in the sections build_stages,
+    profile_links, when_build_dependency.  The name/before/after
+    attributes are removed. In the case of 'build_stages', the
+    'handler' attribute is set to 'name' if it doesn't exist.
+    """
+    package_spec = dict(package_spec)
+    build_stages = package_spec.setdefault('build_stages', [])
+    for i, stage in enumerate(build_stages):
+        if 'handler' not in stage:
+            build_stages[i] = d = dict(stage)
+            try:
+                d['handler'] = d['name']
+            except KeyError:
+                raise ProfileError(build_stages, 'For every build stage, either handler or name must be provided')
+
+    for key in _STAGE_SECTIONS:
+        package_spec[key] = topological_stage_sort(package_spec.get(key, []))
+    return package_spec
 
 
 def normalize_stages(stages):
@@ -192,7 +249,8 @@ def topological_stage_sort(stages):
     stages = normalize_stages(stages)
     stage_by_name = dict((stage['name'], dict(stage)) for stage in stages)
     if len(stage_by_name) != len(stages):
-        raise ValueError('`stages` has entries with the same name')
+        raise ProfileError(stages, 'more than one stage with the same name '
+                           '(or anonymous stages with identical contents)')
     # convert 'before' to 'after'
     for stage in stages:
         for later_stage_name in stage['before']:
@@ -211,6 +269,7 @@ def topological_stage_sort(stages):
     for stage in ordered_stages:
         del stage['after']
         del stage['before']
+        del stage['name']
     return ordered_stages
 
 
@@ -220,28 +279,21 @@ def inherit_stages(descendant_stages, ancestors):
     Merges together stage-lists from several ancestors and a single descendant.
     `descendant_stages` is a single list of stages, while `ancestors` is a list
     of lists of stages, one for each ancestor.
-
-    Stages without name will be assigned a unique name here.
     """
     # First make sure ancestors do not conflict; that is, stages in
     # ancestors are not allowed to have the same name. Merge them all
     # together in a name-to-stage dict.
     stages = {} # { name : stage_list }
-    for i, ancestor_stages in enumerate(ancestors):
-        for j, stage in enumerate(ancestor_stages):
+    for ancestor_stages in ancestors:
+        for stage in ancestor_stages:
             stage = dict(stage) # copy from ancestor
-            if 'name' not in stage:
-                stage['name'] = '_%04d_%04d' % (i, j)
-
             if stage['name'] in stages:
-                raise ProfileError(stage['name'].start_mark,
+                raise ProfileError(stage['name'],
                                    '"%s" used as the name for a stage in two separate package ancestors' % stage['name'])
             stages[stage['name']] = stage
 
     # Move on to merge the descendant with the inherited stages. We remove the mode attribute.
-    for i, stage in enumerate(descendant_stages):
-        if 'name' not in stage:
-            stage['name'] = '__%04d' % i
+    for stage in descendant_stages:
         name = stage.get('name', None)
         if 'mode' in stage:
             mode = stage['mode']

@@ -67,6 +67,7 @@ class Profile(object):
         d = os.path.dirname(filename)
         self._packages_dir = os.path.abspath(pjoin(d, doc['packages_dir'])) if 'packages_dir' in doc else None
         self._base_dir = os.path.abspath(pjoin(d, doc['base_dir'])) if 'base_dir' in doc else None
+        self._yaml_cache = {}
 
     def _find_resource_in_parents(self, resource_type, resource_getter_name, resource_name, *args):
         filename = None
@@ -78,6 +79,22 @@ class Profile(object):
                                                    (resource_type, resource_name))
             filename = parent_filename
         return filename
+
+    def load_package_yaml(self, pkgname):
+        doc = self._yaml_cache.get(('package', pkgname), None)
+        if doc is None:
+            p = self.find_package_file(pkgname, pkgname + '.yaml')
+            doc = load_yaml_from_file(p) if p is not None else None
+            self._yaml_cache['package', pkgname] = doc
+        return doc
+
+    def load_base_yaml(self, pkgname):
+        doc = self._yaml_cache.get(('base', pkgname), None)
+        if doc is None:
+            p = self.find_base_file(pkgname + '.yaml')
+            doc = load_yaml_from_file(p) if p is not None else None
+            self._yaml_cache['base', pkgname] = doc
+        return doc        
 
     def find_package_file(self, pkgname, filename=None):
         if filename is None:

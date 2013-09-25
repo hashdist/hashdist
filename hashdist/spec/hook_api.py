@@ -42,7 +42,7 @@ class PackageBuildContext(object):
     def dispatch_build_stage(self, stage):
         # Copy stage dict and substitute all string arguments
         stage = self.deep_sub(stage)
-        handler = stage.get('handler', stage['name'])
+        handler = stage['handler']
         if handler not in self._build_stage_handlers:
             raise ProfileError(stage.start_mark, 'build stage handler "%s" not registered' % handler)
         return self._build_stage_handlers[handler](self, stage)

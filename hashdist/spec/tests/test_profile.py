@@ -109,23 +109,32 @@ def test_resource_resolution(d):
         base_dir: base
     """)
 
-    dump(pjoin(d, "level2", "base", "base.txt"), "2")
-    dump(pjoin(d, "level1", "base", "base.txt"), "1")
+    dump(pjoin(d, "level2", "base", "base.yaml"), "{my: base}")
+    dump(pjoin(d, "level1", "base", "base.yaml"), "1")
     dump(pjoin(d, "level1", "base", "base1.txt"), "1")
-    dump(pjoin(d, "level2", "pkgs", "foo", "foo.yaml"), "2")
+    dump(pjoin(d, "level2", "pkgs", "foo", "foo.yaml"), "{my: document}")
     dump(pjoin(d, "level1", "pkgs", "foo.yaml"), "1")
     dump(pjoin(d, "level1", "pkgs", "bar.yaml"), "1")
 
     p = profile.load_profile(source_cache, {"profile": pjoin(d, "level3", "profile.yaml")})
     assert pjoin(d, "level2", "pkgs", "foo", "foo.yaml") == p.find_package_file("foo")
     assert pjoin(d, "level1", "pkgs", "bar.yaml") == p.find_package_file("bar")
+
+    assert pjoin(d, "level2", "base", "base.yaml") == p.find_base_file("base.yaml")
+    assert pjoin(d, "level1", "base", "base1.txt") == p.find_base_file("base1.txt")
+
+    foo_doc = p.load_package_yaml('foo')
+    assert {'my': 'document'} == foo_doc
+    assert foo_doc is p.load_package_yaml('foo')  # caching
+    base_doc = p.load_base_yaml('base')
+    assert {'my': 'base'} == base_doc
+    assert base_doc is p.load_base_yaml('base')  # caching
+
+    assert [pjoin(d, "level2", "base"), pjoin(d, "level1", "base")] == p.get_python_path()
+
     os.unlink(pjoin(d, "level2", "pkgs", "foo", "foo.yaml"))
     assert pjoin(d, "level1", "pkgs", "foo.yaml") == p.find_package_file("foo")
 
-    assert pjoin(d, "level2", "base", "base.txt") == p.find_base_file("base.txt")
-    assert pjoin(d, "level1", "base", "base1.txt") == p.find_base_file("base1.txt")
-
-    assert [pjoin(d, "level2", "base"), pjoin(d, "level1", "base")] == p.get_python_path()
 
 @temp_working_dir_fixture
 def test_packages(d):

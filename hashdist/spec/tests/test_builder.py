@@ -36,7 +36,7 @@ def test_ready(d):
     dump(pjoin(d, 'pkgs', 'a.yaml'), "dependencies: {build: [b, c]}")
     dump(pjoin(d, 'pkgs', 'b.yaml'), "dependencies: {build: [d]}")
     dump(pjoin(d, 'pkgs', 'c.yaml'), "dependencies: {build: [d]}")
-    dump(pjoin(d, 'pkgs', 'd.yaml'), "")
+    dump(pjoin(d, 'pkgs', 'd.yaml'), "{}")
 
     class ProfileBuilderSubclass(builder.ProfileBuilder):
         def _compute_specs(self):

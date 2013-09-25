@@ -26,7 +26,6 @@ class ProfileBuilder(object):
         self._built = set()  # cache for build_store
         self._in_progress = set()
         self._build_specs = {} # { pkgname : BuildSpec }
-        self._ancestor_docs = {}
 
         self._load_packages()
         self._compute_specs()
@@ -43,17 +42,7 @@ class ProfileBuilder(object):
             doc = load_yaml_from_file(filename)
             if doc is None:
                 doc = {}
-            for ancestor in doc.get('extends', []):
-                self._load_ancestor_doc(ancestor)
-            self._package_specs[pkgname] = package.PackageSpec(use, doc, self._ancestor_docs)
-
-    def _load_ancestor_doc(self, pkgname):
-        if pkgname not in self._ancestor_docs:
-            filename = self.profile.find_base_file(pkgname + '.yaml')
-            if filename is None:
-                raise ProfileError(pkgname.start_mark, 'No specification found for package: %s' % pkgname)
-            doc = load_yaml_from_file(filename)
-            self._ancestor_docs[pkgname] = doc
+            self._package_specs[pkgname] = package.PackageSpec.load(self.profile, use)
 
     def _compute_specs(self):
         """
@@ -163,14 +152,7 @@ class ProfileBuilder(object):
         return self.build_store.ensure_present(profile_build_spec, config)
         
     def _load_package_build_context(self, pkgname):
-        hook_files = []
-        for ancestor in self._package_specs[pkgname].extends:
-            py = self.profile.find_base_file(ancestor + '.py')
-            if py:
-                hook_files.append(py)
-        py = self.profile.find_package_file(pkgname, pkgname +'.py')
-        if py:
-            hook_files.append(py)
+        hook_files = self._package_specs[pkgname].hook_files
         dep_vars = [to_env_var(x) for x in self._package_specs[pkgname].build_deps]
         ctx = hook_api.PackageBuildContext(pkgname, dep_vars, self.profile.parameters)
         hook.load_hooks(ctx, hook_files)
