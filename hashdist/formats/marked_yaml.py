@@ -15,6 +15,7 @@ The loader is based on `SafeConstructor`, i.e., the behaviour of
 """
 
 
+from hashdist.deps.yaml.error import Mark
 from hashdist.deps.yaml.composer import Composer
 from hashdist.deps.yaml.reader import Reader
 from hashdist.deps.yaml.scanner import Scanner
@@ -23,16 +24,20 @@ from hashdist.deps.yaml.resolver import Resolver
 from hashdist.deps.yaml.parser import Parser
 from hashdist.deps.yaml.constructor import (Constructor, BaseConstructor, SafeConstructor,
                                             ConstructorError)
+from hashdist.deps.yaml import dump as _orig_yaml_dump
 from hashdist.deps import jsonschema
 
 class ValidationError(Exception):
     def __init__(self, mark, message=None, wrapped=None):
+        if not isinstance(mark, Mark):
+            mark = getattr(mark, 'start_mark', None)
         self.mark = mark
         self.message = message
         self.wrapped = wrapped
 
     def __str__(self):
-        return '%s, line %d: %s' % (self.mark.name, self.mark.line + 1, self.message)
+        loc = '<unknown location>' if self.mark is None else '%s, line %d' % (self.mark.name, self.mark.line + 1)
+        return '%s: %s' % (loc, self.message)
 
 
 def create_node_class(cls, name=None):
@@ -143,3 +148,26 @@ def validate_yaml(doc, schema):
         jsonschema.validate(doc, schema)
     except jsonschema.ValidationError as e:
         raise ValidationError(e.instance.start_mark, e.message, e)
+
+def raw_tree(doc):
+    """
+    Converts a document consisting of subclasses of
+    basestring/dict/list/etc. to raw str/dict/list/etc.
+    """
+    if isinstance(doc, basestring):
+        return str(doc)
+    elif isinstance(doc, int):
+        return int(doc)
+    elif isinstance(doc, bool):
+        return bool(doc)
+    elif isinstance(doc, null_node):
+        return None
+    elif isinstance(doc, dict):
+        return dict(((raw_tree(key), raw_tree(value)) for key, value in doc.items()))
+    elif isinstance(doc, (list, tuple)):
+        return [raw_tree(child) for child in doc]
+    else:
+        raise TypeError('document contains illegal type %r' % type(doc))
+
+def yaml_dump(doc, **opts):
+    return _orig_yaml_dump(raw_tree(doc), **opts)
