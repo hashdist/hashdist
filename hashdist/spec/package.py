@@ -163,19 +163,6 @@ class PackageSpecSet(object):
         return '<%s: %r>' % (self.__class__.__name__, self.packages)
 
 
-class PackageSpecResolver(object):
-    def __init__(self, path):
-        self.path = path
-
-    def parse_package(self, pkgname):
-        filename = os.path.realpath(pjoin(self.path, pkgname, '%s.yaml' % pkgname))
-        obj = _package_spec_cache.get(filename, None)
-        if obj is None:
-            doc = load_yaml_from_file(filename)
-            obj = _package_spec_cache[filename] = PackageSpec.load(doc, self)
-        return obj
-
-
 def normalize_stages(stages):
     """
     Given a list of 'stages' (dicts with before/after keys), make sure every stage
