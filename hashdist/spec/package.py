@@ -82,7 +82,7 @@ class PackageSpec(object):
         description.
         """
         rules = []
-        for in_stage in self.profile_links:
+        for in_stage in self.doc['profile_links']:
             out_stage = {}
             if 'link' in in_stage:
                 select = substitute_profile_parameters(in_stage["link"], parameters)
