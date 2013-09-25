@@ -6,6 +6,7 @@ from . import hook_api
 from ..formats.marked_yaml import load_yaml_from_file
 from ..core import BuildSpec
 from .utils import to_env_var
+from .exceptions import ProfileError
 
 class IllegalProfileError(Exception):
     pass
@@ -49,6 +50,8 @@ class ProfileBuilder(object):
     def _load_ancestor_doc(self, pkgname):
         if pkgname not in self._ancestor_docs:
             filename = self.profile.find_base_file(pkgname + '.yaml')
+            if filename is None:
+                raise ProfileError(pkgname.start_mark, 'No specification found for package: %s' % pkgname)
             doc = load_yaml_from_file(filename)
             self._ancestor_docs[pkgname] = doc
 
@@ -78,7 +81,10 @@ class ProfileBuilder(object):
                 if pkgname in visiting:
                     raise IllegalProfileError('dependency cycle between packages, including package "%s"' % pkgname)
                 visiting.add(pkgname)
-                pkgspec = self._package_specs[pkgname]
+                try:
+                    pkgspec = self._package_specs[pkgname]
+                except:
+                    raise ProfileError(pkgname.start_mark, 'Package not found: %s' % pkgname)
                 for depname in pkgspec.build_deps:
                     traverse_depth_first(depname)
                 visiting.remove(pkgname)
