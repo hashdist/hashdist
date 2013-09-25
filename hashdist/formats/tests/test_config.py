@@ -22,7 +22,7 @@ def test_schema_error(d):
     try:
         cfg = config.load_config_file('config.yaml')
     except marked_yaml.ValidationError as e:
-        assert str(e) == "config.yaml, line 2: {'a': 3} is not of type 'array'"
+        assert str(e) == "config.yaml, line 3: {'a': 3} is not of type 'array'"
     else:
         assert False
  

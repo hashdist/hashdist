@@ -32,7 +32,7 @@ class ValidationError(Exception):
         self.wrapped = wrapped
 
     def __str__(self):
-        return '%s, line %d: %s' % (self.mark.name, self.mark.line, self.message)
+        return '%s, line %d: %s' % (self.mark.name, self.mark.line + 1, self.message)
 
 
 def create_node_class(cls, name=None):
