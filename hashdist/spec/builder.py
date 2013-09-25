@@ -8,9 +8,6 @@ from ..core import BuildSpec
 from .utils import to_env_var
 from .exceptions import ProfileError
 
-class IllegalProfileError(Exception):
-    pass
-
 
 class ProfileBuilder(object):
     """
@@ -32,17 +29,26 @@ class ProfileBuilder(object):
         
 
     def _load_packages(self):
-        package_includes = self.profile.get_packages()
         self._package_specs = {}
-        for pkgname, settings in package_includes.iteritems():
-            use = settings.get('use', pkgname)
-            filename = self.profile.find_package_file(use, use + '.yaml')
-            if filename is None:
-                raise IllegalProfileError('no spec found for package %s' % pkgname)
-            doc = load_yaml_from_file(filename)
-            if doc is None:
-                doc = {}
-            self._package_specs[pkgname] = package.PackageSpec.load(self.profile, use)
+        visiting = set()
+
+        def visit(pkgname):
+            if pkgname not in self._package_specs:
+                if pkgname in visiting:
+                    raise ProfileError(pkgname, 'dependency cycle between packages, including package "%s"' % pkgname)
+                visiting.add(pkgname)
+                settings = package_includes.get(pkgname, {})
+                use = settings.get('use', pkgname)
+                spec = package.PackageSpec.load(self.profile, use)
+                self._package_specs[pkgname] = spec
+                for dep in spec.build_deps + spec.run_deps:
+                    visit(dep)
+                visiting.remove(pkgname)
+
+        package_includes = self.profile.get_packages()
+        for pkgname in package_includes:
+            visit(pkgname)
+
 
     def _compute_specs(self):
         """
@@ -68,7 +74,7 @@ class ProfileBuilder(object):
         def traverse_depth_first(pkgname):
             if pkgname not in self._build_specs:
                 if pkgname in visiting:
-                    raise IllegalProfileError('dependency cycle between packages, including package "%s"' % pkgname)
+                    raise ProfileError(pkgname, 'dependency cycle between packages, including package "%s"' % pkgname)
                 visiting.add(pkgname)
                 try:
                     pkgspec = self._package_specs[pkgname]

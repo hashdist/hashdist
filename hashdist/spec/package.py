@@ -191,7 +191,10 @@ def load_and_inherit_package(profile, package_name, is_parent=False, encountered
         deps = set()
         for parent_doc in parent_docs:
             deps.update(parent_doc.get('dependencies', {}).get(key, []))
-        deps.update(deps_section.get(key, []))
+        lst = deps_section.get(key, [])
+        if not isinstance(lst, list):
+            raise ProfileError(lst, 'Expected a list')
+        deps.update(lst)
         deps_section[key] = sorted(deps)
 
     if 'extends' in doc:
