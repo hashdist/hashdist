@@ -140,7 +140,7 @@ def name_anonymous_stages(stages):
     return [process(stage) for stage in stages]
     
 
-def load_and_inherit_package(profile, package_name, is_parent=False, encountered=None):
+def load_and_inherit_package(profile, package_name, encountered=None):
     """
     Loads a package from the given profile, and transforms the package spec to
     include the parts of the spec inherited through the `extends` section.
@@ -156,12 +156,8 @@ def load_and_inherit_package(profile, package_name, is_parent=False, encountered
                            'twice when traversing parents' % package_name)
     encountered.add(package_name)
     hook_files = []
-    if is_parent:
-        doc = profile.load_base_yaml(package_name)
-        hook = profile.find_base_file(package_name + '.py')
-    else:
-        doc = profile.load_package_yaml(package_name)
-        hook = profile.find_package_file(package_name, package_name + '.py')
+    doc = profile.load_package_yaml(package_name)
+    hook = profile.find_package_file(package_name, package_name + '.py')
     if doc is None:
         raise ProfileError(package_name, 'Package specification not found: %s' % package_name)
     doc = dict(doc)  # shallow copy
@@ -173,7 +169,7 @@ def load_and_inherit_package(profile, package_name, is_parent=False, encountered
     parent_docs = []
     for parent_name in sorted(doc.get('extends', [])):
         parent_doc, parent_hook_files = load_and_inherit_package(
-            profile, parent_name, is_parent=True, encountered=encountered)
+            profile, parent_name, encountered=encountered)
         parent_docs.append(parent_doc)
         hook_files[0:0] = parent_hook_files
 

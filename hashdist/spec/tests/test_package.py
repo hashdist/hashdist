@@ -77,40 +77,32 @@ class MockProfile(object):
         self.files = dict((name, marked_yaml_load(body)) for name, body in files.items())
 
     def load_package_yaml(self, name):
-        return self.files.get('pkgs/%s.yaml' % name, None)
-
-    def load_base_yaml(self, name):
-        return self.files.get('base/%s.yaml' % name, None)
+        return self.files.get('%s.yaml' % name, None)
 
     def find_package_file(self, name, filename):
-        p = 'pkgs/%s' % filename
-        return p if p in self.files else None
-
-    def find_base_file(self, name):
-        p = 'base/%s' % name
-        return p if p in self.files else None
+        return filename if filename in self.files else None
 
 def test_prevent_diamond():
     files = {
-        'pkgs/a.yaml': 'extends: [b, c]',
-        'base/b.yaml': 'extends: [d]',
-        'base/c.yaml': 'extends: [d]',
-        'base/d.yaml': '{}'}
+        'a.yaml': 'extends: [b, c]',
+        'b.yaml': 'extends: [d]',
+        'c.yaml': 'extends: [d]',
+        'd.yaml': '{}'}
     with assert_raises(ProfileError):
         package.load_and_inherit_package(MockProfile(files), 'a')
 
 def test_inheritance_collision():
     files = {
-        'pkgs/child.yaml': 'extends: [base1, base2]',
-        'base/base1.yaml': 'build_stages: [{name: stage1}]',
-        'base/base2.yaml': 'build_stages: [{name: stage1}]'}
+        'child.yaml': 'extends: [base1, base2]',
+        'base1.yaml': 'build_stages: [{name: stage1}]',
+        'base2.yaml': 'build_stages: [{name: stage1}]'}
     with assert_raises(ProfileError):
         package.load_and_inherit_package(MockProfile(files), 'child')
 
 
 def test_load_and_inherit_package():
     files = {}
-    files['pkgs/mypackage.yaml'] = """\
+    files['mypackage.yaml'] = """\
         extends: [base1, base2]
         dependencies:
           build: [dep1]
@@ -146,14 +138,14 @@ def test_load_and_inherit_package():
           value: foovalue        
     """
 
-    files['base/base1.yaml'] = """\
+    files['base1.yaml'] = """\
         extends: [grandparent]
         build_stages:
         - random: anonymous
           handler: foo
     """
 
-    files['base/base2.yaml'] = """\
+    files['base2.yaml'] = """\
         dependencies:
           run: [dep_base2_1]
         profile_links:
@@ -166,7 +158,7 @@ def test_load_and_inherit_package():
         - {name: stage4_replace, after: stage3_override, a: 2, b: 3}
     """
 
-    files['base/grandparent.yaml'] = """\
+    files['grandparent.yaml'] = """\
         dependencies:
           build: [dep_gp_1]
         build_stages:
@@ -174,15 +166,15 @@ def test_load_and_inherit_package():
         - {name: stage_to_remove, after: stage1_override, a: 2, b: 3}
     """
 
-    files['base/grandparent.py'] = '{}'
-    files['base/base1.py'] = '{}'
-    files['pkgs/mypackage.py'] = '{}'
-    files['base/mypackage.py'] = '{}'
+    files['grandparent.py'] = '{}'
+    files['base1.py'] = '{}'
+    files['mypackage.py'] = '{}'
+    files['mypackage.py'] = '{}'
 
     prof = MockProfile(files)
     
     doc, hook_files = package.load_and_inherit_package(prof, 'mypackage')
-    assert hook_files == ['base/grandparent.py', 'base/base1.py', 'pkgs/mypackage.py']
+    assert hook_files == ['grandparent.py', 'base1.py', 'mypackage.py']
 
     # the below relies on an unstable ordering as the lists are not sorted, but
     # the parent traversal happens in an (unspecified) stable order

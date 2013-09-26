@@ -80,7 +80,7 @@ class null_node(create_node_class(object, name='null_node')):
         return "null"
 
 def is_null(x):
-    return type(x) is null_node
+    return type(x) is null_node or x is None
 
 class dict_node(create_node_class(dict)):
     def __getitem__(self, key):

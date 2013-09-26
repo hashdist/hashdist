@@ -37,7 +37,7 @@ class ProfileBuilder(object):
                 if pkgname in visiting:
                     raise ProfileError(pkgname, 'dependency cycle between packages, including package "%s"' % pkgname)
                 visiting.add(pkgname)
-                settings = package_includes.get(pkgname, {})
+                settings = self.profile.packages.get(pkgname, {})
                 use = settings.get('use', pkgname)
                 spec = package.PackageSpec.load(self.profile, use)
                 self._package_specs[pkgname] = spec
@@ -45,8 +45,7 @@ class ProfileBuilder(object):
                     visit(dep)
                 visiting.remove(pkgname)
 
-        package_includes = self.profile.get_packages()
-        for pkgname in package_includes:
+        for pkgname in self.profile.packages.keys():
             visit(pkgname)
 
 
@@ -55,8 +54,10 @@ class ProfileBuilder(object):
         Do a depth first walk to compute build specs/artifact IDs/upload build scripts for
         each package, in order required (artifact ID of dependencies needed to compute
         build spec of dependants).
+
+        We know at this point that there's no cycles.
         """
-        python_path = self.profile.get_python_path()
+        python_path = self.profile.hook_import_dirs
 
         def process(pkgname, pkgspec):
             with hook.python_path_and_modules_sandbox(python_path):
@@ -73,19 +74,14 @@ class ProfileBuilder(object):
 
         def traverse_depth_first(pkgname):
             if pkgname not in self._build_specs:
-                if pkgname in visiting:
-                    raise ProfileError(pkgname, 'dependency cycle between packages, including package "%s"' % pkgname)
-                visiting.add(pkgname)
                 try:
                     pkgspec = self._package_specs[pkgname]
                 except:
                     raise ProfileError(pkgname.start_mark, 'Package not found: %s' % pkgname)
                 for depname in pkgspec.build_deps:
                     traverse_depth_first(depname)
-                visiting.remove(pkgname)
                 process(pkgname, pkgspec)
 
-        visiting = set()
         for pkgname in self._package_specs:
             traverse_depth_first(pkgname)
 

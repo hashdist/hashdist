@@ -12,50 +12,29 @@ import shutil
 from os.path import join as pjoin
 import re
 
-from ..formats.marked_yaml import load_yaml_from_file
+from ..formats.marked_yaml import load_yaml_from_file, is_null
 from .utils import substitute_profile_parameters
 from .. import core
 from .exceptions import ProfileError
-
-class ConflictingProfilesError(Exception):
-    pass
-
 
 class Profile(object):
     """
     Profiles acts as nodes in a tree, with `extends` containing the
     parent profiles (which are child nodes in a DAG).
     """
-    def __init__(self, filename, doc, parents):
-        self.filename = filename
+    def __init__(self, doc, checkouts_manager):
         self.doc = doc
-        self.parents = parents
-        # for now, we require that bases have non-overlapping parameter keys
-        self.parameters = {}
-        for base in parents:
-            for k, v in base.parameters.iteritems():
-                if k in self.parameters:
-                    raise ConflictingProfilesError('two base profiles set same parameter %s' % k)
-                self.parameters[k] = v
-        self.parameters.update(doc.get('parameters', {}))
-
-        d = os.path.dirname(filename)
-        self._packages_dir = os.path.abspath(pjoin(d, doc['packages_dir'])) if 'packages_dir' in doc else None
-        self._base_dir = os.path.abspath(pjoin(d, doc['base_dir'])) if 'base_dir' in doc else None
+        self.parameters = dict(doc.get('parameters', {}))
+        self.file_resolver = FileResolver(checkouts_manager, doc.get('package_dirs', []))
+        self.hook_import_dirs = doc.get('hook_import_dirs', [])
+        self.packages = doc['packages']
         self._yaml_cache = {}
 
-    def _find_resource_in_parents(self, resource_type, resource_getter_name, resource_name, *args):
-        filename = None
-        for parent in self.parents:
-            parent_filename = getattr(parent, resource_getter_name)(resource_name, *args)
-            if parent_filename is not None:
-                if filename is not None:
-                    raise ConflictingProfilesError('%s %s found in sibling included profiles' %
-                                                   (resource_type, resource_name))
-            filename = parent_filename
-        return filename
-
     def load_package_yaml(self, pkgname):
+        """
+        Loads mypkg.yaml from either $pkgs/mypkg.yaml or $pkgs/mypkg/mypkg.yaml, and
+        caches the result.
+        """
         doc = self._yaml_cache.get(('package', pkgname), None)
         if doc is None:
             p = self.find_package_file(pkgname, pkgname + '.yaml')
@@ -63,91 +42,14 @@ class Profile(object):
             self._yaml_cache['package', pkgname] = doc
         return doc
 
-    def load_base_yaml(self, pkgname):
-        doc = self._yaml_cache.get(('base', pkgname), None)
-        if doc is None:
-            p = self.find_base_file(pkgname + '.yaml')
-            doc = load_yaml_from_file(p) if p is not None else None
-            self._yaml_cache['base', pkgname] = doc
-        return doc        
-
-    def find_package_file(self, pkgname, filename=None):
-        if filename is None:
-            filename = pkgname + '.yaml'
-        # try pkgs/foo.yaml
-        p = None
-        if self._packages_dir is not None:
-            p = pjoin(self._packages_dir, filename)
-            if not os.path.exists(p):
-                # try pkgs/foo/foo.yaml
-                p = pjoin(self._packages_dir, pkgname, filename)
-                if not os.path.exists(p):
-                    p = None
-        if p is None:
-            # try included profiles; only allow it to come from one of them
-            p = self._find_resource_in_parents('package', 'find_package_file', pkgname, filename)
-        return p
-
-    def find_base_file(self, name):
-        filename = None
-        if self._base_dir is not None:
-            filename = pjoin(self._base_dir, name)
-            if not os.path.exists(filename):
-                filename = None
-        if filename is None:
-            filename = self._find_resource_in_parents('base file', 'find_base_file', name)
-        return filename
-
-    def get_python_path(self, path=None):
+    def find_package_file(self, pkgname, filename):
         """
-        Constructs a list that can be inserted into sys.path to make
-        .py-files in the base subdirectory of this profile and any
-        base-profile available.
+        Attempts to find a package resource file at $pkgs/$filename or $pkgs/$pkgname/$filename.
         """
-        if path is None:
-            path = []
-        for base in self.parents:
-            base.get_python_path(path)
-        if self._base_dir is not None:
-            path.insert(0, self._base_dir)
-        return path
-
-    def get_packages(self):
-        def parse_package(pkg):
-            if isinstance(pkg, basestring):
-                return pkg, {}
-            elif isinstance(pkg, dict):
-                if len(pkg) != 1:
-                    raise ValueError('package must be given as a single {name : attr-dict} dict')
-                return pkg.keys()[0], pkg.values()[0]
-            else:
-                raise TypeError('Not a package: %s' % pkg)
-
-        packages = {}
-        # import from base
-        for base in self.parents:
-            for k, v in base.get_packages().iteritems():
-                if k in packages:
-                    raise ConflictingProfilesError('package %s found in two different base profiles')
-                packages[k] = v
-        # parse this profiles packages section
-        lst = self.doc.get('packages', [])
-        for entry in lst:
-            name, settings = parse_package(entry)
-            if settings.get('skip', False):
-                if name in packages:
-                    del packages[name]
-                continue
-            if name in packages:
-                packages[name].update(settings)
-            else:
-                packages[name] = settings
-
-        return packages
+        return self.file_resolver.find_file([filename, pjoin(pkgname, filename)])
 
     def __repr__(self):
         return '<Profile %s>' % self.filename
-
 
 
 class TemporarySourceCheckouts(object):
@@ -208,7 +110,35 @@ class TemporarySourceCheckouts(object):
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
-def load_profile(checkouts, include_doc, cwd=None):
+class FileResolver(object):
+    """
+    Find spec files in an overlay-based filesystem, consulting many
+    search paths in order.  Supports the
+    ``<repo_name>/some/path``-convention.
+    """
+    def __init__(self, checkouts_manager, search_dirs):
+        self.checkouts_manager = checkouts_manager
+        self.search_dirs = search_dirs
+
+    def find_file(self, filenames):
+        """
+        Search for a file with the given filename/path relative to the root
+        of each of `self.search_dirs`. If `filenames` is a list, the entire
+        list will be searched before moving on to the next layer/overlay.
+
+        Returns the found file (in the ``<repo_name>/some/path``-convention),
+        or None if no file was found.
+        """
+        if isinstance(filenames, basestring):
+            filenames = [filenames]
+        for overlay in self.search_dirs:
+            for p in filenames:
+                filename = pjoin(overlay, p)
+                if os.path.exists(self.checkouts_manager.resolve(filename)):
+                    return filename
+        return None
+
+def load_and_inherit_profile(checkouts, include_doc, cwd=None):
     """
     Loads a Profile given an include document fragment, e.g.::
 
@@ -221,31 +151,85 @@ def load_profile(checkouts, include_doc, cwd=None):
         key: git:5aeba2c06ed1458ae4dc5d2c56bcf7092827347e
 
     The load happens recursively, including fetching any remote
-    dependencies.
+    dependencies, and merging the result into this document.
+
+    `cwd` is where to interpret `file` in `include_doc` relative to
+    (if it is not in a temporary checked out source).  It can use the
+    format of TemporarySourceCheckouts, ``<repo_name>/some/path``.
     """
+    if cwd is None:
+        cwd = os.getcwd()
+
     def resolve_path(cwd, p):
         if not os.path.isabs(p):
-            if cwd is None:
-                cwd = os.getcwd()
-            p = os.path.abspath(pjoin(cwd, p))
+            p = pjoin(cwd, p)
         return p
 
     if isinstance(include_doc, str):
         include_doc = {'file': include_doc}
-    
+
     if 'key' in include_doc:
-        # Check out git repo to temporary directory. cwd is relative to checked out root.
-        cwd = checkouts.checkout(include_doc['name'], include_doc['key'], include_doc['urls'])
+        # This profile is included through a source cache
+        # reference/"git import".  We check out sources to a temporary
+        # directory and set the repo name expansion pattern as `cwd`.
+        # (The purpose of this is to give understandable error
+        # messages.)
+        checkouts.checkout(include_doc['name'], include_doc['key'], include_doc['urls'])
+        cwd = '<%s>' % include_doc['name']
 
-    profile = resolve_path(cwd, include_doc['file'])
+    profile_file = resolve_path(cwd, include_doc['file'])
+    new_cwd = resolve_path(cwd, os.path.dirname(include_doc['file']))
 
-    doc = load_yaml_from_file(profile)
+    doc = load_yaml_from_file(checkouts.resolve(profile_file))
     if doc is None:
         doc = {}
+
     if 'extends' in doc:
-        new_cwd = os.path.dirname(profile)
-        parents = [load_profile(checkouts, ancestor, cwd=new_cwd) for ancestor in doc['extends']]
+        parents = [load_and_inherit_profile(checkouts, parent_include_doc, cwd=new_cwd)
+                   for parent_include_doc in doc['extends']]
         del doc['extends']
     else:
         parents = []
-    return Profile(profile, doc, parents)
+    
+    for section in ['package_dirs', 'hook_import_dirs']:
+        lst = doc.get(section, [])
+        doc[section] = [resolve_path(new_cwd, p) for p in lst]
+
+    # Merge package_dirs, hook_import_dirs with those of parents
+    for section in ['package_dirs', 'hook_import_dirs']:
+        for parent_doc in parents:
+            doc[section].extend(parent_doc.get(section, []))
+
+    # Merge parameters. Can't have the same parameter from more than one parent
+    # *unless* it's overriden by this document, in which case it's OK.
+    parameters = doc.setdefault('parameters', {})
+    overridden = parameters.keys()
+    for parent_doc in parents:
+        for k, v in parent_doc.get('parameters', {}).iteritems():
+            if k not in overridden:
+                if k in parameters:
+                    raise ProfileError(doc, 'two base profiles set same parameter %s, please set it '
+                                       'explicitly in descendant profile')
+                parameters[k] = v
+
+    # Merge packages section
+    packages = {}
+    for parent_doc in parents:
+        for pkgname, settings in parent_doc.get('packages', {}).iteritems():
+            packages.setdefault(pkgname, {}).update(settings)
+
+    for pkgname, settings in doc.get('packages', {}).iteritems():
+        if is_null(settings):
+            settings = {}
+        packages.setdefault(pkgname, {}).update(settings)
+
+    for pkgname, settings in list(packages.items()):  # copy to avoid changes during iteration
+        if settings.get('skip', False):
+            del packages[pkgname]
+
+    doc['packages'] = packages
+    return doc
+
+def load_profile(checkout_manager, profile_file):
+    doc = load_and_inherit_profile(checkout_manager, profile_file)
+    return Profile(doc, checkout_manager)

@@ -29,8 +29,8 @@ class MockSourceCache:
 @temp_working_dir_fixture
 def test_ready(d):
     dump(pjoin(d, 'profile.yaml'), """\
-        packages_dir: pkgs
-        packages: [a, b, c, d]
+        package_dirs: [pkgs]
+        packages: {a:, b:, c:, d:}
     """)
 
     dump(pjoin(d, 'pkgs', 'a.yaml'), "dependencies: {build: [b, c]}")
@@ -42,7 +42,7 @@ def test_ready(d):
         def _compute_specs(self):
             pass
     
-    p = profile.load_profile(None, pjoin(d, "profile.yaml"))
+    p = profile.load_profile(profile.TemporarySourceCheckouts(None), pjoin(d, "profile.yaml"))
     pb = ProfileBuilderSubclass(None, MockSourceCache(), None, p)
     assert ['d'] == pb.get_ready_list()
     pb._built.add('d')
@@ -56,8 +56,8 @@ def test_ready(d):
 def test_basic_build(tmpdir, sc, bldr, config):    
     d = pjoin(tmpdir, 'tmp', 'profile')
     dump(pjoin(d, 'profile.yaml'), """\
-        packages_dir: pkgs
-        packages: [copy_readme, the_dependency]
+        package_dirs: [pkgs]
+        packages: {copy_readme:, the_dependency:}
         parameters:
           BASH: /bin/bash
     """)
@@ -89,7 +89,7 @@ def test_basic_build(tmpdir, sc, bldr, config):
     """ % dict(tar_file=mock_tarball, tar_hash=mock_tarball_hash))
 
     
-    p = profile.load_profile(None, pjoin(d, "profile.yaml"))
+    p = profile.load_profile(profile.TemporarySourceCheckouts(None), pjoin(d, "profile.yaml"))
     pb = builder.ProfileBuilder(logger, sc, bldr, p)
     pb.build('the_dependency', config, 1)
     pb.build('copy_readme', config, 1)
