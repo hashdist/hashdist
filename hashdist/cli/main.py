@@ -142,21 +142,25 @@ def help_on_exceptions(logger, func, *args, **kw):
     If the 'DEBUG' environment variable is set then the exception is
     raised anyway.
     """
+    debug = os.environ.get('DEBUG', '')
     try:
         return func(*args, **kw)
     except KeyboardInterrupt:
-        logger.info('Interrupted')
-        return 127
+        if debug:
+            raise
+        else:
+            logger.info('Interrupted')
+            return 127
     except SystemExit:
         raise
     except ValidationError as e:
-        if os.environ.get('DEBUG', ''):
+        if debug:
             raise
         else:
             logger.error(str(e))
             return 127
     except:
-        if os.environ.get('DEBUG', ''):
+        if debug:
             raise
         else:
             if not logger.error_occurred:
