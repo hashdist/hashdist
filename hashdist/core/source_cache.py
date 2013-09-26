@@ -554,6 +554,9 @@ class ArchiveSourceCache(object):
                 stream = open(url[len('file:'):])
             except IOError as e:
                 raise SourceNotFoundError(str(e))
+        elif url.startswith('ftp://'):
+            self.logger.error('ftp protocol not supported: %s' % url)
+            raise NotImplementedError('ftp download has problems')
         else:
             # Make request.
             sys.stderr.write('Downloading %s...\n' % url)
