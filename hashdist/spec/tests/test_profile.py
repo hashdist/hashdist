@@ -10,7 +10,7 @@ from ...core import SourceCache
 from ...core.test.utils import *
 from ...core.test.test_source_cache import temp_source_cache
 from .. import profile
-
+from ..exceptions import ProfileError
 
 def gitify(dir):
     with working_directory(dir):
@@ -38,38 +38,71 @@ def teardown():
 
 
 @temp_working_dir_fixture
+def test_temp_git_checkouts(d):
+    os.mkdir(pjoin(d, 'src'))
+    repo1_dir = pjoin(d, 'repo1')
+    repo2_dir = pjoin(d, 'repo2')
+    dump(pjoin(repo1_dir, 'README1'), 'Hello 1')
+    dump(pjoin(repo2_dir, 'README2'), 'Hello 2')
+    repo1_commit = 'git:' + gitify(repo1_dir)
+    repo2_commit = 'git:' + gitify(repo2_dir)
+    sc = SourceCache(pjoin(d, 'src'), logger)
+    with profile.TemporarySourceCheckouts(sc) as chk:
+        tmp1 = chk.checkout('repo1', repo1_commit, [repo1_dir])
+        # Idempotency
+        assert tmp1 == chk.checkout('repo1', repo1_commit, [repo1_dir])
+        # Using same name for more than one commit is illegal
+        with assert_raises(ProfileError):
+            tmp2 = chk.checkout('repo1', repo2_commit, [repo1_dir])
+        tmp2 = chk.checkout('repo2', repo2_commit, [repo2_dir])
+        assert os.path.exists(pjoin(tmp1, 'README1'))
+        assert os.path.exists(pjoin(tmp2, 'README2'))
+
+        assert chk.resolve('<repo1>/foo/bar') == tmp1 + '/foo/bar'
+        assert chk.resolve('<repo2>/foo/bar') == tmp2 + '/foo/bar'
+        assert chk.resolve('/<repo2>/bar') == '/<repo2>/bar'
+        with assert_raises(ProfileError):
+            chk.resolve('<no_such_repo>/bar')
+        
+    assert not os.path.exists(tmp1)
+    assert not os.path.exists(tmp2)
+
+
+@temp_working_dir_fixture
 def test_git_loading(d):
     dump(pjoin(d, 'gitrepo', 'in_parent_dir.yaml'), """\
     """)
 
     dump(pjoin(d, 'gitrepo', 'subdir', 'in_sub_dir.yaml'), """\
         extends:
-          - profile: ../in_parent_dir.yaml
+          - file: ../in_parent_dir.yaml
     """)
 
     commit = gitify(pjoin(d, 'gitrepo'))
 
     dump(pjoin(d, 'user', 'profile.yaml'), """\
         extends:
-          - profile: subdir/in_sub_dir.yaml
+          - file: subdir/in_sub_dir.yaml
             urls: [%s]
             key: git:%s
+            name: repo1
     """ % (pjoin(d, 'gitrepo'), commit))
 
-    p = profile.load_profile(source_cache, {"profile": pjoin(d, 'user', 'profile.yaml')})
-    git_tmp = os.path.dirname(p.parents[0].parents[0].filename)
-    assert os.path.exists(git_tmp)
-    assert os.path.exists(pjoin(git_tmp, 'subdir', 'in_sub_dir.yaml'))
-    assert git_tmp != pjoin(d, 'gitrepo')
-    del p
+    os.mkdir(pjoin(d, 'src'))
+    with profile.TemporarySourceCheckouts(SourceCache(pjoin(d, 'src'), logger)) as checkouts:
+        p = profile.load_profile(checkouts, pjoin(d, 'user', 'profile.yaml'))
+        git_tmp = os.path.dirname(p.parents[0].parents[0].filename)
+        assert os.path.exists(git_tmp)
+        assert os.path.exists(pjoin(git_tmp, 'subdir', 'in_sub_dir.yaml'))
+        assert git_tmp != pjoin(d, 'gitrepo')
     assert not os.path.exists(git_tmp)
 
 @temp_working_dir_fixture
 def test_profile_parameters(d):
     dump(pjoin(d, "profile.yaml"), """\
         extends:
-          - profile: base1.yaml
-          - profile: base2.yaml
+        - file: base1.yaml
+        - file: base2.yaml
         parameters:
           a: 1
           b: 2
@@ -86,7 +119,7 @@ def test_profile_parameters(d):
           d: 4
     """)
     
-    p = profile.load_profile(source_cache, {"profile": "profile.yaml"})
+    p = profile.load_profile(source_cache, "profile.yaml")
     yield eq_, p.parameters, {'a': 1, 'b': 2, 'c': 3, 'd': 4}
 
 @temp_working_dir_fixture
@@ -94,12 +127,12 @@ def test_resource_resolution(d):
     # test packages_dir, base_dir, and sys.path
     dump(pjoin(d, "level3", "profile.yaml"), """\
         extends:
-          - profile: %s/level2/profiles/profile.yaml
+          - file: %s/level2/profiles/profile.yaml
     """ % d)
 
     dump(pjoin(d, "level2", "profiles", "profile.yaml"), """\
         extends:
-          - profile: %s/level1/profile.yaml
+          - file: %s/level1/profile.yaml
         packages_dir: ../pkgs
         base_dir: ../base
     """ % d)
@@ -116,7 +149,7 @@ def test_resource_resolution(d):
     dump(pjoin(d, "level1", "pkgs", "foo.yaml"), "1")
     dump(pjoin(d, "level1", "pkgs", "bar.yaml"), "1")
 
-    p = profile.load_profile(source_cache, {"profile": pjoin(d, "level3", "profile.yaml")})
+    p = profile.load_profile(source_cache, pjoin(d, "level3", "profile.yaml"))
     assert pjoin(d, "level2", "pkgs", "foo", "foo.yaml") == p.find_package_file("foo")
     assert pjoin(d, "level1", "pkgs", "bar.yaml") == p.find_package_file("bar")
 
@@ -140,8 +173,8 @@ def test_resource_resolution(d):
 def test_packages(d):
     dump(pjoin(d, "user.yaml"), """\
         extends:
-          - profile: base1.yaml
-          - profile: base2.yaml
+          - file: base1.yaml
+          - file: base2.yaml
 
         packages:
           - gcc
@@ -168,7 +201,7 @@ def test_packages(d):
     """)
 
 
-    p = profile.load_profile(source_cache, {"profile": pjoin(d, "user.yaml")})
+    p = profile.load_profile(source_cache, pjoin(d, "user.yaml"))
     pkgs = p.get_packages()
     yield eq_, pkgs, {'python': {'host': True},
                       'numpy': {'host': False},

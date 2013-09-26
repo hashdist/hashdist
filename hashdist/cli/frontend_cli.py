@@ -12,18 +12,23 @@ def add_profile_args(ap):
 
 class ProfileFrontendBase(object):
     def __init__(self, ctx, args):
-        from ..spec import Profile, ProfileBuilder, load_profile
+        from ..spec import Profile, ProfileBuilder, load_profile, TemporarySourceCheckouts
         from ..core import BuildStore, SourceCache
         self.ctx = ctx
         self.args = args
         self.source_cache = SourceCache.create_from_config(ctx.config, ctx.logger)
         self.build_store = BuildStore.create_from_config(ctx.config, ctx.logger)
+        self.checkouts = TemporarySourceCheckouts(self.source_cache)
         self.profile = load_profile(self.source_cache, args.profile)
         self.builder = ProfileBuilder(self.ctx.logger, self.source_cache, self.build_store, self.profile)
 
     @classmethod
     def run(cls, ctx, args):
-        cls(ctx, args).profile_builder_action()
+        self = cls(ctx, args)
+        try:
+            self.profile_builder_action()
+        finally:
+            self.checkouts.close()
     
 
 @register_subcommand

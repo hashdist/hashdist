@@ -10,39 +10,15 @@ import tempfile
 import os
 import shutil
 from os.path import join as pjoin
+import re
 
 from ..formats.marked_yaml import load_yaml_from_file
 from .utils import substitute_profile_parameters
 from .. import core
+from .exceptions import ProfileError
 
 class ConflictingProfilesError(Exception):
     pass
-
-class FileNotFoundError(Exception):
-    def __init__(self, msg, relname):
-        Exception.__init__(self, msg)
-        self.relname = relname
-
-class FileResolver(object):
-    """
-    Represents a tree of directories containing profile information.
-    Is used to resolve which file to load things from.
-    """
-    def __init__(self, children):
-        self.children = children
-
-
-class DirectoryRemover(object):
-    """
-    Removes a directory once nothing references this object any longer
-    """
-    def __init__(self, path):
-        self.path = path
-
-    def __del__(self):
-        if self.path:
-            shutil.rmtree(self.path)
-            self.path = None
 
 
 class Profile(object):
@@ -50,11 +26,10 @@ class Profile(object):
     Profiles acts as nodes in a tree, with `extends` containing the
     parent profiles (which are child nodes in a DAG).
     """
-    def __init__(self, filename, doc, parents, hold_ref_to=None):
+    def __init__(self, filename, doc, parents):
         self.filename = filename
         self.doc = doc
         self.parents = parents
-        self._hold_ref_to = hold_ref_to
         # for now, we require that bases have non-overlapping parameter keys
         self.parameters = {}
         for base in parents:
@@ -174,15 +149,74 @@ class Profile(object):
         return '<Profile %s>' % self.filename
 
 
-def load_profile(source_cache, include_doc, cwd=None):
+
+class TemporarySourceCheckouts(object):
+    """
+    A context that holds a number of sources checked out to temporary directories
+    until it is released.
+    """
+    REPO_NAME_PATTERN = re.compile(r'^<([^>]+)>(.*)')
+
+    def __init__(self, source_cache):
+        self.repos = {}  # name : (key, tmpdir)
+        self.source_cache = source_cache
+
+    def checkout(self, name, key, urls):
+        if name in self.repos:
+            existing_key, path = self.repos[name]
+            if existing_key != key:
+                raise ProfileError(name, 'Name "%s" used for two different commits within a profile' % name)
+        else:
+            if len(urls) != 1:
+                raise ProfileError(urls, 'Only a single url currently supported')
+            self.source_cache.fetch(urls[0], key, 'profile-%s' % name)
+            path = tempfile.mkdtemp()
+            try:
+                self.source_cache.unpack(key, path)
+            except:
+                shutil.rmtree(path)
+                raise
+            else:
+                self.repos[name] = (key, path)
+        return path
+
+    def close(self):
+        for key, tmpdir in self.repos.values():
+            shutil.rmtree(tmpdir)
+        self.repos.clear()
+
+    def resolve(self, path):
+        """
+        Expand path-names of the form ``<repo_name>/foo/bar``,
+        replacing the ``<repo_name>`` part (where ``repo_name`` is
+        given to `checkout`, and the ``<`` and ``>`` are literals)
+        with the temporary checkout of the given directory.
+        """
+        m = self.REPO_NAME_PATTERN.match(path)
+        if m:
+            name = m.group(1)
+            if name not in self.repos:
+                raise ProfileError(path, 'No temporary checkouts are named "%s"' % name)
+            key, tmpdir = self.repos[name]
+            return tmpdir + m.group(2)
+        else:
+            return path
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+def load_profile(checkouts, include_doc, cwd=None):
     """
     Loads a Profile given an include document fragment, e.g.::
 
-        profile: ../foo/profile.yaml
+        file: ../foo/profile.yaml
 
     or::
 
-        profile: linux/profile.yaml
+        file: linux/profile.yaml
         urls: [git://github.com/hashdist/hashstack.git]
         key: git:5aeba2c06ed1458ae4dc5d2c56bcf7092827347e
 
@@ -197,27 +231,21 @@ def load_profile(source_cache, include_doc, cwd=None):
         return p
 
     if isinstance(include_doc, str):
-        include_doc = {'profile': include_doc}
+        include_doc = {'file': include_doc}
     
     if 'key' in include_doc:
         # Check out git repo to temporary directory. cwd is relative to checked out root.
-        assert len(include_doc['urls']) == 1
-        cwd = tempfile.mkdtemp()
-        dir_remover = DirectoryRemover(cwd)
-        source_cache.fetch(include_doc['urls'][0], include_doc['key'], 'stack-desc')
-        source_cache.unpack(include_doc['key'], cwd)
-    else:
-        dir_remover = None
+        cwd = checkouts.checkout(include_doc['name'], include_doc['key'], include_doc['urls'])
 
-    profile = resolve_path(cwd, include_doc['profile'])
+    profile = resolve_path(cwd, include_doc['file'])
 
     doc = load_yaml_from_file(profile)
     if doc is None:
         doc = {}
     if 'extends' in doc:
         new_cwd = os.path.dirname(profile)
-        parents = [load_profile(source_cache, ancestor, cwd=new_cwd) for ancestor in doc['extends']]
+        parents = [load_profile(checkouts, ancestor, cwd=new_cwd) for ancestor in doc['extends']]
         del doc['extends']
     else:
         parents = []
-    return Profile(profile, doc, parents, hold_ref_to=dir_remover)
+    return Profile(profile, doc, parents)
