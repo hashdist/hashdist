@@ -39,6 +39,13 @@ class ValidationError(Exception):
         loc = '<unknown location>' if self.mark is None else '%s, line %d' % (self.mark.name, self.mark.line + 1)
         return '%s: %s' % (loc, self.message)
 
+class ExpectedKeyMissingError(KeyError, ValidationError):
+    def __init__(self, mark, message, **kw):
+        KeyError.__init__(self, message)
+        ValidationError.__init__(self, mark, message, **kw)
+
+    def __str__(self):
+        return ValidationError.__str__(self)
 
 def create_node_class(cls, name=None):
     class node_class(cls):
@@ -57,7 +64,6 @@ def create_node_class(cls, name=None):
     node_class.__name__ = name if name else '%s_node' % cls.__name__
     return node_class
 
-dict_node = create_node_class(dict)
 list_node = create_node_class(list)
 int_node = create_node_class(int)
 unicode_node_base = create_node_class(unicode)
@@ -75,6 +81,15 @@ class null_node(create_node_class(object, name='null_node')):
 
 def is_null(x):
     return type(x) is null_node
+
+class dict_node(create_node_class(dict)):
+    def __getitem__(self, key):
+        try:
+            return dict.__getitem__(self, key)
+        except KeyError:
+            raise ExpectedKeyMissingError(self, 'expected key "%s" not found' % key)
+
+
 
 class NodeConstructor(SafeConstructor):
     # To support lazy loading, the original constructors first yield
