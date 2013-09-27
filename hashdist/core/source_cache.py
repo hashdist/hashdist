@@ -563,10 +563,13 @@ class ArchiveSourceCache(object):
             try:
                 stream = urllib2.urlopen(url)
             except urllib2.HTTPError, e:
-                raise RuntimeError("urllib failed to download (code: %d): %s" %\
-                            (e.code, url))
+                msg = "urllib failed to download (code: %d): %s" % (e.code, url)
+                self.logger.error(msg)
+                raise RuntimeError(msg)
             except urllib2.URLError, e:
-                raise RuntimeError("urllib failed to download (reason: %s): %s" % (e.reason, url))
+                msg = "urllib failed to download (reason: %s): %s" % (e.reason, url)
+                self.logger.error(msg)
+                raise RuntimeError(msg)
 
         # Download file to a temporary file within self.packs_path, while hashing
         # it.
