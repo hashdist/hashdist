@@ -355,6 +355,7 @@ def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map,
     if 'PATH' in parameters:
         commands.append({"set": "PATH", "nohash_value": parameters['PATH']})
     commands.append({"cmd": ["$BASH", "_hashdist/build.sh"]})
+    commands.append({"hit": ["build-postprocess", "--write-protect"]})
     # assemble
     build_spec = {
         "name": pkg_name,
