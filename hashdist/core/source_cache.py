@@ -381,7 +381,9 @@ class GitSourceCache(object):
         retcode, out, err = self.git(repo_name, *args)
         # Just fetch the output
         if retcode != 0:
-            raise RuntimeError('git call %r failed with code %d' % (args, retcode))
+            msg = 'git call %r failed with code %d' % (args, retcode)
+            self.logger.error("Problem when trying to download repo %s: %s" % (repo_name, msg))
+            raise RuntimeError(msg)
         return out
 
     def get_repo_env(self, repo_name):
