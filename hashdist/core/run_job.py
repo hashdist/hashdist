@@ -634,9 +634,14 @@ class CommandTreeExecution(object):
             else:
                 from ..cli import main as cli_main
                 with working_directory(env['PWD']):
-                    cli_main(args, env, logger)
-        except:
-            logger.error("hit command failed")
+                    retcode = cli_main(args, env, logger)
+                if retcode != 0:
+                    raise RuntimeError("hit command failed with code: %d" % ret)
+        except SystemExit as e:
+            logger.error("hit command failed with code: %d" % e.code)
+            raise
+        except Exception as e:
+            logger.error("hit command failed: %s" % str(e))
             raise
         finally:
             logger.level = old_level
