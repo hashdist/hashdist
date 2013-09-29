@@ -725,37 +725,45 @@ class TarballHandler(object):
     def verify(self, filename):
         import tarfile
         try:
-            with closing(tarfile.open(filename, self.read_mode)) as archive:
-                # Just in case, make sure we can actually read the archive:
-                members = archive.getmembers()
-            return True
+            with closing(self.tarfileobj_from_name(filename)) as tarfileobj:
+                with closing(tarfile.open(fileobj=tarfileobj, mode=self.read_mode)) as archive:
+                    # Just in case, make sure we can actually read the archive:
+                    members = archive.getmembers()
+                return True
         except tarfile.ReadError:
             return False
 
     def unpack(self, infile, target_dir, hash):
         import tarfile
-        from StringIO import StringIO
         target_dir = os.path.abspath(target_dir)
 
         archive_data = infile.read()
         if format_digest(hashlib.sha256(archive_data)) != hash:
             raise CorruptSourceCacheError("Corrupted file: '%s'" % infile.name)
 
-        with closing(tarfile.open(fileobj=StringIO(archive_data), mode=self.read_mode)) as archive:
-            members = archive.getmembers()
-            prefix_len = len(common_path_prefix([member.name for member in members
-                                                 if member.type != tarfile.DIRTYPE]))
-            # Filter away too short directory entries, remove prefix,
-            # and prevent directory escape attacks
-            filtered_members = []
-            for member in members:
-                if len(member.name) <= prefix_len:
-                    continue
-                if not os.path.abspath(pjoin(target_dir, member.name)).startswith(target_dir):
-                    raise SecurityError("Archive attempted to break out of target dir "
-                                        "with filename: %s" % member.name)
-                member.name = member.name[prefix_len:]
-            archive.extractall(target_dir, members)
+        with closing(self.tarfileobj_from_data(archive_data)) as tarfileobj:
+            with closing(tarfile.open(fileobj=tarfileobj, mode=self.read_mode)) as archive:
+                members = archive.getmembers()
+                prefix_len = len(common_path_prefix([member.name for member in members
+                                                     if member.type != tarfile.DIRTYPE]))
+                # Filter away too short directory entries, remove prefix,
+                # and prevent directory escape attacks
+                filtered_members = []
+                for member in members:
+                    if len(member.name) <= prefix_len:
+                        continue
+                    if not os.path.abspath(pjoin(target_dir, member.name)).startswith(target_dir):
+                        raise SecurityError("Archive attempted to break out of target dir "
+                                            "with filename: %s" % member.name)
+                    member.name = member.name[prefix_len:]
+                archive.extractall(target_dir, members)
+
+    def tarfileobj_from_name(self, filename):
+        return open(filename, 'r');
+
+    def tarfileobj_from_data(self, archive_data):
+        from StringIO import StringIO
+        return StringIO(archive_data)
 
 
 class TarGzHandler(TarballHandler):
@@ -768,6 +776,25 @@ class TarBz2Handler(TarballHandler):
     type = 'tar.bz2'
     exts = ['tar.bz2', 'tb2', 'tbz2']
     read_mode = 'r:bz2'
+
+class TarXzHandler(TarballHandler):
+    type = 'tar.xz'
+    exts = ['tar.xz']
+    read_mode = 'r'
+
+    # XXX: tarfile has built-in 'r:xz' support only in Python 3,
+    # XXX: so we use lzma module for Python 2 compatibility.
+
+    def tarfileobj_from_name(self, filename):
+        import lzma
+        return lzma.LZMAFile(filename)
+
+    def tarfileobj_from_data(self, archive_data):
+        # XXX: tarfile has built-in 'r:xz' support only in Python 3, so we use lzma module
+        # XXX: lzma.open() and lzma.LZMAFile() accept only file names, so we uncompress in memory
+        import lzma
+        from StringIO import StringIO
+        return StringIO(lzma.LZMADecompressor().decompress(archive_data))
 
 class ZipHandler(object):
     type = 'zip'
@@ -798,7 +825,7 @@ class ZipHandler(object):
 archive_ext_to_type = {}
 archive_handler_classes = {}
 archive_types = []
-for cls in [TarGzHandler, TarBz2Handler, ZipHandler]:
+for cls in [TarGzHandler, TarBz2Handler, TarXzHandler, ZipHandler]:
     for ext in cls.exts:
         archive_ext_to_type[ext] = cls.type
     archive_handler_classes[cls.type] = cls
