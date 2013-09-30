@@ -248,3 +248,40 @@ def test_name_anonymous_stages():
     # Note: The fact that identical stages get the same name, which trips up things downstream,
     # could be seen as a feature rather than a bug -- you normally never want this. At any
     # rate, this is better for final ordering stability than having a random ordering.
+
+def test_when_dictionary():
+    doc = marked_yaml_load("""\
+    dictionary:
+        when platform == 'linux':
+            when host:
+                one: 1
+            two: 2
+    """)
+    r = package.process_conditionals(doc, {'platform': 'linux',
+                                           'host': True})
+    assert {'dictionary': {'one': 1, 'two': 2}} == r
+    r = package.process_conditionals(doc, {'platform': 'linux',
+                                           'host': False})
+    assert {'dictionary': {'two': 2}} == r
+    r = package.process_conditionals(doc, {'platform': 'windows',
+                                           'host': False})
+    assert {'dictionary': {}} == r
+
+def test_when_list():
+    doc = marked_yaml_load("""\
+    dictionary:
+    - when platform == 'linux':
+      - when host:
+        - 1
+      - 2
+    - 3
+    """)
+    r = package.process_conditionals(doc, {'platform': 'linux',
+                                           'host': True})
+    assert {'dictionary': [1, 2, 3]} == r
+    r = package.process_conditionals(doc, {'platform': 'linux',
+                                           'host': False})
+    assert {'dictionary': [2, 3]} == r
+    r = package.process_conditionals(doc, {'platform': 'windows',
+                                           'host': False})
+    assert {'dictionary': [3]} == r

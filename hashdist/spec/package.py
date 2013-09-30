@@ -1,3 +1,4 @@
+import re
 from pprint import pprint
 import os
 from os.path import join as pjoin
@@ -367,4 +368,56 @@ def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map,
         }
         
     return core.BuildSpec(build_spec)
+
+
+CONDITIONAL_RE = re.compile(r'^when (.*)$')
+
+GLOBALS_LST = [len]
+GLOBALS = dict((entry.__name__, entry) for entry in GLOBALS_LST)
+
+def eval_condition(expr, parameters):
+    return bool(eval(expr, GLOBALS, parameters))
+
+def process_conditional_dict(doc, parameters):
+    result = {}
+
+    for key, value in doc.items():
+        m = CONDITIONAL_RE.match(key)
+        if m:
+            if eval_condition(m.group(1), parameters):
+                if not isinstance(value, dict):
+                    raise ProfileError(value, "'when' dict entry must contain another dict")
+                to_merge = process_conditional_dict(value, parameters)
+                for k, v in to_merge.items():
+                    if k in result:
+                        raise ProfileError(k, "key '%s' conflicts with another key of the same name "
+                                           "in another when-clause" % k)
+                    result[k] = v
+        else:
+            result[key] = process_conditionals(value, parameters)
+    return result
+
+def process_conditional_list(lst, parameters):
+    result = []
+    for item in lst:
+        if isinstance(item, dict) and len(item) == 1:
+            key, value = item.items()[0]
+            m = CONDITIONAL_RE.match(key)
+            if m:
+                if eval_condition(m.group(1), parameters):
+                    if not isinstance(value, list):
+                        raise ProfileError(value, "'when' clause within list must contain another list")
+                    to_extend = process_conditional_list(value, parameters)
+                    result.extend(to_extend)
+        else:
+            result.append(process_conditionals(item, parameters))
+    return result
+
+def process_conditionals(doc, parameters):
+    if isinstance(doc, dict):
+        return process_conditional_dict(doc, parameters)
+    elif isinstance(doc, list):
+        return process_conditional_list(doc, parameters)
+    else:
+        return doc
 
