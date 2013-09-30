@@ -63,11 +63,12 @@ def test_create_build_spec():
             "import": [{"ref": "OTHERLIB", "id": "otherlib/abcdefg"}],
             "commands": [
                 {"set": "BASH", "nohash_value": "/bin/bash"},
-                {"cmd": ["$BASH", "_hashdist/build.sh"]}]},
+                {"cmd": ["$BASH", "_hashdist/build.sh"]},
+                {'hit': ['build-postprocess', '--write-protect']}]},
         "sources": [
             {"key": "git:a3c39a03e7b8e9a3321d69ff877338f99ebb4aa2", "target": "."}
             ]}
-    
+
     assert expected == build_spec.doc
 
    
