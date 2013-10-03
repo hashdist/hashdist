@@ -491,7 +491,7 @@ class BuildStore(object):
         
     def remove_build_dir(self, build_dir):
         self.logger.debug('Removing build dir: %s' % build_dir)
-        robust_rmtree(build_dir)
+        robust_rmtree(build_dir, self.logger)
  
 class ArtifactBuilder(object):
     def __init__(self, build_store, build_spec, virtuals):
