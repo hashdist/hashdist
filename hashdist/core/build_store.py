@@ -189,7 +189,7 @@ from .hasher import Hasher
 from .common import (InvalidBuildSpecError, BuildFailedError,
                      json_formatting_options, SHORT_ARTIFACT_ID_LEN,
                      working_directory)
-from .fileutils import silent_unlink, rmtree_up_to, silent_makedirs, gzip_compress, write_protect
+from .fileutils import silent_unlink, robust_rmtree, rmtree_up_to, silent_makedirs, gzip_compress, write_protect
 from . import run_job
 
 
@@ -491,7 +491,7 @@ class BuildStore(object):
         
     def remove_build_dir(self, build_dir):
         self.logger.debug('Removing build dir: %s' % build_dir)
-        shutil.rmtree(build_dir)
+        robust_rmtree(build_dir)
  
 class ArtifactBuilder(object):
     def __init__(self, build_store, build_spec, virtuals):

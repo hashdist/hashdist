@@ -1,6 +1,7 @@
 import os
 import errno
 import shutil
+import time
 import gzip
 from contextlib import closing
 
@@ -43,6 +44,19 @@ def silent_unlink(path):
         if e.errno != errno.ENOENT:
             raise
 
+def robust_rmtree(path):
+    """Robustly tries to delete paths.
+
+    Retries several times (with increasing delays) if an OSError occurs.
+    """
+
+    for i in range(5):
+        try:
+            shutil.rmtree(path)
+            break
+        except OSError, e:
+            time.sleep(i)
+        
 def rmtree_up_to(path, parent, silent=False):
     """Executes ``shutil.rmtree(path, ignore_errors=True)``,
     and then removes any empty parent directories
