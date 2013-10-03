@@ -24,9 +24,8 @@ same as "package dependencies" found in higher-level distributions;
 for instance, if a pure Python package has a NumPy dependency, this
 should not be declared in the build-spec because NumPy is not needed
 during the build; indeed, the installation can happen in
-parallel. Assembing artifacts together in a usable run-time system is
+parallel. Assembling artifacts together in a usable run-time system is
 the job of :mod:`hashdist.core.profile`.
-
 
 Artifact IDs
 ------------
@@ -47,7 +46,7 @@ Build specifications and inferring artifact IDs
 
 The fundamental object of the build store is the JSON build
 specification.  If you know the build spec, you know the artifact ID,
-since the former is the hash of the latter. The key is that both
+since the latter is the hash of the former. The key is that both
 `dependencies` and `sources` are specified in terms of their hashes.
 
 An example build spec:
