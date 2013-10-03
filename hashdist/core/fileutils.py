@@ -55,7 +55,7 @@ def robust_rmtree(path, logger=None, max_retries=5):
     for i in range(max_retries):
         try:
             shutil.rmtree(path)
-            break
+            return
         except OSError, e:
             if logger:
                 logger.info('Unable to remove path: %s' % path)
