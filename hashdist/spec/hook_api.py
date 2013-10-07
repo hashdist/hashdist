@@ -30,7 +30,7 @@ class PackageBuildContext(object):
         if handler_name in self._build_stage_handlers:
             raise IllegalHookFileError('handler for build stage "%s" already registered' % handler_name)
         self._build_stage_handlers[handler_name] = handler_func
-    
+
     def register_module(self, mod):
         """
         Hold a reference to the registered module; this is necesary to avoid
@@ -44,7 +44,7 @@ class PackageBuildContext(object):
         stage = self.deep_sub(stage)
         handler = stage['handler']
         if handler not in self._build_stage_handlers:
-            raise ProfileError(stage.start_mark, 'build stage handler "%s" not registered' % handler)
+            raise ProfileError(stage, 'build stage handler "%s" not registered' % handler)
         return self._build_stage_handlers[handler](self, stage)
 
     def sub(self, s):

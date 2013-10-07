@@ -26,7 +26,7 @@ class ProfileBuilder(object):
 
         self._load_packages()
         self._compute_specs()
-        
+
 
     def _load_packages(self):
         self._package_specs = {}
@@ -152,7 +152,7 @@ class ProfileBuilder(object):
     def build_profile(self, config):
         profile_build_spec = self.get_profile_build_spec()
         return self.build_store.ensure_present(profile_build_spec, config)
-        
+
     def _load_package_build_context(self, pkgname):
         hook_files = self._package_specs[pkgname].hook_files
         dep_vars = [to_env_var(x) for x in self._package_specs[pkgname].build_deps]

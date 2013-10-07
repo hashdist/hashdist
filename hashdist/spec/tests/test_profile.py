@@ -233,7 +233,7 @@ def test_resource_resolution(d):
 
 
 @temp_working_dir_fixture
-def test_packages(d):
+def test_load_and_inherit_profile(d):
     dump(pjoin(d, "user.yaml"), """\
         extends:
           - file: base1.yaml
