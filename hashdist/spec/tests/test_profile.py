@@ -27,8 +27,8 @@ def gitify(dir):
 def setup():
     """
     We set up a test setup with three directories, 'user', 'base1' and 'base2'.
-    'base2' is made into a git repository which is checked out. 
-    
+    'base2' is made into a git repository which is checked out.
+
     """
     global tmpdir, source_cache
     tmpdir = tempfile.mkdtemp()
@@ -64,7 +64,7 @@ def test_temp_git_checkouts(d):
         assert chk.resolve('/<repo2>/bar') == '/<repo2>/bar'
         with assert_raises(ProfileError):
             chk.resolve('<no_such_repo>/bar')
-        
+
     assert not os.path.exists(tmp1)
     assert not os.path.exists(tmp2)
 
@@ -118,7 +118,7 @@ def test_profile_parameters(d):
           b: 2
           set_in_both_but_overridden: 0
     """)
-    
+
     dump("base1.yaml", """\
         parameters:
           a: 0
@@ -131,7 +131,7 @@ def test_profile_parameters(d):
           d: 4
           set_in_both_but_overridden: 5
     """)
-    
+
     with profile.TemporarySourceCheckouts(None) as checkouts:
         doc = profile.load_and_inherit_profile(checkouts, "profile.yaml")
     assert doc['parameters'] == {'a': 1, 'b': 2, 'c': 3, 'd': 4,
@@ -144,7 +144,7 @@ def test_parameter_collision(d):
         - file: base1.yaml
         - file: base2.yaml
     """)
-    
+
     dump("base1.yaml", "parameters: {a: 0}")
     dump("base2.yaml", "parameters: {a: 1}")
     with profile.TemporarySourceCheckouts(None) as checkouts:
@@ -164,6 +164,27 @@ def test_file_resolver(d):
         assert pjoin(d, "level1", "pkgs", "bar.yaml") == r.find_file([
             "pkgs/bar.yaml", "pkgs/bar/bar.yaml"
             ])
+
+@temp_working_dir_fixture
+def test_file_resolver_glob(d):
+    class MockCheckoutsManager(object):
+        def resolve(self, x): return x
+
+    dump(pjoin(d, "level2", "bar.yaml"), "{my: document}")
+    dump(pjoin(d, "level2", "foo", "foo-0.yaml"), "{my: document}") # matched twice, returned once
+    dump(pjoin(d, "level2", "foo", "foo-1.yaml"), "{my: document}") # overrides level1
+    dump(pjoin(d, "level1", "foo", "foo-0.yaml"), "{my: document}")
+    dump(pjoin(d, "level1", "foo", "foo-1.yaml"), "{my: document}") # overriden by level2
+    dump(pjoin(d, "level1", "foo", "foo-2.yaml"), "{my: document}")
+    dump(pjoin(d, "level1", "foo", "foo-3.yaml"), "{my: document}")
+    r = profile.FileResolver(MockCheckoutsManager(), [pjoin(d, 'level2'), pjoin(d, 'level1')])
+    matches = r.glob_files(['foo/foo-*.yaml', 'foo/*0.yaml', 'bar.yaml'])
+    eq_(matches, {
+        'bar.yaml': '%s/level2/bar.yaml' % d,
+        'foo/foo-0.yaml': '%s/level2/foo/foo-0.yaml' % d,
+        'foo/foo-1.yaml': '%s/level2/foo/foo-1.yaml' % d,
+        'foo/foo-2.yaml': '%s/level1/foo/foo-2.yaml' % d,
+        'foo/foo-3.yaml': '%s/level1/foo/foo-3.yaml' % d})
 
 
 @temp_working_dir_fixture

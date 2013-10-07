@@ -5,12 +5,14 @@ Not supported:
  - Diamond inheritance
 
 """
+
 from pprint import pprint
 import tempfile
 import os
 import shutil
 from os.path import join as pjoin
 import re
+import glob
 
 from ..formats.marked_yaml import load_yaml_from_file, is_null
 from .utils import substitute_profile_parameters
@@ -41,6 +43,10 @@ class Profile(object):
             doc = load_yaml_from_file(p) if p is not None else None
             self._yaml_cache['package', pkgname] = doc
         return doc
+
+    def glob_package_specs(self, pkgname):
+        self.file_resolver.find_file([pkgname + '.yaml', pjoin(pkgname, pkgname + '.yaml'),
+                                      pjoin(pkgname, pkgname + '-*.yaml')], glob=True)
 
     def find_package_file(self, pkgname, filename):
         """
@@ -120,7 +126,7 @@ class FileResolver(object):
         self.checkouts_manager = checkouts_manager
         self.search_dirs = search_dirs
 
-    def find_file(self, filenames):
+    def find_file(self, filenames, glob=False):
         """
         Search for a file with the given filename/path relative to the root
         of each of `self.search_dirs`. If `filenames` is a list, the entire
@@ -137,6 +143,27 @@ class FileResolver(object):
                 if os.path.exists(self.checkouts_manager.resolve(filename)):
                     return filename
         return None
+
+    def glob_files(self, patterns):
+        """
+        Like ``find_file``, but uses a set of patterns and tries to match each
+        pattern against the filesystem using ``glob.glob``. The result is
+        a dict mapping the 'matched name' (path relative to root of overlay;
+        this is required to be unique) to the physical path.
+        """
+        if isinstance(patterns, basestring):
+            patterns = [patterns]
+        result = {}
+        # iterate from bottom and up, so that newer matches overwrites older ones in dict
+        for overlay in self.search_dirs[::-1]:
+            basedir = self.checkouts_manager.resolve(overlay)
+            for p in patterns:
+                for match in glob.glob(pjoin(basedir, p)):
+                    assert match.startswith(basedir)
+                    match_relname = match[len(basedir) + 1:]
+                    result[match_relname] = match
+        return result
+
 
 def load_and_inherit_profile(checkouts, include_doc, cwd=None):
     """
@@ -190,7 +217,7 @@ def load_and_inherit_profile(checkouts, include_doc, cwd=None):
         del doc['extends']
     else:
         parents = []
-    
+
     for section in ['package_dirs', 'hook_import_dirs']:
         lst = doc.get(section, [])
         doc[section] = [resolve_path(new_cwd, p) for p in lst]
