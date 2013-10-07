@@ -106,7 +106,24 @@ class dict_node(create_node_class(dict)):
         except KeyError:
             raise ExpectedKeyMissingError(self, 'expected key "%s" not found' % key)
 
+def copy_dict_node(d):
+    """
+    Makes a copy of the dict `d`, preserving dict_node status if it is a dict_node,
+    otherwise returning a dict.
+    """
+    if isinstance(d, dict_node):
+        return dict_node(d, d.start_mark, d.end_mark)
+    else:
+        return dict(d)
 
+def dict_like(d):
+    """
+    Make a new dict, preserving any start/end marks of `d`.
+    """
+    if isinstance(d, dict_node):
+        return dict_node({}, d.start_mark, d.end_mark)
+    else:
+        return {}
 
 class NodeConstructor(SafeConstructor):
     # To support lazy loading, the original constructors first yield

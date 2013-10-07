@@ -3,7 +3,7 @@ from pprint import pprint
 import os
 from os.path import join as pjoin
 
-from ..formats.marked_yaml import load_yaml_from_file
+from ..formats.marked_yaml import load_yaml_from_file, copy_dict_node, dict_like, list_node
 from .utils import substitute_profile_parameters, topological_sort, to_env_var
 from .. import core
 from .exceptions import ProfileError
@@ -160,12 +160,20 @@ def load_and_inherit_package(profile, package_name, parameters, encountered=None
     encountered.add(package_name)
     hook_files = []
     doc = profile.load_package_yaml(package_name, parameters)
-    hook = profile.find_package_file(package_name, package_name + '.py')
     if doc is None:
         raise ProfileError(package_name, 'Package specification not found: %s' % package_name)
-    doc = dict(doc)  # shallow copy
+    hook = profile.find_package_file(package_name, package_name + '.py')
     if hook is not None:
         hook_files.append(hook)
+
+    doc = dict(doc)  # shallow copy
+
+    # Process when clauses. The top-level when to select the doc already done by
+    # profile.load_package_yaml.
+    if 'when' in doc:
+        del doc['when']
+
+    doc = process_conditionals(doc, parameters)
 
     # Since we don't support diamond inheritance so far, we simply merge again for every
     # level. This strategy must be changed if we want to support diamond inheritance.
@@ -211,7 +219,7 @@ def order_package_stages(package_spec):
     build_stages = package_spec.setdefault('build_stages', [])
     for i, stage in enumerate(build_stages):
         if 'handler' not in stage:
-            build_stages[i] = d = dict(stage)
+            build_stages[i] = d = copy_dict_node(stage)
             try:
                 name = d['name']
             except KeyError:
@@ -387,7 +395,7 @@ def eval_condition(expr, parameters):
         raise ProfileError(expr, "parameter not defined: %s" % e)
 
 def process_conditional_dict(doc, parameters):
-    result = {}
+    result = dict_like(doc)
 
     for key, value in doc.items():
         m = CONDITIONAL_RE.match(key)
@@ -406,7 +414,10 @@ def process_conditional_dict(doc, parameters):
     return result
 
 def process_conditional_list(lst, parameters):
-    result = []
+    if hasattr(lst, 'start_mark'):
+        result = list_node([], lst.start_mark, lst.end_mark)
+    else:
+        result = []
     for item in lst:
         if isinstance(item, dict) and len(item) == 1:
             key, value = item.items()[0]

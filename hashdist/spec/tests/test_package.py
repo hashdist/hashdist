@@ -71,13 +71,13 @@ def test_create_build_spec():
 
     assert expected == build_spec.doc
 
-   
+
 
 class MockProfile(object):
     def __init__(self, files):
         self.files = dict((name, marked_yaml_load(body)) for name, body in files.items())
 
-    def load_package_yaml(self, name):
+    def load_package_yaml(self, name, parameters):
         return self.files.get('%s.yaml' % name, None)
 
     def find_package_file(self, name, filename):
@@ -90,7 +90,7 @@ def test_prevent_diamond():
         'c.yaml': 'extends: [d]',
         'd.yaml': '{}'}
     with assert_raises(ProfileError):
-        package.load_and_inherit_package(MockProfile(files), 'a')
+        package.load_and_inherit_package(MockProfile(files), 'a', {})
 
 def test_inheritance_collision():
     files = {
@@ -98,7 +98,7 @@ def test_inheritance_collision():
         'base1.yaml': 'build_stages: [{name: stage1}]',
         'base2.yaml': 'build_stages: [{name: stage1}]'}
     with assert_raises(ProfileError):
-        package.load_and_inherit_package(MockProfile(files), 'child')
+        doc = package.load_and_inherit_package(MockProfile(files), 'child', {})
 
 
 def test_load_and_inherit_package():
@@ -113,18 +113,18 @@ def test_load_and_inherit_package():
         - name: stage1_override
           # mode defaults to override
           a: 1
-          
+
         - name: stage3_override
           mode: override
           a: 1
-          
+
         - name: stage_to_remove
           mode: remove
-          
+
         - name: stage4_replace
           mode: replace
           a: 1
-          
+
         - name: stage_2_inserted
           after: stage1_override
           before: stage3_override
@@ -136,7 +136,7 @@ def test_load_and_inherit_package():
         when_build_dependency:
         - name: start
           set: FOO
-          value: foovalue        
+          value: foovalue
     """
 
     files['base1.yaml'] = """\
@@ -173,8 +173,8 @@ def test_load_and_inherit_package():
     files['mypackage.py'] = '{}'
 
     prof = MockProfile(files)
-    
-    doc, hook_files = package.load_and_inherit_package(prof, 'mypackage')
+
+    doc, hook_files = package.load_and_inherit_package(prof, 'mypackage', {})
     assert hook_files == ['grandparent.py', 'base1.py', 'mypackage.py']
 
     # the below relies on an unstable ordering as the lists are not sorted, but
@@ -220,7 +220,7 @@ def test_order_stages():
     result = package.order_package_stages(doc)
     assert expected == result
 
-    
+
 def test_extend_list():
     yield eq_, ['a', 'b'], package._extend_list(['a'], ['b'])
     yield eq_, ['a', 'b'], package._extend_list(['a'], ['b', 'a'])
@@ -229,7 +229,7 @@ def test_extend_list():
     lst = ['a', 'a', 'a', 'a']
     yield eq_, ['a'], package._extend_list(['a'], lst)
     yield eq_, ['a', 'a', 'a', 'a'], lst
-    
+
 def test_name_anonymous_stages():
     stages = [
         {'name': 'foo'},
