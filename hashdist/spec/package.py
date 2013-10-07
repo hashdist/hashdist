@@ -420,6 +420,7 @@ def process_conditional_list(lst, parameters):
         result = []
     for item in lst:
         if isinstance(item, dict) and len(item) == 1:
+            # lst the form [..., {'when EXPR': BODY}, ...]
             key, value = item.items()[0]
             m = CONDITIONAL_RE.match(key)
             if m:
@@ -430,6 +431,12 @@ def process_conditional_list(lst, parameters):
                     result.extend(to_extend)
             else:
                 result.append(process_conditionals(item, parameters))
+        elif isinstance(item, dict) and 'when' in item:
+            # lst has the form [..., {'when': EXPR, 'sibling_key': 'value'}, ...]
+            if eval_condition(item['when'], parameters):
+                item_copy = copy_dict_node(item)
+                del item_copy['when']
+                result.append(process_conditionals(item_copy, parameters))
         else:
             result.append(process_conditionals(item, parameters))
     return result
