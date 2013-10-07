@@ -15,7 +15,6 @@ def test_schema_error(d):
 
         build_stores: {a: 3}
         cache: a
-        db: a
         build_temp: a
         source_caches: [{dir: a}]
     """)
@@ -25,7 +24,7 @@ def test_schema_error(d):
         assert str(e) == "config.yaml, line 3: {'a': 3} is not of type 'array'"
     else:
         assert False
- 
+
 @temp_working_dir_fixture
 def test_load_config(d):
     dump('config.yaml', """\
@@ -36,15 +35,13 @@ def test_load_config(d):
         - dir: ./src
         - url: http://server.com/source_cache
         cache: ./cache
-        db: ./db
     """)
     with working_directory('/'):
         c = config.load_config_file(pjoin(d, 'config.yaml'))
-    
+
     assert c == {
         'build_stores': [{'dir': pjoin(d, 'ba')}],
         'build_temp': pjoin(d, 'bld'),
         'cache': pjoin(d, 'cache'),
-        'db': pjoin(d, 'db'),
         'source_caches': [{'dir': pjoin(d, 'src')},
                           {'url': 'http://server.com/source_cache'}]}
