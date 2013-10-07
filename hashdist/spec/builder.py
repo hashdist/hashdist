@@ -105,9 +105,9 @@ class ProfileBuilder(object):
 
     def get_status_report(self):
         """
-        Return {pkgname: (artifact_id, is_built)}.
+        Return ``{pkgname: (build_spec, is_built)}``.
         """
-        report = dict((pkgname, (build_spec.artifact_id, pkgname in self._built))
+        report = dict((pkgname, (build_spec, pkgname in self._built))
                       for pkgname, build_spec in self._build_specs.iteritems())
         return report
 

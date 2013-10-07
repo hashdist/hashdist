@@ -29,7 +29,7 @@ class ProfileFrontendBase(object):
             self.profile_builder_action()
         finally:
             self.checkouts.close()
-    
+
 
 @register_subcommand
 class Build(ProfileFrontendBase):
@@ -48,7 +48,7 @@ class Build(ProfileFrontendBase):
         add_profile_args(ap)
         add_build_args(ap)
         ap.add_argument('package', nargs='?', help='package to build (default: build all)')
-    
+
     def profile_builder_action(self):
         from ..core import atomic_symlink
 
@@ -69,8 +69,8 @@ class Build(ProfileFrontendBase):
                 sys.stdout.write('Profile build successful, link at: %s\n' % profile_symlink)
             artifact_id, artifact_dir = self.builder.build_profile(self.ctx.config)
             atomic_symlink(artifact_dir, profile_symlink)
-        
-            
+
+
 @register_subcommand
 class Status(ProfileFrontendBase):
     """
@@ -83,15 +83,14 @@ class Status(ProfileFrontendBase):
     @classmethod
     def setup(cls, ap):
         add_profile_args(ap)
-    
+
     def profile_builder_action(self):
         report = self.builder.get_status_report()
         report = sorted(report.values())
-        for name, is_built in report:
-            short_name = name[:name.index('/') + 6] + '..'
+        for build_spec, is_built in report:
             status = 'OK' if is_built else 'needs build'
-            sys.stdout.write('%-50s [%s]\n' % (short_name, status))
-        
+            sys.stdout.write('%-50s [%s]\n' % (build_spec.short_artifact_id, status))
+
 @register_subcommand
 class Show(ProfileFrontendBase):
     """
@@ -104,7 +103,7 @@ class Show(ProfileFrontendBase):
         add_profile_args(ap)
         ap.add_argument('subcommand', choices=['buildspec', 'script'])
         ap.add_argument('package', help='package to show information about')
-    
+
     def profile_builder_action(self):
         if self.args.subcommand == 'buildspec':
             if self.args.package == 'profile':
@@ -140,5 +139,4 @@ class BuildDir(ProfileFrontendBase):
         os.mkdir(self.args.target)
         build_spec = self.builder.get_build_spec(self.args.package)
         self.build_store.prepare_build_dir(self.source_cache, build_spec, self.args.target)
-        
-        
+

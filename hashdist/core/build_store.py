@@ -114,37 +114,13 @@ The build specification is available under ``$BUILD/build.json``, and
 stdout and stderr are redirected to ``$BUILD/build.log``. These two
 files will also be present in ``$ARTIFACT`` after the build.
 
+Build artifact storage format
+-----------------------------
 
-Discussion
-----------
+The presence of the 'id' file signals that the build is complete, and
+contains the full 256-bit hash.
 
-Safety of the shortened IDs
-'''''''''''''''''''''''''''
-
-Hashdist will never use these to resolve build artifacts, so collision
-problems come in two forms:
-
-First, automatically finding the list of run-time dependencies from
-the build dependencies. In this case one scans the artifact directory
-only for the build dependencies (less than hundred). It then makes
-sense to consider the chance of finding one exact string
-``aaa/0.0/ZXa3`` in a random stream of 8-bit bytes, which helps
-collision strength a lot, with chance "per byte" of
-collision on the order :math:`2^{-(8 \cdot 12)}=2^{-96}`
-for this minimal example.
-
-If this is deemed a problem (the above is too optimistice), one can
-also scan for "duplicates" (other artifacts where longer hashes
-were chosen, since we know these).
-
-The other problem can be future support for binary distribution of
-build artifacts, where you get pre-built artifacts which have links to
-other artifacts embedded, and artifacts from multiple sources may
-collide. In this case it makes sense to increase the hash lengths a
-bit since the birthday effect comes into play and since one only has 6
-bits per byte. However, the downloaded builds presumably will contain
-the full IDs, and so on can check if there is a conflict and give an
-explicit error.
+More TODO.
 
 
 Reference
@@ -163,14 +139,16 @@ import sys
 import re
 import errno
 import json
-from logging import DEBUG
+from logging import DEBUG, ERROR
 
 from .source_cache import SourceCache
 from .hasher import hash_document, prune_nohash
 from .common import (InvalidBuildSpecError, BuildFailedError,
+                     IllegalBuildStoreError,
                      json_formatting_options, SHORT_ARTIFACT_ID_LEN,
                      working_directory)
 from .fileutils import silent_unlink, robust_rmtree, rmtree_up_to, silent_makedirs, gzip_compress, write_protect
+from .fileutils import rmtree_write_protected
 from . import run_job
 
 
@@ -188,6 +166,7 @@ class BuildSpec(object):
         digest = hash_document('build-spec', prune_nohash(self.doc))
         self.digest = digest
         self.artifact_id = '%s/%s' % (self.name, digest)
+        self.short_artifact_id = '%s/%s' % (self.name, digest[:SHORT_ARTIFACT_ID_LEN])
 
 def as_build_spec(obj):
     if isinstance(obj, BuildSpec):
@@ -255,15 +234,6 @@ class BuildStore(object):
     Manages the directory of build artifacts; this is usually the entry point
     for kicking off builds as well.
 
-    Arguments for path pattern:
-
-     * name, version: Corresponding fields from build.json.
-
-     * shorthash: Initially first 4 chars of hash; then grows until there is
-       no collision. This must currently be present somewhere.
-
-    Currently, the db symlink entries are always relative.
-
     Parameters
     ----------
 
@@ -271,42 +241,34 @@ class BuildStore(object):
         Directory to use for temporary builds (these may be removed or linger
         depending on `keep_build` passed to :meth:`ensure_present`).
 
-    db_dir : str
-        Directory containing symlinks to the artifacts; this is the authoriative
-        database of build artifacts, and is always structured as
-        ``os.path.join("artifacts", digest[:2], digest[2:])``. `db_dir` should point to
-        root of db dir, "artifacts" is always appended.
-
     artifact_root : str
         Root of artifacts, this will be prepended to artifact_path_pattern
         with `os.path.join`. While this could be part of `artifact_path_pattern`,
         the meaning is that garbage collection will never remove contents
         outside of this directory.
 
-    artifact_path_pattern : str
-        A pattern to use to name (new) artifact directories.
-        See above for possible template arguments.
-        Example: ``{name}-{version}/{shorthash}``
-
     logger : Logger
     """
 
 
-    def __init__(self, temp_build_dir, db_dir, artifact_root, artifact_path_pattern, logger,
-                 create_dirs=False, short_hash_len=SHORT_ARTIFACT_ID_LEN):
-        if not os.path.isdir(db_dir) and not create_dirs:
-            raise ValueError('"%s" is not an existing directory' % db_dir)
-        if not '{shorthash}' in artifact_path_pattern:
-            raise ValueError('artifact_path_pattern must contain at least "{shorthash}"')
+    def __init__(self, temp_build_dir, artifact_root, logger, create_dirs=False):
         self.temp_build_dir = os.path.realpath(temp_build_dir)
-        self.ba_db_dir = pjoin(os.path.realpath(db_dir), "artifacts")
         self.artifact_root = os.path.realpath(artifact_root)
-        self.artifact_path_pattern = artifact_path_pattern
         self.logger = logger
-        self.short_hash_len = short_hash_len
         if create_dirs:
-            for d in [self.temp_build_dir, self.ba_db_dir, self.artifact_root]:
+            for d in [self.temp_build_dir, self.artifact_root]:
                 silent_makedirs(d)
+
+    def _log_artifact_collision(self, path):
+        self.logger.log_lines(ERROR, """\
+            The target directory already exists: %(path)s. This may be
+            because of an earlier sudden crash, or because somebody else is
+            currently performing the build on a shared
+            filesystem. If you are sure the latter is not the case,
+            you may run the following to fix the situation:
+
+                hit purge %(path)s
+            """ % dict(path=path))
 
     @staticmethod
     def create_from_config(config, logger, **kw):
@@ -317,9 +279,7 @@ class BuildStore(object):
             raise NotImplementedError()
 
         return BuildStore(config['build_temp'],
-                          config['db'],
                           config['build_stores'][0]['dir'],
-                          '{name}/{shorthash}',
                           logger,
                           **kw)
 
@@ -330,55 +290,58 @@ class BuildStore(object):
         return os.path.realpath(d).startswith(self.artifact_root)
 
     def delete_all(self):
-        for dirpath, dirnames, filenames in os.walk(self.ba_db_dir):
-            for link in filenames:
-                link = pjoin(dirpath, link)
-                if not os.path.islink(link):
-                    self.logger.warning("%s is not a symlink" % link)
-                    continue
-                artifact_dir = os.path.realpath(pjoin(dirpath, link))
-                if not artifact_dir.startswith(self.artifact_root):
-                    self.logger.warning("%s escapes %s, doing nothing with it" %
-                                        (artifact_dir, self.artifact_root))
-                try:
-                    shutil.rmtree(artifact_dir)
-                except OSError, e:
-                    if e.errno != errno.ENOENT:
-                        raise
-                    else:
-                        self.logger.warning("%s referenced in db but does not exist" % artifact_dir)
-
-        for x in os.listdir(self.ba_db_dir):
-            shutil.rmtree(pjoin(self.ba_db_dir, x))
-
         for x in os.listdir(self.temp_build_dir):
-            shutil.rmtree(pjoin(self.temp_build_dir, x))
+            rmtree_write_protected(pjoin(self.temp_build_dir, x))
 
-    def _get_artifact_link(self, artifact_id):
+    def delete(self, artifact_id):
+        """Deletes an artifact ID from the store. This is simply an
+        `rmtree`, i.e., it is (at least currently) possible to delete
+        an aborted build, a build in progress etc., as long as it is
+        present in the right path.
+
+        This is the backend of the ``hit purge`` command.
+
+        Returns the path that was removed, or `None` if no path was present.
+        """
         name, digest = artifact_id.split('/')
-        return pjoin(self.ba_db_dir, digest[:2], digest[2:])
+        path = self._get_artifact_path(name, digest)
+        if os.path.exists(path):
+            rmtree_write_protected(path)
+            return path
+        else:
+            return None
+
+    def _get_artifact_path(self, name, digest):
+        return pjoin(self.artifact_root, name, digest[:SHORT_ARTIFACT_ID_LEN])
 
     def resolve(self, artifact_id):
         """Given an artifact_id, resolve the short path for it, or return
         None if the artifact isn't built.
         """
-        link = self._get_artifact_link(artifact_id)
-        # automatically heal the link database if an artifact has been manually removed
-        try:
-            a_dir = os.readlink(link)
-        except OSError, e:
-            if e.errno == errno.ENOENT:
-                a_dir = None
-            else:
-                raise
+        name, digest = artifact_id.split('/')
+        path = self._get_artifact_path(name, digest)
+        if not os.path.exists(path):
+            return None
         else:
-            a_dir = os.path.realpath(pjoin(os.path.dirname(link), a_dir))
-            if not os.path.exists(a_dir):
-                self.logger.warning('Artifact %s has been manually removed; removing entry' %
-                                    artifact_id)
-                os.unlink(link)
-                a_dir = None
-        return a_dir
+            try:
+                f = open(pjoin(path, 'id'))
+            except IOError:
+                self._log_artifact_collision(path)
+                raise IllegalBuildStoreError('can not access file: %s/id' % path)
+            with f:
+                present_id = f.read().strip()
+                if present_id != artifact_id:
+                    self.logger.error('WARNING: An artifact with a hash that agrees in the first %d characters ' %
+                                      SHORT_ARTIFACT_ID_LEN)
+                    self.logger.error('is already installed. The two hashes are:')
+                    self.logger.error('')
+                    self.logger.error('    %s (already present)' % present_id)
+                    self.logger.error('    %s (wants to access/build)' % artifact_id)
+                    self.logger.error('')
+                    self.logger.error('The odds of this happening due to chance are very low.')
+                    self.logger.error('Please get in touch with the Hashdist developer mailing list.')
+                    raise IllegalBuildStoreError('Hashes collide in first 12 chars: %s and %s' % (present_id, artifact_id))
+            return path
 
     def is_present(self, build_spec):
         build_spec = as_build_spec(build_spec)
@@ -413,47 +376,14 @@ class BuildStore(object):
         # try to make shortened dir and symlink to it; incrementally
         # lengthen the name in the case of hash collision
         vars = dict(name=build_spec.doc['name'])
-        root = self.artifact_root
-        hashlen = self.short_hash_len
-        while True:
-            vars['shorthash'] = build_spec.digest[:hashlen]
-            name = self.artifact_path_pattern.format(**vars)
-            artifact_dir = pjoin(root, name)
-            try:
-                os.makedirs(artifact_dir)
-            except OSError, e:
-                if e.errno != errno.EEXIST:
-                    raise
-            else:
-                break
-            hashlen += 1
-        return artifact_dir
-
-    def register_artifact(self, build_spec, artifact_dir):
-        """
-        Register an artifact that has been successfully built in the db.
-
-        Upon return, `artifact_dir` is either registered in the db or
-        removed (except possibly for malformed input). If the artifact
-        is already registered under a different name (a race) then
-        that is silently returned (and `artifact_dir` removed).
-
-        Returns the new artifact dir (i.e., the input `artifact_dir` unless
-        there is a race).
-        """
-        link = self._get_artifact_link(build_spec.artifact_id)
-        rel_artifact_dir = os.path.relpath(artifact_dir, os.path.dirname(link))
-        silent_makedirs(os.path.dirname(link))
+        path = pjoin(self.artifact_root, build_spec.short_artifact_id)
         try:
-            os.symlink(rel_artifact_dir, link)
+            os.makedirs(path)
         except OSError, e:
-            shutil.rmtree(artifact_dir)
             if e.errno == errno.EEXIST:
-                return os.path.realpath(link)
-            else:
-                raise
-        else:
-            return artifact_dir
+                self._log_artifact_collision(path)
+            raise
+        return path
 
     def make_build_dir(self, build_spec):
         """Creates a temporary build directory
@@ -461,7 +391,7 @@ class BuildStore(object):
         Just to get a nicer name than mkdtemp would. The caller is responsible
         for removal.
         """
-        name = '%s-%s' % (build_spec.doc['name'], build_spec.digest[:self.short_hash_len])
+        name = build_spec.short_artifact_id.replace('/', '-')
         build_dir = orig_build_dir = pjoin(self.temp_build_dir, name)
         i = 0
         # Try to make build_dir, if not then increment a -%d suffix until we
@@ -513,7 +443,6 @@ class ArtifactBuilder(object):
         except:
             shutil.rmtree(artifact_dir)
             raise
-        artifact_dir = self.build_store.register_artifact(self.build_spec, artifact_dir)
         os.system("chmod -R -w %s" % artifact_dir)
         return artifact_dir
 
@@ -532,6 +461,11 @@ class ArtifactBuilder(object):
             try:
                 self.run_build_commands(build_dir, artifact_dir, env, config)
                 self.build_store.serialize_build_spec(self.build_spec, artifact_dir)
+
+                # Create 'id' marker for finished build by writing to _id and then mv to id
+                with open(pjoin(artifact_dir, '_id'), 'w') as f:
+                    f.write('%s\n' % self.build_spec.artifact_id)
+                os.rename(pjoin(artifact_dir, '_id'), pjoin(artifact_dir, 'id'))
             except:
                 should_keep = (keep_build in ('always', 'error'))
                 raise

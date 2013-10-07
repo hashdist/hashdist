@@ -36,18 +36,25 @@ def make_abs_temp_dir():
 
 # Make our own assert_raises, as nose.tools doesn't have it on Python 2.6
 # We always use the context manager form
+class AssertRaisesResult(object):
+    pass
+
 @contextlib.contextmanager
 def assert_raises(wanted_exc_type):
+    r = AssertRaisesResult()
     try:
-        yield
+        yield r
     except:
         exc_type, exc_val, exc_tb = sys.exc_info()
         if not issubclass(exc_type, wanted_exc_type):
             assert False, 'Wanted exception %r but got %r' % (
                 wanted_exc_type, exc_type)
+        r.exc_type = exc_type
+        r.exc_val = exc_val
+        r.exc_tb = exc_tb
     else:
         assert False, 'Expected exception not raised'
-        
+
 
 @contextlib.contextmanager
 def temp_dir():
@@ -137,10 +144,10 @@ class MemoryLogger(Logger):
         self.lines = lines
         self.level = DEBUG
         self.names = names
-    
+
     def get_sub_logger(self, name):
         return MemoryLogger(self.names + [name], self.lines)
-    
+
     def log(self, level, msg, *args):
         if args:
             msg = msg % args
@@ -160,7 +167,7 @@ def make_temporary_tarball(files):
     import tarfile
     from ..source_cache import scatter_files
     from ..hasher import format_digest
-    
+
     container_dir = make_abs_temp_dir()
     archive_filename = pjoin(container_dir, 'archive.tar.gz')
 

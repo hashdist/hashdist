@@ -18,7 +18,7 @@ from .utils import which, logger, temp_dir, temp_working_dir, assert_raises
 from . import utils
 
 from .. import source_cache, build_store, InvalidBuildSpecError, BuildFailedError, InvalidJobSpecError
-from ..common import SHORT_ARTIFACT_ID_LEN
+from ..common import SHORT_ARTIFACT_ID_LEN, IllegalBuildStoreError
 
 
 #
@@ -61,11 +61,11 @@ def test_strip_comments():
     eq_({"dependencies": [{"id": "a"}]}, got)
     eq_(got, build_store.strip_comments(got))
 
-        
+
 #
 # Tests requiring fixture
 #
-def fixture(short_hash_len=SHORT_ARTIFACT_ID_LEN, dir_pattern='{name}/{shorthash}'):
+def fixture():
     def decorator(func):
         @functools.wraps(func)
         def decorated():
@@ -82,10 +82,9 @@ def fixture(short_hash_len=SHORT_ARTIFACT_ID_LEN, dir_pattern='{name}/{shorthash
                     'build_temp': pjoin(tempdir, 'bld'),
                     'db': pjoin(tempdir, 'db'),
                     }
-                
+
                 sc = source_cache.SourceCache.create_from_config(config, logger)
-                bldr = build_store.BuildStore.create_from_config(config, logger,
-                                                                 short_hash_len=short_hash_len)
+                bldr = build_store.BuildStore.create_from_config(config, logger)
                 return func(tempdir, sc, bldr, config)
             finally:
                 os.system("chmod -R +w %s" % tempdir)
@@ -119,7 +118,7 @@ def test_basic(tempdir, sc, bldr, config):
     assert not bldr.is_present(spec)
     name, path = bldr.ensure_present(spec, config, extra_env={'EXTRA': 'extra'})
     assert bldr.is_present(spec)
-    assert ['artifact.json', 'bar', 'build.json', 'build.log.gz', 'hello'] == sorted(os.listdir(path))
+    assert ['artifact.json', 'bar', 'build.json', 'build.log.gz', 'hello', 'id'] == sorted(os.listdir(path))
     with file(pjoin(path, 'hello')) as f:
         got = sorted(f.readlines())
         eq_(''.join(got), dedent('''\
@@ -180,7 +179,7 @@ def test_failing_build_and_multiple_commands(tempdir, sc, bldr, config):
         assert not os.path.exists(pjoin(e_second.build_dir))
     else:
         assert False
-    
+
 
 @fixture()
 def test_fail_to_find_dependency(tempdir, sc, bldr, config):
@@ -192,37 +191,18 @@ def test_fail_to_find_dependency(tempdir, sc, bldr, config):
         with assert_raises(BuildFailedError):
             bldr.ensure_present(spec, config)
 
-@fixture(short_hash_len=1)
+@fixture()
 def test_hash_prefix_collision(tempdir, sc, bldr, config):
-    lines = []
-    # do all build 
-    for repeat in range(2):
-        # by experimentation this was enough to get a couple of collisions;
-        # changes to the hashing could change this a bit but assertions below will
-        # warn in those cases
-        hashparts = []
-        for k in range(15):
-            spec = {"name": "foo",
-                    "build": {
-                        "commands": [{"cmd": [which("echo"), "hello", str(k)]}]
-                        }
-                    }
-            artifact_id, path = bldr.ensure_present(spec, config)
-            hashparts.append(os.path.split(path)[-1])
-        lines.append(hashparts)
-    # please increase number of k-iterations above, or changes something
-    # in the build spec, if this hits:
-    assert any(len(x) > 1 for x in lines[0])
+    spec = {"name": "foo",
+            "build": {"commands": []}}
+    artifact_id, path = bldr.ensure_present(spec, config)
+    assert not artifact_id.endswith('x')
+    patched_id = artifact_id[:-1] + 'x'
+    with assert_raises(IllegalBuildStoreError) as e:
+        bldr.resolve(patched_id)
+    assert "collide in first 12 chars" in e.exc_val.message
 
-    # all repeats the same
-    assert lines[1] == lines[0]
 
-    # normal assertions
-    hashparts = lines[0]
-    for x in hashparts:
-        if len(x) > 1:
-            assert x[:1] in hashparts
-    
 @fixture()
 def test_source_unpack_options(tempdir, sc, bldr, config):
     container_dir, tarball, tarball_key = utils.make_temporary_tarball([
@@ -287,7 +267,7 @@ def build_mock_packages(builder, config, packages, virtuals={}, name_to_artifact
                 assert d == dep.name
                 assert abspath == name_to_artifact[d][1]
     return name_to_artifact
-        
+
 @fixture()
 def test_dependency_substitution(tempdir, sc, bldr, config):
     # Test that environment variables for dependencies are present in build environment
@@ -309,4 +289,4 @@ def test_virtual_dependencies(tempdir, sc, bldr, config):
 
     build_mock_packages(bldr, config, [numpy], virtuals={"virtual:blas/1.2.3": blas_id},
                         name_to_artifact={"blas": ("virtual:blas/1.2.3", blas_path)})
-    
+

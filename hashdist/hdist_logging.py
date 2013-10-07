@@ -7,6 +7,7 @@ from scratch.  We do however keep the API relatively similar.
 import os
 import sys
 from logging import DEBUG, INFO, WARNING, ERROR, CRITICAL
+import textwrap
 
 NOLOGGING = 10**6
 
@@ -144,6 +145,10 @@ class Logger(object):
                 stream.write('%s%s\n' % (heading, msg))
         if level >= ERROR:
             self.set_error_occurred(True)
+
+    def log_lines(self, level, text):
+        for line in textwrap.wrap(textwrap.dedent(text), 70).splitlines():
+            self.log(level, line)
 
     def debug(self, msg, *args):
         self.log(DEBUG, msg, *args)
