@@ -36,7 +36,9 @@ class PackageSpec(object):
         a transform pipeline to put the spec on a simple format where all information
         in ancestors is inlined, and stages are ordered.
         """
-        doc, hook_files = load_and_inherit_package(profile, name)
+        package_parameters = dict(profile.parameters)
+        package_parameters.update(profile.packages.get(name, {}))
+        doc, hook_files = load_and_inherit_package(profile, name, package_parameters)
         doc = order_package_stages(doc)
         return PackageSpec(name, doc, hook_files)
 
@@ -137,11 +139,11 @@ def name_anonymous_stages(stages):
                     del d[key]
             stage = dict(stage)
             stage['name'] = '__' + core.hash_document('generated_stage_name', d)
-        return stage            
+        return stage
     return [process(stage) for stage in stages]
-    
 
-def load_and_inherit_package(profile, package_name, encountered=None):
+
+def load_and_inherit_package(profile, package_name, parameters, encountered=None):
     """
     Loads a package from the given profile, and transforms the package spec to
     include the parts of the spec inherited through the `extends` section.
@@ -157,7 +159,7 @@ def load_and_inherit_package(profile, package_name, encountered=None):
                            'twice when traversing parents' % package_name)
     encountered.add(package_name)
     hook_files = []
-    doc = profile.load_package_yaml(package_name)
+    doc = profile.load_package_yaml(package_name, parameters)
     hook = profile.find_package_file(package_name, package_name + '.py')
     if doc is None:
         raise ProfileError(package_name, 'Package specification not found: %s' % package_name)
@@ -170,7 +172,7 @@ def load_and_inherit_package(profile, package_name, encountered=None):
     parent_docs = []
     for parent_name in sorted(doc.get('extends', [])):
         parent_doc, parent_hook_files = load_and_inherit_package(
-            profile, parent_name, encountered=encountered)
+            profile, parent_name, parameters, encountered=encountered)
         parent_docs.append(parent_doc)
         hook_files[0:0] = parent_hook_files
 
@@ -211,9 +213,12 @@ def order_package_stages(package_spec):
         if 'handler' not in stage:
             build_stages[i] = d = dict(stage)
             try:
-                d['handler'] = d['name']
+                name = d['name']
             except KeyError:
                 raise ProfileError(build_stages, 'For every build stage, either handler or name must be provided')
+            if name.startswith('__'):
+                raise ProfileError(stage, 'Build stage lacks handler attribute')
+            d['handler'] = name
 
     for key in _STAGE_SECTIONS:
         package_spec[key] = topological_stage_sort(package_spec.get(key, []))
@@ -301,7 +306,7 @@ def inherit_stages(descendant_stages, ancestors):
             del stage['mode']
         else:
             mode = 'override'
-        
+
         if mode == 'override':
             x = stages.get(name, {})
             x.update(stage)
@@ -334,7 +339,7 @@ def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map,
                       dependency_commands, extra_sources=()):
     if isinstance(dependency_id_map, dict):
         dependency_id_map = dependency_id_map.__getitem__
-                  
+
     if 'BASH' not in parameters:
         raise ValueError('BASH must be provided in profile parameters')
 
@@ -366,7 +371,7 @@ def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map,
             },
         "sources": sources,
         }
-        
+
     return core.BuildSpec(build_spec)
 
 
@@ -376,7 +381,10 @@ GLOBALS_LST = [len]
 GLOBALS = dict((entry.__name__, entry) for entry in GLOBALS_LST)
 
 def eval_condition(expr, parameters):
-    return bool(eval(expr, GLOBALS, parameters))
+    try:
+        return bool(eval(expr, GLOBALS, parameters))
+    except NameError as e:
+        raise ProfileError(expr, "parameter not defined: %s" % e)
 
 def process_conditional_dict(doc, parameters):
     result = {}

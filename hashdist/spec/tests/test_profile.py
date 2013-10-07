@@ -206,11 +206,11 @@ def test_resource_resolution(d):
     """)
 
     dump(pjoin(d, "level2", "base", "base.yaml"), "{my: base}")
-    dump(pjoin(d, "level1", "base", "base.yaml"), "1")
-    dump(pjoin(d, "level1", "base", "base1.txt"), "1")
+    dump(pjoin(d, "level1", "base", "base.yaml"), "{}")
+    dump(pjoin(d, "level1", "base", "base1.txt"), "{}")
     dump(pjoin(d, "level2", "pkgs", "foo", "foo.yaml"), "{my: document}")
-    dump(pjoin(d, "level1", "pkgs", "foo.yaml"), "1")
-    dump(pjoin(d, "level1", "pkgs", "bar.yaml"), "1")
+    dump(pjoin(d, "level1", "pkgs", "foo.yaml"), "{}")
+    dump(pjoin(d, "level1", "pkgs", "bar.yaml"), "{}")
 
     with profile.TemporarySourceCheckouts(None) as checkouts:
         doc = profile.load_and_inherit_profile(checkouts, pjoin(d, "level3", "profile.yaml"))
@@ -224,9 +224,9 @@ def test_resource_resolution(d):
         assert (pjoin(d, "level1", "base", "base1.txt") ==
                 os.path.realpath(p.find_package_file("whatever", "base1.txt")))
 
-        foo_doc = p.load_package_yaml('foo')
+        foo_doc = p.load_package_yaml('foo', {})
         assert {'my': 'document'} == foo_doc
-        assert foo_doc is p.load_package_yaml('foo')  # caching
+        assert foo_doc is p.load_package_yaml('foo', {})  # caching
 
         os.unlink(pjoin(d, "level2", "pkgs", "foo", "foo.yaml"))
         assert pjoin(d, "level1", "pkgs", "foo.yaml") == p.find_package_file("foo", "foo.yaml")

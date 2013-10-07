@@ -30,23 +30,41 @@ class Profile(object):
         self.file_resolver = FileResolver(checkouts_manager, doc.get('package_dirs', []))
         self.hook_import_dirs = doc.get('hook_import_dirs', [])
         self.packages = doc['packages']
-        self._yaml_cache = {}
+        self._yaml_cache = {} # (filename: [list of documents, possibly with when-clauses])
 
-    def load_package_yaml(self, pkgname):
+    def load_package_yaml(self, pkgname, parameters):
         """
-        Loads mypkg.yaml from either $pkgs/mypkg.yaml or $pkgs/mypkg/mypkg.yaml, and
-        caches the result.
+        Loads mypkg.yaml from either $pkgs/mypkg.yaml or
+        $pkgs/mypkg/mypkg-*.yaml, and caches the result of loading all
+        of them. In case of many matches, any when'-clause is
+        evaluated on `parameters` and a single document should result,
+        otherwise an exception is raised. A document without a when-clause
+        is overridden by those with a when-clause.
         """
-        doc = self._yaml_cache.get(('package', pkgname), None)
-        if doc is None:
-            p = self.find_package_file(pkgname, pkgname + '.yaml')
-            doc = load_yaml_from_file(p) if p is not None else None
-            self._yaml_cache['package', pkgname] = doc
-        return doc
+        from .package import eval_condition
 
-    def glob_package_specs(self, pkgname):
-        self.file_resolver.find_file([pkgname + '.yaml', pjoin(pkgname, pkgname + '.yaml'),
-                                      pjoin(pkgname, pkgname + '-*.yaml')], glob=True)
+        docs = self._yaml_cache.get(('package', pkgname), None)
+        if docs is None:
+            result = self.file_resolver.glob_files([pkgname + '.yaml',
+                                                    pjoin(pkgname, pkgname + '.yaml'),
+                                                    pjoin(pkgname, pkgname + '-*.yaml')],
+                                                   match_basename=True)
+            self._yaml_cache['package', pkgname] = docs = [
+                load_yaml_from_file(filename) for filename in result.values()]
+        no_when_doc = None
+        with_when_doc = None
+        for doc in docs:
+            if 'when' not in doc:
+                if no_when_doc is not None:
+                    raise ProfileError(doc, "Two specs found for package %s without a when-clause "
+                                       "to discriminate" % pkgname)
+                no_when_doc = doc
+            elif eval_condition(doc['when'], parameters):
+                if with_when_doc is not None:
+                    raise ProfileError(doc, "Selected parameters for package %s matches both '%s' and '%s'" %
+                                       (pkgname, doc['when'], with_when_doc['when']))
+                with_when_doc = doc
+        return with_when_doc if with_when_doc is not None else no_when_doc
 
     def find_package_file(self, pkgname, filename):
         """
@@ -144,12 +162,14 @@ class FileResolver(object):
                     return filename
         return None
 
-    def glob_files(self, patterns):
+    def glob_files(self, patterns, match_basename=False):
         """
         Like ``find_file``, but uses a set of patterns and tries to match each
         pattern against the filesystem using ``glob.glob``. The result is
         a dict mapping the 'matched name' (path relative to root of overlay;
-        this is required to be unique) to the physical path.
+        this is required to be unique) to the physical path. If `match_basename`
+        is set, only the basename of the file is compared (i.e., one file with
+        each basename will be returned).
         """
         if isinstance(patterns, basestring):
             patterns = [patterns]
@@ -160,7 +180,10 @@ class FileResolver(object):
             for p in patterns:
                 for match in glob.glob(pjoin(basedir, p)):
                     assert match.startswith(basedir)
-                    match_relname = match[len(basedir) + 1:]
+                    if match_basename:
+                        match_relname = os.path.basename(match)
+                    else:
+                        match_relname = match[len(basedir) + 1:]
                     result[match_relname] = match
         return result
 
