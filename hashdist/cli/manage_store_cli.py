@@ -15,7 +15,7 @@ class InitHome(object):
     by done by modifying %s.
     """ % DEFAULT_CONFIG_FILENAME_REPR
     command = 'init-home'
-    
+
     @staticmethod
     def setup(ap):
         pass
@@ -82,3 +82,26 @@ class ClearSources(object):
             return 1
         source_cache = SourceCache.create_from_config(ctx.config, ctx.logger)
         source_cache.delete_all()
+
+@register_subcommand
+class Purge(object):
+    """
+    Removes a build artifact from the build store. The specific artifact ID must be
+    given, e.g.::
+
+        $ hit purge python/2qbgsltd4mwz
+    """
+
+    @staticmethod
+    def setup(ap):
+        ap.add_argument('artifact_id')
+
+    @staticmethod
+    def run(ctx, args):
+        from ..core import BuildStore
+        store = BuildStore.create_from_config(ctx.config, ctx.logger)
+        path = store.delete(args.artifact_id)
+        if path is None:
+            sys.stderr.write('Artifact %s not found\n' % args.artifact_id)
+        else:
+            sys.stderr.write('Removed directory: %s\n' % path)
