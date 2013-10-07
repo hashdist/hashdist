@@ -16,8 +16,8 @@ class ProfileFrontendBase(object):
         from ..core import BuildStore, SourceCache
         self.ctx = ctx
         self.args = args
-        self.source_cache = SourceCache.create_from_config(ctx.config, ctx.logger)
-        self.build_store = BuildStore.create_from_config(ctx.config, ctx.logger)
+        self.source_cache = SourceCache.create_from_config(ctx.get_config(), ctx.logger)
+        self.build_store = BuildStore.create_from_config(ctx.get_config(), ctx.logger)
         self.checkouts = TemporarySourceCheckouts(self.source_cache)
         self.profile = load_profile(self.checkouts, args.profile)
         self.builder = ProfileBuilder(self.ctx.logger, self.source_cache, self.build_store, self.profile)
@@ -57,17 +57,17 @@ class Build(ProfileFrontendBase):
 
         profile_symlink = self.args.profile[:-len('.yaml')]
         if self.args.package is not None:
-            self.builder.build(self.args.package, self.ctx.config, self.args.j)
+            self.builder.build(self.args.package, self.ctx.get_config(), self.args.j)
         else:
             ready = self.builder.get_ready_list()
             if len(ready) == 0:
                 sys.stdout.write('Up to date, link at: %s\n' % profile_symlink)
             else:
                 while len(ready) != 0:
-                    self.builder.build(ready[0], self.ctx.config, self.args.j)
+                    self.builder.build(ready[0], self.ctx.get_config(), self.args.j)
                     ready = self.builder.get_ready_list()
                 sys.stdout.write('Profile build successful, link at: %s\n' % profile_symlink)
-            artifact_id, artifact_dir = self.builder.build_profile(self.ctx.config)
+            artifact_id, artifact_dir = self.builder.build_profile(self.ctx.get_config())
             atomic_symlink(artifact_dir, profile_symlink)
 
 

@@ -56,7 +56,7 @@ class ClearBuilds(object):
         if not args.force:
             ctx.logger.error('Did not use --force flag')
             return 1
-        build_store = BuildStore.create_from_config(ctx.config, ctx.logger)
+        build_store = BuildStore.create_from_config(ctx.get_config(), ctx.logger)
         build_store.delete_all()
 
 @register_subcommand
@@ -80,7 +80,7 @@ class ClearSources(object):
         if not args.force:
             ctx.logger.error('Did not use --force flag')
             return 1
-        source_cache = SourceCache.create_from_config(ctx.config, ctx.logger)
+        source_cache = SourceCache.create_from_config(ctx.get_config(), ctx.logger)
         source_cache.delete_all()
 
 @register_subcommand
@@ -99,7 +99,7 @@ class Purge(object):
     @staticmethod
     def run(ctx, args):
         from ..core import BuildStore
-        store = BuildStore.create_from_config(ctx.config, ctx.logger)
+        store = BuildStore.create_from_config(ctx.get_config(), ctx.logger)
         path = store.delete(args.artifact_id)
         if path is None:
             sys.stderr.write('Artifact %s not found\n' % args.artifact_id)

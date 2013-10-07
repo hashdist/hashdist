@@ -101,7 +101,7 @@ class BuildUnpackSources(object):
     @staticmethod
     def run(ctx, args):
         from ..core.build_store import unpack_sources
-        source_cache = SourceCache.create_from_config(ctx.config, ctx.logger)
+        source_cache = SourceCache.create_from_config(ctx.get_config(), ctx.logger)
         doc = fetch_parameters_from_json(args.input, args.key)
         unpack_sources(ctx.logger, source_cache, doc, '.')
 
@@ -180,7 +180,7 @@ class BuildWhitelist(object):
     def run(ctx, args):
         from ..core.build_tools import build_whitelist, get_import_envvar
         artifacts = get_import_envvar(ctx.env)
-        build_store = BuildStore.create_from_config(ctx.config, ctx.logger)
+        build_store = BuildStore.create_from_config(ctx.get_config(), ctx.logger)
         sys.stdout.write('%s\n' % pjoin(build_store.get_build_dir(), '**'))
         sys.stdout.write('/tmp/**\n')
         sys.stdout.write('/etc/**\n')
@@ -239,7 +239,7 @@ class BuildPostprocess(object):
             handlers.append(partial(build_tools.postprocess_launcher_shebangs,
                                     launcher_program=launcher))
         elif args.shebang == 'multiline':
-            build_store = BuildStore.create_from_config(ctx.config, ctx.logger)
+            build_store = BuildStore.create_from_config(ctx.get_config(), ctx.logger)
             handlers.append(partial(build_tools.postprocess_multiline_shebang,
                                     build_store))
 

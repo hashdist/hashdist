@@ -12,6 +12,7 @@ import textwrap
 import os
 import json
 import traceback
+import errno
 
 from ..formats.config import (load_config_file, DEFAULT_CONFIG_FILENAME_REPR, DEFAULT_CONFIG_FILENAME,
                               ValidationError)
@@ -50,9 +51,16 @@ class HashdistCommandContext(object):
         self.argparser = argparser
         self.subcommand_parsers = subcommand_parsers
         self.out_stream = out_stream
-        self.config = config
         self.env = env
         self.logger = logger
+        self._config = config
+
+    def get_config(self):
+        if self._config is None:
+            self.logger.error('Missing ~/.hashdist/config.yaml - please create one manually or generate one by '
+                              'calling: hit init-home')
+            raise Exception('Configuration file needed, but none found')
+        return self._config
 
     def error(self, msg):
         self.argparser.error(msg)
@@ -95,7 +103,7 @@ def main(unparsed_argv, env, logger, default_config_filename=None):
             formatter_class=argparse.RawDescriptionHelpFormatter)
 
         cls.setup(subcmd_parser)
-        
+
         subcmd_parser.set_defaults(subcommand_handler=cls.run, parser=parser,
                                    subcommand=name)
         # Can't find an API to access subparsers through parser? Pass along explicitly in ctx
@@ -108,20 +116,23 @@ def main(unparsed_argv, env, logger, default_config_filename=None):
         retcode = 1
     else:
         args = parser.parse_args(unparsed_argv[1:])
-        if args.subcommand == 'init-home':
-            # do not try to load config in the init-home command, since we're about to create it
-            config = None
+        if args.config_file is None and 'HDIST_CONFIG' in env:
+            config = json.loads(env['HDIST_CONFIG'])
         else:
-            if args.config_file is None and 'HDIST_CONFIG' in env:
-                config = json.loads(env['HDIST_CONFIG'])
-            else:
-                if args.config_file is None:
-                    args.config_file = default_config_filename
-                try:
-                    config = load_config_file(args.config_file)
-                except ValidationError as e:
-                    logger.error(str(e))
-        
+            if args.config_file is None:
+                args.config_file = default_config_filename
+            try:
+                config = load_config_file(args.config_file)
+            except ValidationError as e:
+                logger.error(str(e))
+            except IOError as e:
+                if e.errno == errno.ENOENT:
+                    # non-existing configuration; simply go on until configuration is
+                    # actually needed, as some tools do not need it
+                    config = None
+                else:
+                    raise
+
         ctx = HashdistCommandContext(parser, subcmd_parsers, sys.stdout, config, env, logger)
 
         retcode = args.subcommand_handler(ctx, args)
