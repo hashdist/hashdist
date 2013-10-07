@@ -114,3 +114,8 @@ package you are adding. Note the orthogonality between the two
 repositories: The base profile repo has commits like "Added build
 commands for NumPy 1.7.2 to share to the world".  The personal profile
 repo has commits like "Installed the NumPy package on my computer".
+
+Further details
+---------------
+
+:doc:`specs`

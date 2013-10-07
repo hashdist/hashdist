@@ -6,3 +6,4 @@ Welcome to the Hashdist documentation
    :maxdepth: 1
 
    userguide
+   specs
