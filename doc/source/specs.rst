@@ -188,6 +188,46 @@ depending on context), and the variable name is what is hashed.
   usually only required in base packages.)
 
 
+Conditionals
+------------
+
+The top-level **when** in each package spec has already been mentioned.
+In addition, there are two forms of local conditionals withi a file.
+The first one can be used within a list-of-dicts, e.g., in **build_stages**
+and similar sections::
+
+    - when: platform == 'linux'
+      name: configure
+      extra: [--with-foo]
+
+    - when: platform == 'windows'
+      name: configure
+      extra: [--with-bar]
+
+The second form takes the form of a more traditional if-test::
+
+    - name: configure
+      when platform == 'linux':
+          extra: [--with-foo]
+      when platform == 'windows':
+          extra: [--with-bar]
+      when platform not in ('linux', 'windows'):
+          extra: [--with-baz]
+
+The syntax for conditional list-items is a bit awkward, but available
+if necesarry::
+
+    dependencies:
+      build:
+        - numpy
+        - when platform == 'linux':  # ! note the dash in front
+          - openblas
+        - python
+
+This will turn into either ``[numpy, python]`` or ``[numpy, openblas,
+python]``.  The "extra" ``-`` is needed to maintain positioning within
+the YAML file.
+
 
 Stage system
 ------------
