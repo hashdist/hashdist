@@ -111,6 +111,9 @@ class Logger(object):
         else:
             self.error_occurred = False
 
+    def set_level(self, level):
+        self.level = level
+
     def get_sub_logger(self, name):
         return Logger(self.level, self.names + (name,), self.streams, self)
 

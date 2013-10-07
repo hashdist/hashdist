@@ -103,6 +103,8 @@ def main(unparsed_argv, env, logger, default_config_filename=None):
             formatter_class=argparse.RawDescriptionHelpFormatter)
 
         cls.setup(subcmd_parser)
+        subcmd_parser.add_argument('-v', '--verbose', action='store_true', help='More verbose output')
+
 
         subcmd_parser.set_defaults(subcommand_handler=cls.run, parser=parser,
                                    subcommand=name)
@@ -116,6 +118,8 @@ def main(unparsed_argv, env, logger, default_config_filename=None):
         retcode = 1
     else:
         args = parser.parse_args(unparsed_argv[1:])
+        if args.verbose:
+            logger.set_level(DEBUG)
         if args.config_file is None and 'HDIST_CONFIG' in env:
             config = json.loads(env['HDIST_CONFIG'])
         else:
