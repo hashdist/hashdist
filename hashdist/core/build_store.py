@@ -290,8 +290,8 @@ class BuildStore(object):
         return os.path.realpath(d).startswith(self.artifact_root)
 
     def delete_all(self):
-        for x in os.listdir(self.temp_build_dir):
-            rmtree_write_protected(pjoin(self.temp_build_dir, x))
+        for x in os.listdir(self.artifact_root):
+            rmtree_write_protected(pjoin(self.artifact_root, x))
 
     def delete(self, artifact_id):
         """Deletes an artifact ID from the store. This is simply an

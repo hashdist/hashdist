@@ -35,31 +35,6 @@ class InitHome(object):
         sys.stdout.write('Default configuration file %s written.\n' % DEFAULT_CONFIG_FILENAME)
 
 @register_subcommand
-class ClearBuilds(object):
-    """
-    Resets the build store to scratch, deleting all software ever built in this
-    Hashdist setup. Must be used with the --force argument.
-
-    Example::
-
-        $ hit clearbuilds --force
-
-    """
-
-    @staticmethod
-    def setup(ap):
-        ap.add_argument('--force', action='store_true', help='Yes, actually do this')
-
-    @staticmethod
-    def run(ctx, args):
-        from ..core import BuildStore
-        if not args.force:
-            ctx.logger.error('Did not use --force flag')
-            return 1
-        build_store = BuildStore.create_from_config(ctx.get_config(), ctx.logger)
-        build_store.delete_all()
-
-@register_subcommand
 class ClearSources(object):
     """
     Empties the source cache. Must be used with the --force argument.
@@ -77,9 +52,6 @@ class ClearSources(object):
     @staticmethod
     def run(ctx, args):
         from ..core import SourceCache
-        if not args.force:
-            ctx.logger.error('Did not use --force flag')
-            return 1
         source_cache = SourceCache.create_from_config(ctx.get_config(), ctx.logger)
         source_cache.delete_all()
 
@@ -90,18 +62,31 @@ class Purge(object):
     given, e.g.::
 
         $ hit purge python/2qbgsltd4mwz
+
+    Alternatively, to wipe the entire build store::
+
+        $ hit purge --force '*'
+
+    Remember to quote in your shell.
     """
 
     @staticmethod
     def setup(ap):
         ap.add_argument('artifact_id')
+        ap.add_argument('--force', action='store_true', help='Needed to delete more than 1 artifact')
 
     @staticmethod
     def run(ctx, args):
         from ..core import BuildStore
         store = BuildStore.create_from_config(ctx.get_config(), ctx.logger)
-        path = store.delete(args.artifact_id)
-        if path is None:
-            sys.stderr.write('Artifact %s not found\n' % args.artifact_id)
+        if args.artifact_id == '*':
+            if not args.force:
+                ctx.logger.error('Did not use --force flag')
+                return 1
+            store.delete_all()
         else:
-            sys.stderr.write('Removed directory: %s\n' % path)
+            path = store.delete(args.artifact_id)
+            if path is None:
+                sys.stderr.write('Artifact %s not found\n' % args.artifact_id)
+            else:
+                sys.stderr.write('Removed directory: %s\n' % path)
