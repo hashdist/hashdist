@@ -26,7 +26,6 @@ should not be declared in the build-spec because NumPy is not needed
 during the build; indeed, the installation can happen in
 parallel.
 
-
 Artifact IDs
 ------------
 
@@ -46,13 +45,13 @@ Build specifications and inferring artifact IDs
 
 The fundamental object of the build store is the JSON build
 specification.  If you know the build spec, you know the artifact ID,
-since the former is the hash of the latter. The key is that both
+since the latter is the hash of the former. The key is that both
 `dependencies` and `sources` are specified in terms of their hashes.
 
 An example build spec:
 
 .. code-block:: python
-    
+
     {
         "name" : "<name of piece of software>",
         "description": "<what makes this build special>",
@@ -171,7 +170,7 @@ from .hasher import hash_document, prune_nohash
 from .common import (InvalidBuildSpecError, BuildFailedError,
                      json_formatting_options, SHORT_ARTIFACT_ID_LEN,
                      working_directory)
-from .fileutils import silent_unlink, rmtree_up_to, silent_makedirs, gzip_compress, write_protect
+from .fileutils import silent_unlink, robust_rmtree, rmtree_up_to, silent_makedirs, gzip_compress, write_protect
 from . import run_job
 
 
@@ -228,7 +227,7 @@ def strip_comments(spec):
         if 'desc' in r:
             del r['desc']
         return r
-    
+
     result = dict(spec)
     result['dependencies'] = [strip_desc(x) for x in spec['dependencies']]
     return result
@@ -271,7 +270,7 @@ class BuildStore(object):
     temp_build_dir : str
         Directory to use for temporary builds (these may be removed or linger
         depending on `keep_build` passed to :meth:`ensure_present`).
-        
+
     db_dir : str
         Directory containing symlinks to the artifacts; this is the authoriative
         database of build artifacts, and is always structured as
@@ -455,7 +454,7 @@ class BuildStore(object):
                 raise
         else:
             return artifact_dir
-                   
+
     def make_build_dir(self, build_spec):
         """Creates a temporary build directory
 
@@ -479,10 +478,10 @@ class BuildStore(object):
             build_dir = '%s-%d' % (orig_build_dir, i)
         self.logger.debug('Created build dir: %s' % build_dir)
         return build_dir
-        
+
     def remove_build_dir(self, build_dir):
         self.logger.debug('Removing build dir: %s' % build_dir)
-        shutil.rmtree(build_dir)
+        robust_rmtree(build_dir, self.logger)
 
     def prepare_build_dir(self, source_cache, build_spec, target_dir):
         self.serialize_build_spec(build_spec, target_dir)
@@ -495,8 +494,7 @@ class BuildStore(object):
             f.write('\n')
         write_protect(fname)
 
-        
- 
+
 class ArtifactBuilder(object):
     def __init__(self, build_store, build_spec, extra_env, virtuals):
         self.build_store = build_store
