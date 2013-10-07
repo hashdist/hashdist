@@ -27,10 +27,27 @@ from hashdist.deps.yaml.constructor import (Constructor, BaseConstructor, SafeCo
 from hashdist.deps.yaml import dump as _orig_yaml_dump
 from hashdist.deps import jsonschema
 
+def _find_mark(doc):
+    """Traverse a document to try to find a start_mark attribute"""
+    if hasattr(doc, 'start_mark'):
+        return doc.start_mark
+    elif isinstance(doc, dict):
+        for key, value in doc.iteritems():
+            mark = _find_mark(key) or _find_mark(value)
+            if mark:
+                return mark
+    elif isinstance(doc, list):
+        for item in doc:
+            mark = _find_mark(item)
+            if mark:
+                return mark
+    else:
+        return None
+
 class ValidationError(Exception):
     def __init__(self, mark, message=None, wrapped=None):
         if not isinstance(mark, Mark):
-            mark = getattr(mark, 'start_mark', None)
+            mark = _find_mark(mark)
         self.mark = mark
         self.message = message
         self.wrapped = wrapped
