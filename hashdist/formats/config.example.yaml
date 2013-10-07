@@ -6,13 +6,13 @@
 ## Where to store the built software
 
 build_stores:
- - dir: ./ba
+ - dir: ./bld
 
 
 ## Location where temporary directories for building software are created.
 ## Such directories are by default removed again once the build is done.
 
-build_temp: ./bld
+build_temp: ./tmp
 
 
 ## Locations of downloaded tarballs and git repositories.  A location
