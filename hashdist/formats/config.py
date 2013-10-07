@@ -23,7 +23,7 @@ config_schema = {
                 "properties": {
                     "dir": {"type": "string"}
                 },
-                "required": ["dir"]                
+                "required": ["dir"]
             },
             "minItems": 1
         },
@@ -43,9 +43,8 @@ config_schema = {
 
         "build_temp": {"type": "string"},
         "cache": {"type": "string"},
-        "db": {"type": "string"},
     },
-    "required": ["build_stores", "source_caches", "build_temp", "cache", "db"]
+    "required": ["build_stores", "source_caches", "build_temp", "cache"]
 }
 
 def _make_abs(cwd, path):
@@ -60,13 +59,13 @@ def load_config_file(filename):
     validate_yaml(doc, config_schema)
     for entry in doc['build_stores']:
         entry['dir'] = _make_abs(basedir, entry['dir'])
-        
+
     for entry in doc['source_caches']:
         if sum(['url' in entry, 'dir' in entry]) != 1:
             raise ValidationError(entry.start_mark, 'Exactly one of "url" and "dir" must be specified')
         if 'dir' in entry:
             entry['dir'] = _make_abs(basedir, entry['dir'])
-    for key in ['build_temp', 'cache', 'db']:
+    for key in ['build_temp', 'cache']:
         doc[key] = _make_abs(basedir, doc[key])
     return doc
 

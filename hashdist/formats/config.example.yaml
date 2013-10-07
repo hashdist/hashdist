@@ -32,7 +32,3 @@ source_caches:
 cache: ./cache
 
 
-## The db directory contains the filesystem-based database for Hashdist,
-## linking to the build artifacts.
-
-db: ./db
