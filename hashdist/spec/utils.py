@@ -1,13 +1,11 @@
 import re
 from .exceptions import ProfileError
 
-_STACK_SUBST_RE = re.compile(r'\$\{\{([^}]*)\}\}')
+_STACK_SUBST_RE = re.compile(r'\{\{([^}]*)\}\}')
 
 def substitute_profile_parameters(s, parameters):
     """
-    Substitutes using the syntax ``${{param}}``, leaving shell substitutions
-    (`${var}`, `$var`) alone. Escapes of $, ``\$``, has no special meaning
-    here.
+    Substitutes using the syntax ``{{param}}``.
     """
     def repl(m):
         try:
@@ -39,6 +37,6 @@ def topological_sort(roots, get_deps):
     for node in sorted(roots):
         toposort(node)
     return result
-    
+
 def to_env_var(x):
     return x.upper().replace('-', '_')

@@ -49,7 +49,7 @@ class PackageBuildContext(object):
 
     def sub(self, s):
         """
-        Substitute ``${{var}}`` in `s` with variables from `self.parameters` in `s`,
+        Substitute ``{{var}}`` in `s` with variables from `self.parameters` in `s`,
         and return resulting string.
         """
         return substitute_profile_parameters(s, self.parameters)

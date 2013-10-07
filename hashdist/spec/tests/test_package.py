@@ -24,7 +24,7 @@ def test_topological_stage_sort():
 def test_assemble_stages():
     doc = marked_yaml_load("""\
         build_stages:
-        - {handler: bash, bash: './configure --with-foo=${{foo}}'}
+        - {handler: bash, bash: './configure --with-foo={{foo}}'}
         - {handler: bash, bash: make}
         - {handler: bash, bash: make install}
     """)
