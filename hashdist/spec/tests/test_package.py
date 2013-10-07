@@ -275,13 +275,14 @@ def test_when_list():
         - 1
       - 2
     - 3
+    - {nested: dict} # dict of length 1
     """)
     r = package.process_conditionals(doc, {'platform': 'linux',
                                            'host': True})
-    assert {'dictionary': [1, 2, 3]} == r
+    assert {'dictionary': [1, 2, 3, {'nested': 'dict'}]} == r
     r = package.process_conditionals(doc, {'platform': 'linux',
                                            'host': False})
-    assert {'dictionary': [2, 3]} == r
+    assert {'dictionary': [2, 3, {'nested': 'dict'}]} == r
     r = package.process_conditionals(doc, {'platform': 'windows',
                                            'host': False})
-    assert {'dictionary': [3]} == r
+    assert {'dictionary': [3, {'nested': 'dict'}]} == r

@@ -417,6 +417,8 @@ def process_conditional_list(lst, parameters):
                         raise ProfileError(value, "'when' clause within list must contain another list")
                     to_extend = process_conditional_list(value, parameters)
                     result.extend(to_extend)
+            else:
+                result.append(process_conditionals(item, parameters))
         else:
             result.append(process_conditionals(item, parameters))
     return result
