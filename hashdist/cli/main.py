@@ -170,6 +170,12 @@ def help_on_exceptions(logger, func, *args, **kw):
         else:
             logger.error(str(e))
             return 127
+    except IOError as e:
+        if debug:
+            raise
+        else:
+            logger.error(str(e))
+            return 127
     except:
         if debug:
             raise
@@ -189,7 +195,7 @@ def help_on_exceptions(logger, func, *args, **kw):
                 for line in text.splitlines():
                     logger.info(line)
             return 127
-            
+
 #
 # help command
 #
