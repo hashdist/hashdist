@@ -68,9 +68,6 @@ class HashdistCommandContext(object):
             else:
                 try:
                     config = load_config_file(self._config_filename)
-                except ValidationError as e:
-                    logger.error(str(e))
-                    raise
                 except IOError as e:
                     if e.errno == errno.ENOENT:
                         self._init_home()
