@@ -105,6 +105,10 @@ def main(unparsed_argv, env, logger, default_config_filename=None):
     parser.add_argument('--config-file',
                         help='Location of hashdist configuration file (default: %s)' % DEFAULT_CONFIG_FILENAME_REPR,
                         default=DEFAULT_CONFIG_FILENAME)
+    parser.add_argument('--ipdb',
+                        help='Enable IPython debugging on error',
+                        action='store_true')
+
     subparser_group = parser.add_subparsers(title='subcommands')
 
     subcmd_parsers = {}
@@ -132,6 +136,7 @@ def main(unparsed_argv, env, logger, default_config_filename=None):
         args = parser.parse_args(unparsed_argv[1:])
         if args.verbose:
             logger.set_level(DEBUG)
+
         ctx = HashdistCommandContext(parser, subcmd_parsers, sys.stdout, args.config_file, env, logger)
 
         retcode = args.subcommand_handler(ctx, args)
@@ -153,8 +158,15 @@ def help_on_exceptions(logger, func, *args, **kw):
     raised anyway.
     """
     debug = os.environ.get('DEBUG', '')
+
+    if '--ipdb' in sys.argv:
+        from ipdb import launch_ipdb_on_exception
+        with launch_ipdb_on_exception():
+            return func(*args, **kw)
+
     try:
         return func(*args, **kw)
+
     except KeyboardInterrupt:
         if debug:
             raise
