@@ -35,6 +35,7 @@ def test_load_config(d):
         - dir: ./src
         - url: http://server.com/source_cache
         cache: ./cache
+        gc_roots: ./gcroots
     """)
     with working_directory('/'):
         c = config.load_config_file(pjoin(d, 'config.yaml'))
@@ -43,5 +44,6 @@ def test_load_config(d):
         'build_stores': [{'dir': pjoin(d, 'ba')}],
         'build_temp': pjoin(d, 'bld'),
         'cache': pjoin(d, 'cache'),
+        'gc_roots': pjoin(d, 'gcroots'),
         'source_caches': [{'dir': pjoin(d, 'src')},
                           {'url': 'http://server.com/source_cache'}]}

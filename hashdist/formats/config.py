@@ -43,8 +43,9 @@ config_schema = {
 
         "build_temp": {"type": "string"},
         "cache": {"type": "string"},
+        "gc_roots": {"type": "string"},
     },
-    "required": ["build_stores", "source_caches", "build_temp", "cache"]
+    "required": ["build_stores", "source_caches", "build_temp", "cache", "gc_roots"]
 }
 
 def _make_abs(cwd, path):
@@ -65,7 +66,7 @@ def load_config_file(filename):
             raise ValidationError(entry.start_mark, 'Exactly one of "url" and "dir" must be specified')
         if 'dir' in entry:
             entry['dir'] = _make_abs(basedir, entry['dir'])
-    for key in ['build_temp', 'cache']:
+    for key in ['build_temp', 'cache', 'gc_roots']:
         doc[key] = _make_abs(basedir, doc[key])
     return doc
 

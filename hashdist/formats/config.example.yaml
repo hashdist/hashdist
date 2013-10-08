@@ -31,4 +31,7 @@ source_caches:
 
 cache: ./cache
 
+## The roots directory contains links to (links to) profiles. Anything
+## pointed to through here will not be deleted when garbage-collected.
 
+gc_roots: ./gcroots
