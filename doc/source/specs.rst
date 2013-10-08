@@ -21,7 +21,8 @@ needed (including the package specification files). An example end-user profile
 might look like this::
 
     extends:
-    - urls: ['https://github.com/hashdist/hashstack2.git']
+    - name: hashstack
+      urls: ['https://github.com/hashdist/hashstack2.git']
       key: 'git:5042aeaaee9841575e56ad9f673ef1585c2f5a46'
       file: debian.yaml
 
@@ -57,11 +58,19 @@ might look like this::
   parameter must be specified in the descendant profile, otherwise it
   is an error.
 
-  If *urls* (currently this must be a list of length one) and *key*
-  are given, the specified sources (usually a git commit) will be
-  downloaded, and the given *file* is relative to the root of the
-  repo. If only *file* is given, it can be absolute, or relative to
-  the location of the profile file.
+  There are two ways of importing profiles:
+
+  * **Local**: Only provide the **file** key, which can be an absolute
+    path, or relative to the directory of the profile spec file.
+
+  * **Remote**: If **urls** (currently this must be a list of length
+  one) and **key** are given, the specified sources (usually a git
+  commit) will be downloaded, and the given **file** is relative to the
+  root of the repo. In this case, providing a **name** for the
+  repository is mandatory; the name is used to refer to the repository
+  in error messages etc., and must be unique for the repository across
+  all imported profile files.
+
 
 **parameters**:
 
