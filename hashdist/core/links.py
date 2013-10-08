@@ -25,7 +25,7 @@ more easily with the `overwrite` flag)::
       "prefix": "/usr",
       "target": "$ARTIFACT"
     }
-    
+
   ]
 
 Rules are executed in order. If a target file already exists, nothing
@@ -129,7 +129,7 @@ def make_launcher(src, dst, launcher_program):
         os.symlink('launcher', dst)
     else:
         os.symlink(os.path.relpath(src, dstdir), dst)
-        
+
 
 _ACTIONS = {'symlink': silent_absolute_symlink,
             'relative_symlink': silent_relative_symlink,
@@ -149,7 +149,7 @@ def _put_actions(makedirs_cache, action_name, overwrite, source, dest, actions):
     except KeyError:
         raise ValueError('Unknown action: %s' % action_name)
 
-    
+
 def _glob_actions(rule, excluded, makedirs_cache, env, actions):
     select = rule['select']
     if not isinstance(select, (list, tuple)):
@@ -228,16 +228,16 @@ def dry_run_links_dsl(rules, env={}):
             _glob_actions(rule, excluded, makedirs_cache, env, actions)
         else:
             _single_action(rule, excluded, makedirs_cache, env, actions)
-    
+
     return actions
 
 
 def execute_links_dsl(rules, env={}, launcher_program=None, logger=null_logger):
     """Executes the links DSL for linking/copying files
-    
+
     The input is a set of rules which will be applied in order. The
     rules are documented above.
-    
+
     Parameters
     ----------
 

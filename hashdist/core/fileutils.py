@@ -3,6 +3,7 @@ import errno
 import shutil
 import time
 import gzip
+from os.path import join as pjoin
 from contextlib import closing
 
 def silent_copy(src, dst):
@@ -64,7 +65,7 @@ def robust_rmtree(path, logger=None, max_retries=5):
 
     # Final attempt, pass any Exceptions up to caller.
     shutil.rmtree(path)
-        
+
 def rmtree_up_to(path, parent, silent=False):
     """Executes ``shutil.rmtree(path, ignore_errors=True)``,
     and then removes any empty parent directories
@@ -132,8 +133,29 @@ def atomic_symlink(source, dest):
         raise
 
 def write_protect(filename):
-    mode = os.stat(filename).st_mode
-    os.chmod(filename, mode & ~0o222)
+    if not os.path.islink(filename):
+        mode = os.stat(filename).st_mode
+        os.chmod(filename, mode & ~0o222)
+
+def rmtree_write_protected(rootpath):
+    """
+    Like shutil.rmtree, but removes files/directories that are write-protected.
+    """
+    for dirpath, dirnames, filenames in os.walk(rootpath, followlinks=False, topdown=False):
+        os.chmod(dirpath, 0o777)
+        for fname in filenames:
+            qname = pjoin(dirpath, fname)
+            if not os.path.islink(qname):
+                os.chmod(qname, 0o777)
+            os.unlink(qname)
+        for fname in dirnames:
+            qname = pjoin(dirpath, fname)
+            if os.path.islink(qname):
+                os.unlink(qname)
+            else:
+                os.chmod(qname, 0o777)
+                os.rmdir(qname)
+    os.rmdir(rootpath)
 
 def touch(filename, readonly=False):
     with open(filename, 'w') as f:

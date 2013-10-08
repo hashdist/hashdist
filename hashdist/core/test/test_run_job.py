@@ -24,14 +24,14 @@ def test_run_job_environment(tempdir, sc, build_store, cfg):
     # works
     LD_LIBRARY_PATH = os.environ.get("LD_LIBRARY_PATH", "")
     job_spec = {
-        "nohash_params": {"BAR": "$bar"},
         "commands": [
             {"set": "LD_LIBRARY_PATH", "value": LD_LIBRARY_PATH},
             {"set": "FOO", "value": "foo"},
+            {"set": "BAR", "nohash_value": "bar"},
             {
                 "commands": [
                     {"set": "BAR", "value": "${FOO}x"},
-                    {"set": "HI", "value": "hi"},
+                    {"set": "HI", "nohash_value": "hi"},
                     {"cmd": env_to_stderr + ["FOO"]},
                     {"cmd": env_to_stderr + ["BAR"]},
                     {"cmd": env_to_stderr + ["HI"]},
@@ -50,7 +50,7 @@ def test_run_job_environment(tempdir, sc, build_store, cfg):
     del ret_env['PWD']
     expected = {
         'ARTIFACT': '<no-artifact>',
-        'BAR': '$bar',
+        'BAR': 'bar',
         'BAZ': 'BAZ',
         'FOO': 'foo',
         'HDIST_IMPORT': '',
@@ -61,7 +61,7 @@ def test_run_job_environment(tempdir, sc, build_store, cfg):
         }
     eq_(expected, ret_env)
     lines = filter_out(logger.lines)
-    eq_(["FOO='foo'", "BAR='foox'", "HI='hi'", "FOO='foo'", "BAR='$bar'", 'HI=None'],
+    eq_(["FOO='foo'", "BAR='foox'", "HI='hi'", "FOO='foo'", "BAR='bar'", 'HI=None'],
         lines)
 
 @build_store_fixture()
@@ -91,20 +91,11 @@ def test_imports(tempdir, sc, build_store, cfg):
     # Make dependencies
     doc = {
         "name": "foosoft", "version": "na", "build": {"commands": []},
-        "on_import": [
-            {"set": "FOO", "value": "foo"},
-            {"set": "ARTIFACT_WAS", "value": "$ARTIFACT"},
-            {"append_flag": "CFLAGS", "value": "-O1"},
-            ]
         }
     foo_id, foo_path = build_store.ensure_present(doc, cfg)
 
     doc = {
         "name": "barsoft", "version": "na", "build": {"commands": []},
-        "on_import": [
-            {"set": "FOO", "value": "bar"},
-            {"append_flag": "CFLAGS", "value": "-O2"},
-            ]
         }
     bar_id, bar_path = build_store.ensure_present(doc, cfg)
 
@@ -115,23 +106,17 @@ def test_imports(tempdir, sc, build_store, cfg):
     doc = {
             "import": [{"ref": "FOOSOFT", "id": foo_id}, {"ref": "BARSOFT", "id": "virtual:bar"}],
             "commands": [
-                {"cmd": env_to_stderr + ["ARTIFACT_WAS"]},
-                {"cmd": env_to_stderr + ["FOO"]},
-                {"cmd": env_to_stderr + ["CFLAGS"]},
-
-                {"cmd": env_to_stderr + ["FOOSOFT"]},
+                {"cmd": env_to_stderr + ["FOOSOFT_DIR"]},
                 {"cmd": env_to_stderr + ["FOOSOFT_ID"]},
-                {"cmd": env_to_stderr + ["BARSOFT"]},
+                {"cmd": env_to_stderr + ["BARSOFT_DIR"]},
                 {"cmd": env_to_stderr + ["BARSOFT_ID"]},
                 ]
         }
     logger = MemoryLogger()
     ret_env = run_job.run_job(logger, build_store, doc, {}, '<no-artifact>', virtuals, tempdir, cfg)
-    eq_(["ARTIFACT_WAS=%r" % foo_path,
-         "FOO='bar'", "CFLAGS='-O1 -O2'",
-         "FOOSOFT=%r" % foo_path,
+    eq_(["FOOSOFT_DIR=%r" % foo_path,
          "FOOSOFT_ID=%r" % foo_id,
-         "BARSOFT=%r" % bar_path,
+         "BARSOFT_DIR=%r" % bar_path,
          "BARSOFT_ID=%r" % bar_id],
         filter_out(logger.lines))
 

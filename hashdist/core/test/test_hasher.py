@@ -1,8 +1,32 @@
+import copy
 from StringIO import StringIO
 import re
 
 from nose.tools import eq_
 from .. import hasher
+from .utils import assert_raises
+
+def test_prune_nohash():
+    doc = {'a': [[{'nohash_foo': [1,2,3]},
+                 1, True, False, None, 2.3, 'asdf']],
+           'nohash_foo': True}
+    doc_copy = copy.deepcopy(doc)
+    assert {'a': [[{}, 1, True, False, None, 2.3, 'asdf']]} == hasher.prune_nohash(doc)
+    # check we didn't change anything in original
+    assert doc == doc_copy
+
+def test_hash_document_fp_fails():
+    with assert_raises(TypeError):
+        hasher.hash_document([1, {'a': {'b': {3.4: 3}}}])
+
+def test_hash_document():
+    doc_a = {'a': [[{'nohash_foo': [1,2,3]}, 1, True, False, None, 2, 'asdf']], 'nohash_foo': True}
+    h = hasher.hash_document('test', doc_a)
+    assert h == 'geecc25mccuaba37cwsquibd2iisgo6f'
+
+#
+# Hasher
+#
 
 class Sink:
     # "Hashes" the data by simply creating a string out of it
@@ -23,7 +47,7 @@ def test_serialization():
     class Foo(object):
         def get_secure_hash(self):
             return 'hashdist.test.test_hasher.Foo', 'foo'
-    
+
     yield assert_serialize, 'D2:' 'B1:a' 'I1:3' 'B1:b' 'I1:4', {'a' : 3, 'b' : 4}
     yield assert_serialize, 'B1:a', u'a'
     yield assert_serialize, 'B2:\xc2\x99', u'\x99'
@@ -40,11 +64,3 @@ def test_hashing():
     digest = hasher.Hasher({'a' : 3, 'b' : {'c' : [1, 2]}}).format_digest()
     assert 'kwefguggpl4kiafe5v6rxs23xdptpmgv' == digest
 
-
-# If we re-introduce generic ignore capabilities
-#def test_hash_json_ignore():
-#    ignore = re.compile(r'^(/a/k/x)|(.*/nohash.*)$')
-#    assert_json_hash('dict((a)dict((i)dict((x)int(3))(k)dict((y)int(5))))', {
-#        'a' : {'i' : {'x' : 3}, 'k': {'x':4,'y':5, 'nohash-x' : {'a' : 'b'}}},
-#        'nohash-foo' : [3,4]
-#        }, ignore)

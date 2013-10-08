@@ -6,10 +6,13 @@ import functools
 import contextlib
 import subprocess
 import hashlib
+import inspect
+from textwrap import dedent
 from contextlib import closing
 
 from nose.tools import eq_
 
+from ..fileutils import silent_makedirs
 from ...hdist_logging import Logger, null_logger, DEBUG
 from logging import getLevelName
 
@@ -33,18 +36,25 @@ def make_abs_temp_dir():
 
 # Make our own assert_raises, as nose.tools doesn't have it on Python 2.6
 # We always use the context manager form
+class AssertRaisesResult(object):
+    pass
+
 @contextlib.contextmanager
 def assert_raises(wanted_exc_type):
+    r = AssertRaisesResult()
     try:
-        yield
+        yield r
     except:
         exc_type, exc_val, exc_tb = sys.exc_info()
         if not issubclass(exc_type, wanted_exc_type):
             assert False, 'Wanted exception %r but got %r' % (
                 wanted_exc_type, exc_type)
+        r.exc_type = exc_type
+        r.exc_val = exc_val
+        r.exc_tb = exc_tb
     else:
         assert False, 'Expected exception not raised'
-        
+
 
 @contextlib.contextmanager
 def temp_dir():
@@ -79,12 +89,42 @@ def cat(filename):
     with open(filename) as f:
         return f.read()
 
+def dump(filename, contents):
+    d = os.path.dirname(filename)
+    if d:
+        silent_makedirs(d)
+    with open(filename, 'w') as f:
+        f.write(dedent(contents))
+
 def temp_working_dir_fixture(func):
-    @functools.wraps(func)
-    def replacement():
-        with temp_working_dir() as d:
-            func(d)
+    if inspect.isgeneratorfunction(func):
+        @functools.wraps(func)
+        def replacement():
+            with temp_working_dir() as d:
+                for x in func(d): yield x
+    else:
+        @functools.wraps(func)
+        def replacement():
+            with temp_working_dir() as d:
+                return func(d)
     return replacement
+
+
+def ctxmgr_to_fixture(ctxmgr_func):
+    def decorator(func):
+        if inspect.isgeneratorfunction(func):
+            @functools.wraps(func)
+            def replacement(*args, **kw):
+                with ctxmgr_func() as ctx:
+                    for x in func(ctx, *args, **kw): yield x
+        else:
+            @functools.wraps(func)
+            def replacement(*args, **kw):
+                with ctxmgr_func as ctx:
+                    return func(ctx, *args, **kw)
+        return replacement
+    return decorator
+
 
 #
 # Logger to use during unit-testing
@@ -104,10 +144,10 @@ class MemoryLogger(Logger):
         self.lines = lines
         self.level = DEBUG
         self.names = names
-    
+
     def get_sub_logger(self, name):
         return MemoryLogger(self.names + [name], self.lines)
-    
+
     def log(self, level, msg, *args):
         if args:
             msg = msg % args
@@ -127,7 +167,7 @@ def make_temporary_tarball(files):
     import tarfile
     from ..source_cache import scatter_files
     from ..hasher import format_digest
-    
+
     container_dir = make_abs_temp_dir()
     archive_filename = pjoin(container_dir, 'archive.tar.gz')
 

@@ -40,7 +40,7 @@ class CreateLinks(object):
     one can use.
 
     If the 'launcher' action is used, then the 'LAUNCHER' environment
-    variable should be set; the launcher will be found in $LAUNCHER/bin/launcher.
+    variable should be set to the launcher binary.
     """
 
     command = 'create-links'
@@ -54,8 +54,7 @@ class CreateLinks(object):
     def run(ctx, args):
         from ..core.links import execute_links_dsl
 
-        launcher_prefix = ctx.env.get('LAUNCHER', None)
-        launcher = None if launcher_prefix is None else pjoin(launcher_prefix, 'bin', 'launcher')
+        launcher = ctx.env.get('LAUNCHER', None)
         doc = fetch_parameters_from_json(args.input, args.key)
         execute_links_dsl(doc, ctx.env, launcher, logger=ctx.logger)
 
@@ -102,7 +101,7 @@ class BuildUnpackSources(object):
     @staticmethod
     def run(ctx, args):
         from ..core.build_store import unpack_sources
-        source_cache = SourceCache.create_from_config(ctx.config, ctx.logger)
+        source_cache = SourceCache.create_from_config(ctx.get_config(), ctx.logger)
         doc = fetch_parameters_from_json(args.input, args.key)
         unpack_sources(ctx.logger, source_cache, doc, '.')
 
@@ -181,43 +180,11 @@ class BuildWhitelist(object):
     def run(ctx, args):
         from ..core.build_tools import build_whitelist, get_import_envvar
         artifacts = get_import_envvar(ctx.env)
-        build_store = BuildStore.create_from_config(ctx.config, ctx.logger)
+        build_store = BuildStore.create_from_config(ctx.get_config(), ctx.logger)
         sys.stdout.write('%s\n' % pjoin(build_store.get_build_dir(), '**'))
         sys.stdout.write('/tmp/**\n')
         sys.stdout.write('/etc/**\n')
         build_whitelist(build_store, artifacts, sys.stdout)
-
-@register_subcommand
-class BuildProfile(object):
-    """
-    A temporary profile for use during builds.
-
-    pop removes all the files again, and any directories that are now empty
-    """
-
-    command = 'build-profile'
-
-    @staticmethod
-    def setup(ap):
-        ap.add_argument('action', choices=['push', 'pop'])
-
-    @staticmethod
-    def run(ctx, args):
-        from ..core.build_tools import push_build_profile, pop_build_profile
-        from ..core.run_job import unpack_virtuals_envvar
-        virtuals = unpack_virtuals_envvar(ctx.env.get('HDIST_VIRTUALS', ''))
-        manifest = pjoin(ctx.env['BUILD'], 'temp_build_profile_manifest.json')
-        if args.action == 'push':
-            push_build_profile(ctx.config,
-                               ctx.logger,
-                               virtuals,
-                               pjoin(ctx.env['BUILD'], 'build.json'),
-                               manifest,
-                               ctx.env['ARTIFACT'])
-        elif args.action == 'pop':
-            pop_build_profile(manifest, ctx.env['ARTIFACT'])
-        else:
-            assert False
 
 @register_subcommand
 class BuildPostprocess(object):
@@ -262,7 +229,7 @@ class BuildPostprocess(object):
         
         if args.shebang == 'launcher':
             try:
-                launcher = pjoin(ctx.env['LAUNCHER'], 'bin', 'launcher')
+                launcher = ctx.env['LAUNCHER']
             except KeyError:
                 ctx.logger.error('LAUNCHER environment variable not set')
                 raise
@@ -272,7 +239,7 @@ class BuildPostprocess(object):
             handlers.append(partial(build_tools.postprocess_launcher_shebangs,
                                     launcher_program=launcher))
         elif args.shebang == 'multiline':
-            build_store = BuildStore.create_from_config(ctx.config, ctx.logger)
+            build_store = BuildStore.create_from_config(ctx.get_config(), ctx.logger)
             handlers.append(partial(build_tools.postprocess_multiline_shebang,
                                     build_store))
 

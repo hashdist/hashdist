@@ -12,8 +12,11 @@ import textwrap
 import os
 import json
 import traceback
+import errno
 
-from ..core import load_configuration_from_inifile, DEFAULT_CONFIG_FILENAME
+from ..formats.config import (load_config_file, DEFAULT_CONFIG_FILENAME_REPR, DEFAULT_CONFIG_FILENAME,
+                              ValidationError)
+from ..formats.marked_yaml import ValidationError
 from ..hdist_logging import Logger, DEBUG, INFO
 
 try:
@@ -42,15 +45,37 @@ def register_subcommand(cls, command=None):
     if command is None:
         name = getattr(cls, 'command', cls.__name__.lower())
     _subcommands[name] = cls
+    return cls
 
 class HashdistCommandContext(object):
-    def __init__(self, argparser, subcommand_parsers, out_stream, config, env, logger):
+    def __init__(self, argparser, subcommand_parsers, out_stream, config_filename, env, logger):
         self.argparser = argparser
         self.subcommand_parsers = subcommand_parsers
         self.out_stream = out_stream
-        self.config = config
         self.env = env
         self.logger = logger
+        self._config_filename = config_filename
+        self._config = None
+
+    def _init_home(self):
+        from .manage_store_cli import InitHome
+        InitHome.run(self, None)
+
+    def get_config(self):
+        if self._config is None:
+            if self._config_filename is None and 'HDIST_CONFIG' in self.env:
+                return json.loads(env['HDIST_CONFIG'])
+            else:
+                try:
+                    config = load_config_file(self._config_filename)
+                except IOError as e:
+                    if e.errno == errno.ENOENT:
+                        self._init_home()
+                        config = load_config_file(self._config_filename)
+                    else:
+                        raise
+            self._config = config
+        return self._config
 
     def error(self, msg):
         self.argparser.error(msg)
@@ -71,9 +96,6 @@ def _parse_docstring(doc):
 def main(unparsed_argv, env, logger, default_config_filename=None):
     """The main ``hit`` command-line entry point
     """
-    if default_config_filename is None:
-        default_config_filename = os.path.expanduser(DEFAULT_CONFIG_FILENAME)
-
     description = textwrap.dedent('''
     Entry-point for various Hashdist command-line tools
     ''')
@@ -81,8 +103,8 @@ def main(unparsed_argv, env, logger, default_config_filename=None):
     parser = argparse.ArgumentParser(description=description,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--config-file',
-                        help='Location of hashdist configuration file (default: %s)' % default_config_filename,
-                        default=None)
+                        help='Location of hashdist configuration file (default: %s)' % DEFAULT_CONFIG_FILENAME_REPR,
+                        default=DEFAULT_CONFIG_FILENAME)
     subparser_group = parser.add_subparsers(title='subcommands')
 
     subcmd_parsers = {}
@@ -93,8 +115,11 @@ def main(unparsed_argv, env, logger, default_config_filename=None):
             formatter_class=argparse.RawDescriptionHelpFormatter)
 
         cls.setup(subcmd_parser)
-        
-        subcmd_parser.set_defaults(subcommand_handler=cls.run, parser=parser)
+        subcmd_parser.add_argument('-v', '--verbose', action='store_true', help='More verbose output')
+
+
+        subcmd_parser.set_defaults(subcommand_handler=cls.run, parser=parser,
+                                   subcommand=name)
         # Can't find an API to access subparsers through parser? Pass along explicitly in ctx
         # (needed by Help)
         subcmd_parsers[name] = subcmd_parser
@@ -105,14 +130,9 @@ def main(unparsed_argv, env, logger, default_config_filename=None):
         retcode = 1
     else:
         args = parser.parse_args(unparsed_argv[1:])
-        if args.config_file is None and 'HDIST_CONFIG' in env:
-            config = json.loads(env['HDIST_CONFIG'])
-        else:
-            if args.config_file is None:
-                args.config_file = default_config_filename
-            config = load_configuration_from_inifile(args.config_file)
-        
-        ctx = HashdistCommandContext(parser, subcmd_parsers, sys.stdout, config, env, logger)
+        if args.verbose:
+            logger.set_level(DEBUG)
+        ctx = HashdistCommandContext(parser, subcmd_parsers, sys.stdout, args.config_file, env, logger)
 
         retcode = args.subcommand_handler(ctx, args)
         if retcode is None:
@@ -132,15 +152,31 @@ def help_on_exceptions(logger, func, *args, **kw):
     If the 'DEBUG' environment variable is set then the exception is
     raised anyway.
     """
+    debug = os.environ.get('DEBUG', '')
     try:
         return func(*args, **kw)
     except KeyboardInterrupt:
-        logger.info('Interrupted')
-        return 127
+        if debug:
+            raise
+        else:
+            logger.info('Interrupted')
+            return 127
     except SystemExit:
         raise
+    except ValidationError as e:
+        if debug:
+            raise
+        else:
+            logger.error(str(e))
+            return 127
+    except IOError as e:
+        if debug:
+            raise
+        else:
+            logger.error(str(e))
+            return 127
     except:
-        if len(os.environ.get('DEBUG', '')) > 0:
+        if debug:
             raise
         else:
             if not logger.error_occurred:
@@ -158,7 +194,7 @@ def help_on_exceptions(logger, func, *args, **kw):
                 for line in text.splitlines():
                     logger.info(line)
             return 127
-            
+
 #
 # help command
 #

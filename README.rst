@@ -49,6 +49,12 @@ respective authors; the licenses are included in LICENSE.txt.
  * argparse
      * version: 1.2.1
 
+ * jsonschema
+     * version: 2.1.0
+     * author: Julian Berman
+     * license: MIT
+     * github: https://github.com/Julian/jsonschema
+
  * sh
      * location: hashdist/deps/sh:
      * version: commit abb0ba6

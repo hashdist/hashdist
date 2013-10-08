@@ -10,9 +10,9 @@ from ..hit_recipe import ensure_hit_cli_artifact
 @fixture()
 def test_hit_cli_artifact(tempdir, sc, bldr, config):
     hit_id, hit_path = ensure_hit_cli_artifact(bldr, config)
-    
+
     eq_(sorted(os.listdir(hit_path)),
-        ['artifact.json', 'bin', 'build.json', 'build.log.gz', 'pypkg'])
+        ['artifact.json', 'bin', 'build.json', 'build.log.gz', 'id', 'pypkg'])
     with file(pjoin(hit_path, 'bin', 'hit')) as f:
         hit_bin = f.read()
     assert hit_bin.startswith('#!' + os.path.realpath(sys.executable))
@@ -27,7 +27,7 @@ def test_hit_cli_artifact(tempdir, sc, bldr, config):
                      "inputs": [
                          {"json": [
                              {"action": "symlink", "target": "$ARTIFACT", "select": "/bin/cp", "prefix": "/"},
-                             ]                 
+                             ]
                           }
                          ]
                      }
@@ -38,4 +38,4 @@ def test_hit_cli_artifact(tempdir, sc, bldr, config):
     artifact_id, path = bldr.ensure_present(spec, config, virtuals)
     assert os.path.realpath(pjoin(path, 'bin', 'cp')) == '/bin/cp'
 
-    
+

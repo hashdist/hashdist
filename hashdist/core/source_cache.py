@@ -99,7 +99,7 @@ import stat
 from timeit import default_timer as clock
 from contextlib import closing
 
-from .hasher import Hasher, format_digest, HashingReadStream, HashingWriteStream
+from .hasher import hash_document, format_digest, HashingReadStream, HashingWriteStream
 from .fileutils import silent_makedirs
 
 pjoin = os.path.join
@@ -164,14 +164,6 @@ class ProgressBar(object):
     def finish(self):
         sys.stdout.write("\n")
 
-def single_file_key(filename, contents):
-    h = Hasher()
-    h.update('file')
-    h.update({'filename': filename,
-              'contents': contents})
-    return 'file:' + h.format_digest()
-
-
 def mkdir_if_not_exists(path):
     try:
         os.mkdir(path)
@@ -206,9 +198,16 @@ class SourceCache(object):
     def create_from_config(config, logger, create_dirs=False):
         """Creates a SourceCache from the settings in the configuration
         """
-        mirror = config['sourcecache/mirror'].strip()
-        mirrors = [mirror] if mirror else []
-        return SourceCache(config['sourcecache/sources'], logger, mirrors, create_dirs)
+        if 'dir' not in config['source_caches'][0]:
+            logger.error('First source cache need to be a local directory')
+            raise NotImplementedError()
+        mirrors = []
+        for entry in config['source_caches'][1:]:
+            if 'url' not in entry:
+                logger.error('All but first source cache currently needs to be remote')
+                raise NotImplementedError()
+            mirrors.append(entry['url'])
+        return SourceCache(config['source_caches'][0]['dir'], logger, mirrors, create_dirs)
 
     def fetch_git(self, repository, rev, repo_name):
         """Fetches source code from git repository
@@ -382,7 +381,9 @@ class GitSourceCache(object):
         retcode, out, err = self.git(repo_name, *args)
         # Just fetch the output
         if retcode != 0:
-            raise RuntimeError('git call %r failed with code %d' % (args, retcode))
+            msg = 'git call %r failed with code %d' % (args, retcode)
+            self.logger.error("Problem when trying to download repo %s: %s" % (repo_name, msg))
+            raise RuntimeError(msg)
         return out
 
     def get_repo_env(self, repo_name):
@@ -555,16 +556,22 @@ class ArchiveSourceCache(object):
                 stream = open(url[len('file:'):])
             except IOError as e:
                 raise SourceNotFoundError(str(e))
+        elif url.startswith('ftp://'):
+            self.logger.error('ftp protocol not supported: %s' % url)
+            raise NotImplementedError('ftp download has problems')
         else:
             # Make request.
             sys.stderr.write('Downloading %s...\n' % url)
             try:
                 stream = urllib2.urlopen(url)
             except urllib2.HTTPError, e:
-                raise RuntimeError("urllib failed to download (code: %d): %s" %\
-                            (e.code, url))
+                msg = "urllib failed to download (code: %d): %s" % (e.code, url)
+                self.logger.error(msg)
+                raise RuntimeError(msg)
             except urllib2.URLError, e:
-                raise RuntimeError("urllib failed to download (reason: %s): %s" % (e.reason, url))
+                msg = "urllib failed to download (reason: %s): %s" % (e.reason, url)
+                self.logger.error(msg)
+                raise RuntimeError(msg)
 
         # Download file to a temporary file within self.packs_path, while hashing
         # it.

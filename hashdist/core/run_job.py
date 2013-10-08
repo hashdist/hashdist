@@ -29,9 +29,6 @@ to reproduce a job run, and hash the job spec. Example:
             {"ref": "UNIX", "id": "virtual:unix"},
             {"ref": "GCC", "id": "gcc/jonykztnjeqm7bxurpjuttsprphbooqt"}
          ],
-         "nohash_params" : {
-            "NCORES": "4"
-         }
          "commands" : [
              {"chdir": "src"},
              {"prepend_path": "FOOPATH", "value": "$ARTIFACT/bin"},
@@ -70,29 +67,16 @@ extra allowed keys:
       imports below.
 
     * **ref**: A name to use to inject information of this dependency
-      into the environment. Above, ``$zlib`` will be the
-      absolute path to the ``zlib`` artifact, and ``$zlib_id`` will be
+      into the environment. Above, ``$ZLIB_DIR`` will be the
+      absolute path to the ``zlib`` artifact, and ``$ZLIB_ID`` will be
       the full artifact ID. This can be set to `None` in order to not
       set any environment variables for the artifact.
-
-    * **in_env**: Whether to run the "on_import" section of the artifact
-      (typically to set up ``$PATH``
-      etc.). Otherwise the artifact can only be used through the
-      variables ``ref`` sets up. Defaults to `True`.
-
-**nohash_params**:
-    Initial set of environment variables that do not contribute to the
-    hash. Should only be used when one is willing to trust that the
-    value does not affect the build result in any way. E.g.,
-    parallelization flags, paths to manually downloaded binary
-    installers, etc.
 
 When executing, the environment is set up as follows:
 
     * Environment is cleared (``os.environ`` has no effect)
     * The initial environment provided by caller (e.g.,
       :class:`.BuildStore` provides `$ARTIFACT` and `$BUILD`) is loaded
-    * The `nohash_params` dict (if present) is loaded into the env
     * The `import` section is processed
     * Commands executed (which may modify env)
 
@@ -129,6 +113,8 @@ See example above for basic script structure. Rules:
    variable substitution as explained below. `set` simply overwrites
    variable, while the others modify path/flag-style variables, using the
    `os.path.patsep` for `prepend/append_path` and a space for `prepend/append_flag`.
+   **NOTE:** One can use `nohash_value` instead of `value` to avoid the
+   value to enter the hash of a build specification.
 
  * `files` specifies files that are dumped to temporary files and made available
    as `$in0`, `$in1` and so on. Each file has the form ``{typestr: value}``,
@@ -239,15 +225,8 @@ def substitute(logger, x, env):
         raise ValueError(msg)
 
 def handle_imports(logger, build_store, artifact_dir, virtuals, job_spec):
-    """Assembles a job script by inlining "on_import" sections from imported artifacts
-
-    For each entry in the import section, look up the "on_import" section
-    in the corresponding ``artifact.json`` and inline it in the job spec
-    together with a statement setting ARTIFACT so that it always points
-    to the artifact currently running its code.
-    
-    For the moment, imports are *not* done recursively, i.e., an "import"
-    key is disallowed in the "on_import" section.
+    """Sets up environment variables for a job. This includes $MYIMPORT_DIR, $MYIMPORT_ID,
+    $ARTIFACT, $HDIST_IMPORT, $HDIST_IMPORT_PATHS.
 
     Returns
     -------
@@ -285,19 +264,9 @@ def handle_imports(logger, build_store, artifact_dir, virtuals, job_spec):
         HDIST_IMPORT.append(dep_id)
         HDIST_IMPORT_PATHS.append(dep_dir)
         if dep_ref is not None:
-            env[dep_ref] = dep_dir
+            env['%s_DIR' % dep_ref] = dep_dir
             env['%s_ID' % dep_ref] = dep_id
 
-        if import_.get('in_env', True):
-            artifact_json = pjoin(dep_dir, 'artifact.json')
-            with open(artifact_json) as f:
-                import_doc = json.load(f)
-            if 'on_import' not in import_doc:
-                continue
-            on_import = import_doc['on_import']
-            if len(on_import) > 0:
-                result.append({'set': 'ARTIFACT', 'value': dep_dir})
-                result.extend(on_import)
     result.append({'set': 'ARTIFACT', 'value': artifact_dir})
     result.extend(job_spec['commands'])
     env['HDIST_IMPORT'] = ' '.join(HDIST_IMPORT)
@@ -360,7 +329,6 @@ def run_job(logger, build_store, job_spec, override_env, artifact_dir, virtuals,
     
     # Need to explicitly clear PATH, otherwise Popen will set it.
     env['PATH'] = ''
-    env.update(job_spec.get('nohash_params', {}))
     env.update(override_env)
     env['HDIST_VIRTUALS'] = pack_virtuals_envvar(virtuals)
     env['HDIST_CONFIG'] = json.dumps(config, separators=(',', ':'))
@@ -379,7 +347,6 @@ def canonicalize_job_spec(job_spec):
     """
     def canonicalize_import(item):
         item = dict(item)
-        item.setdefault('in_env', True)
         if item.setdefault('ref', None) == '':
             raise ValueError('Empty ref should be None, not ""')
         return item
@@ -387,7 +354,6 @@ def canonicalize_job_spec(job_spec):
     result = dict(job_spec)
     result['import'] = [
         canonicalize_import(item) for item in result.get('import', ())]
-    result.setdefault("nohash_params", {})
     return result
     
 def substitute(x, env):
@@ -552,7 +518,10 @@ class CommandTreeExecution(object):
                             node['prepend_flag'], 'prepend', ' ')
 
     def handle_env_mod(self, node, env, node_pos, varname, action, sep):
-        value = self.substitute(node['value'], env)
+        value = node.get('nohash_value', None)
+        if value is None:
+            value = node['value']
+        value = self.substitute(value, env)
         if action == 'set' or varname not in env or len(env[varname]) == 0:
             env[varname] = value
         elif action == 'prepend':
@@ -665,9 +634,14 @@ class CommandTreeExecution(object):
             else:
                 from ..cli import main as cli_main
                 with working_directory(env['PWD']):
-                    cli_main(args, env, logger)
-        except:
-            logger.error("hit command failed")
+                    retcode = cli_main(args, env, logger)
+                if retcode != 0:
+                    raise RuntimeError("hit command failed with code: %d" % ret)
+        except SystemExit as e:
+            logger.error("hit command failed with code: %d" % e.code)
+            raise
+        except Exception as e:
+            logger.error("hit command failed: %s" % str(e))
             raise
         finally:
             logger.level = old_level
