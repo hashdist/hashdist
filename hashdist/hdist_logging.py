@@ -140,6 +140,7 @@ class Logger(object):
         for stream, is_raw in self.streams:
             if is_raw:
                 stream.write(msg + "\n")
+                stream.flush()
             elif level >= self.level:
                 stream.write('%s%s\n' % (heading, msg))
         if level >= ERROR:
