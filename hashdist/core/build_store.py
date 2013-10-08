@@ -413,7 +413,8 @@ class BuildStore(object):
         self.logger.debug('Removing build dir: %s' % build_dir)
         robust_rmtree(build_dir, self.logger)
 
-    def prepare_build_dir(self, source_cache, build_spec, target_dir):
+    def prepare_build_dir(self, config, logger, build_spec, target_dir):
+        source_cache = SourceCache.create_from_config(config, logger)
         self.serialize_build_spec(build_spec, target_dir)
         unpack_sources(self.logger, source_cache, build_spec.doc.get('sources', []), target_dir)
 
@@ -454,8 +455,6 @@ class ArtifactBuilder(object):
         try:
             env = dict(self.extra_env)
             env['BUILD'] = build_dir
-            source_cache = SourceCache.create_from_config(config, self.logger)
-            self.build_store.prepare_build_dir(source_cache, self.build_spec, build_dir)
 
             should_keep = (keep_build == 'always')
             try:
@@ -484,8 +483,6 @@ class ArtifactBuilder(object):
             json.dump(artifact_doc, f, **json_formatting_options)
 
     def run_build_commands(self, build_dir, artifact_dir, env, config):
-        artifact_display_name = self.build_spec.digest[:SHORT_ARTIFACT_ID_LEN] + '..'
-
         job_tmp_dir = pjoin(build_dir, 'job')
         os.mkdir(job_tmp_dir)
         job_spec = self.build_spec.doc['build']
@@ -494,11 +491,14 @@ class ArtifactBuilder(object):
         log_filename = pjoin(build_dir, 'build.log')
         with file(log_filename, 'w') as log_file:
             if logger.level > DEBUG:
-                logger.info('Building %s, follow log with:' % artifact_display_name)
+                logger.info('Building %s, follow log with:' % self.build_spec.short_artifact_id)
                 logger.info('  tail -f %s' % log_filename)
             else:
-                logger.info('Building %s' % artifact_display_name)
+                logger.info('Building %s' % self.build_spec.short_artifact_id)
             logger.push_stream(log_file, raw=True)
+
+            self.build_store.prepare_build_dir(config, logger, self.build_spec, build_dir)
+
             try:
                 run_job.run_job(logger, self.build_store, job_spec,
                                 env, artifact_dir, self.virtuals, cwd=build_dir, config=config,
@@ -525,6 +525,6 @@ def unpack_sources(logger, source_cache, doc, target_dir):
     for source_item in doc:
         key = source_item['key']
         target = pjoin(target_dir, source_item.get('target', '.'))
-        logger.info('Unpacking sources %s' % key)
+        logger.debug('Unpacking sources %s' % key)
         source_cache.unpack(key, target)
 
