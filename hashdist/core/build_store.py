@@ -140,6 +140,7 @@ import re
 import errno
 import json
 from logging import DEBUG, ERROR
+import base64
 
 from .source_cache import SourceCache
 from .hasher import hash_document, prune_nohash
@@ -148,7 +149,7 @@ from .common import (InvalidBuildSpecError, BuildFailedError,
                      json_formatting_options, SHORT_ARTIFACT_ID_LEN,
                      working_directory)
 from .fileutils import silent_unlink, robust_rmtree, rmtree_up_to, silent_makedirs, gzip_compress, write_protect
-from .fileutils import rmtree_write_protected
+from .fileutils import rmtree_write_protected, atomic_symlink, realpath_to_symlink
 from . import run_job
 
 
@@ -247,13 +248,18 @@ class BuildStore(object):
         the meaning is that garbage collection will never remove contents
         outside of this directory.
 
+    gc_roots_dir : str
+        Directory of symlinks to symlinks to artifacts. Artifacts reached
+        through these will not be collected in garbage collection.
+
     logger : Logger
     """
 
 
-    def __init__(self, temp_build_dir, artifact_root, logger, create_dirs=False):
+    def __init__(self, temp_build_dir, artifact_root, gc_roots_dir, logger, create_dirs=False):
         self.temp_build_dir = os.path.realpath(temp_build_dir)
         self.artifact_root = os.path.realpath(artifact_root)
+        self.gc_roots_dir = gc_roots_dir
         self.logger = logger
         if create_dirs:
             for d in [self.temp_build_dir, self.artifact_root]:
@@ -280,6 +286,7 @@ class BuildStore(object):
 
         return BuildStore(config['build_temp'],
                           config['build_stores'][0]['dir'],
+                          config['gc_roots'],
                           logger,
                           **kw)
 
@@ -424,6 +431,69 @@ class BuildStore(object):
             json.dump(build_spec.doc, f, **json_formatting_options)
             f.write('\n')
         write_protect(fname)
+
+    def _encode_symlink(self, symlink):
+        """Format of Hashdist-managed entries in gc_roots directory; an underscore + base64"""
+        return '_' + base64.b64encode(symlink).replace('=', '-')
+
+    def create_symlink_to_artifact(self, artifact_id, symlink_target):
+        """Creates a symlink to an artifact (usually a 'profile')
+
+        The symlink can be placed anywhere the users wants to access it. In addition
+        to the symlink being created, it is listed in gc_roots.
+
+        The symlink will be created atomically, any target
+        file/symlink will be overwritten.
+        """
+        # We use base64-encoding of realpath_to_symlink(symlink_target) as the name of the link within gc_roots
+        symlink_target = realpath_to_symlink(symlink_target)
+        artifact_dir = self.resolve(artifact_id)
+        atomic_symlink(artifact_dir, symlink_target)
+        root_name = self._encode_symlink(symlink_target)
+        atomic_symlink(symlink_target, pjoin(self.gc_roots_dir, root_name))
+
+    def remove_symlink_to_artifact(self, symlink_target):
+        symlink_target = realpath_to_symlink(symlink_target)
+        root_name = self._encode_symlink(symlink_target)
+        silent_unlink(pjoin(self.gc_roots_dir, root_name))
+        silent_unlink(symlink_target)
+
+    def gc(self):
+        """Run garbage collection, removing any unneeded artifacts.
+        """
+        # mark phase
+        marked = set()
+        for gc_root in os.listdir(self.gc_roots_dir):
+            try:
+                f = open(pjoin(self.gc_roots_dir, gc_root, 'artifact.json'))
+            except IOError as e:
+                if e.errno == errno.ENOENT:
+                    self.logger.warning("GC root link does not lead to artifact, removing: %s" % gc_root)
+                    silent_unlink(pjoin(self.gc_roots_dir, gc_root))
+                else:
+                    raise
+            else:
+                with f:
+                    doc = json.load(f)
+                marked.add(doc['id'])
+                marked.update(doc['dependencies'])
+        # Less confusing output if we first output all keep, then the removals
+        for artifact_id in marked:
+            self.logger.info('Keeping %s' % shorten_artifact_id(artifact_id))
+        # sweep phase
+        for artifact_name in os.listdir(self.artifact_root):
+            for short_digest in os.listdir(pjoin(self.artifact_root, artifact_name)):
+                artifact_dir = pjoin(self.artifact_root, artifact_name, short_digest)
+                artifact_id_file = pjoin(artifact_dir, 'id')
+                with open(artifact_id_file) as f:
+                    artifact_id = f.read().strip()
+                if artifact_id not in marked:
+                    # make sure 'id' is removed first, to de-mark the artifact as valid
+                    # before we go ahead and remove it
+                    self.logger.info('Removing %s' % shorten_artifact_id(artifact_id))
+                    os.chmod(artifact_dir, 0o777)
+                    os.unlink(artifact_id_file)
+                    rmtree_write_protected(artifact_dir)
 
 
 class ArtifactBuilder(object):
