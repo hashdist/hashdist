@@ -11,6 +11,21 @@ import struct
 
 hash_type = hashlib.sha256
 
+def check_no_floating_point(doc):
+    """Verifies that the document `doc` does not contain floating-point numbers.
+    """
+    if isinstance(doc, float):
+        raise TypeError("floating-point number not allowed in document")
+    elif isinstance(doc, dict):
+        for k, v in doc.iteritems():
+            check_no_floating_point(k)
+            check_no_floating_point(v)
+    elif isinstance(doc, list):
+        for item in doc:
+            check_no_floating_point(item)
+    elif isinstance(doc, (int, bool, basestring)) or doc is None:
+        pass
+
 def hash_document(doctype, doc):
     """
     Computes a hash from a document. This is done by serializing to as
@@ -26,7 +41,11 @@ def hash_document(doctype, doc):
     contain anything but ASCII. However, we do not enforce this, in
     case one wishes to encode references in the local filesystem.
 
+    Floating-point numbers are not supported (these have multiple
+    representations).
+
     """
+    check_no_floating_point(doc)
     serialized = json.dumps(doc, indent=None, sort_keys=True, separators=(',', ':'), encoding='utf-8',
                             ensure_ascii=True, allow_nan=False)
     h = hashlib.sha256(doctype + '|')
@@ -38,7 +57,7 @@ def prune_nohash(doc):
     Returns a copy of the document with every key/value-pair whose key
     starts with 'nohash_' is removed.
     """
-    if isinstance(doc, (int, bool, float, bool, basestring)) or doc is None:
+    if isinstance(doc, (int, bool, float, basestring)) or doc is None:
         r = doc
     elif isinstance(doc, dict):
         r = {}
@@ -118,12 +137,12 @@ class DocumentSerializer(object):
     wrapped : object
         `wrapped.update` is called with strings or buffers to emit the
         resulting stream (the API of the ``hashlib`` hashers)
-    
-    
+
+
     """
     def __init__(self, wrapped):
         self._wrapped = wrapped
-    
+
     def update(self, x):
         # note: w.update does hashing of str/buffer, self.update recurses to treat object
         w = self._wrapped
