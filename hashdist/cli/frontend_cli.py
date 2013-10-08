@@ -50,6 +50,7 @@ class Build(ProfileFrontendBase):
         add_profile_args(ap)
         add_build_args(ap)
         ap.add_argument('package', nargs='?', help='package to build (default: build all)')
+        ap.add_argument('--debug', action='store_true', help='enter interactive debug mode')
 
     def profile_builder_action(self):
         from ..core import atomic_symlink
@@ -59,12 +60,14 @@ class Build(ProfileFrontendBase):
 
         profile_symlink = self.args.profile[:-len('.yaml')]
         if self.args.package is not None:
-            self.builder.build(self.args.package, self.ctx.get_config(), self.args.j)
+            self.builder.build(self.args.package, self.ctx.get_config(), self.args.j,
+                               debug=self.args.debug)
         else:
             ready = self.builder.get_ready_list()
             was_done = len(ready) == 0
             while len(ready) != 0:
-                self.builder.build(ready[0], self.ctx.get_config(), self.args.j)
+                self.builder.build(ready[0], self.ctx.get_config(), self.args.j,
+                                   debug=self.args.debug)
                 ready = self.builder.get_ready_list()
             artifact_id, artifact_dir = self.builder.build_profile(self.ctx.get_config())
             self.build_store.create_symlink_to_artifact(artifact_id, profile_symlink)

@@ -274,7 +274,7 @@ def handle_imports(logger, build_store, artifact_dir, virtuals, job_spec):
     return env, result
 
 def run_job(logger, build_store, job_spec, override_env, artifact_dir, virtuals, cwd, config,
-            temp_dir=None):
+            temp_dir=None, debug=False):
     """Runs a job in a controlled environment, according to rules documented above.
 
     Parameters
@@ -312,6 +312,9 @@ def run_job(logger, build_store, job_spec, override_env, artifact_dir, virtuals,
         A temporary directory for use by the job runner. Files will be left in the
         dir after execution.
 
+    debug : bool
+        Whether to run in debug mode.
+
     Returns
     -------
 
@@ -319,21 +322,21 @@ def run_job(logger, build_store, job_spec, override_env, artifact_dir, virtuals,
         The environment after the last command that was run (regardless
         of scoping/nesting). If the job spec is empty (no commands),
         this will be an empty dict.
-        
+
     """
     env, assembled_commands = handle_imports(logger, build_store, artifact_dir, virtuals, job_spec)
 
     if 'commands' not in job_spec:
         # Wait until here with exiting because we still want to err if imports are not built
         return {}
-    
+
     # Need to explicitly clear PATH, otherwise Popen will set it.
     env['PATH'] = ''
     env.update(override_env)
     env['HDIST_VIRTUALS'] = pack_virtuals_envvar(virtuals)
     env['HDIST_CONFIG'] = json.dumps(config, separators=(',', ':'))
     env['PWD'] = os.path.abspath(cwd)
-    executor = CommandTreeExecution(logger, temp_dir)
+    executor = CommandTreeExecution(logger, temp_dir, debug=debug)
     try:
         executor.run_command_list(assembled_commands, env, ())
     finally:
@@ -398,8 +401,10 @@ class CommandTreeExecution(object):
         A temporary directory on a local filesystem. Currently used for creating
         pipes with the "hit logpipe" command.
     """
-    
-    def __init__(self, logger, temp_dir=None):
+
+    def __init__(self, logger, temp_dir=None, debug=False, debug_shell='/bin/bash'):
+        self.debug = debug
+        self.debug_shell = debug_shell # todo: pass this in from outside
         self.logger = logger
         self.log_fifo_filenames = {}
         if temp_dir is None:
@@ -558,10 +563,12 @@ class CommandTreeExecution(object):
                 key = 'cmd'
                 args = node['cmd']
                 func = self.run_cmd
+                debug_func = self.debug_call
             else:
                 key = 'hit'
                 args = node['hit']
                 func = self.run_hit
+                debug_func = func
             if not isinstance(args, list):
                 raise TypeError("'%s' arguments must be a list, got %r" % (key, args))
             args = [self.substitute(x, node_env) for x in args]
@@ -585,12 +592,18 @@ class CommandTreeExecution(object):
                     func(args, node_env, stdout_to=stdout)
 
             else:
-                func(args, node_env)
+                # does not capture output, so we may decide to debug instead;
+                # debug is not possible when capturing output (until that mechanism
+                # is changed...)
+                if self.debug:
+                    debug_func(args, node_env)
+                else:
+                    func(args, node_env)
         else:
             assert False
 
         self.last_env = dict(node_env)
-        
+
     def handle_commands(self, node, env, node_pos):
         sub_env = dict(env)
         self.run_command_list(node['commands'], sub_env, node_pos)
@@ -646,7 +659,31 @@ class CommandTreeExecution(object):
         finally:
             logger.level = old_level
             sys.stdout = old_stdout
-       
+
+    def debug_call(self, args, env):
+        env = dict(env)
+        # leak PS1 from os environment, but prepend our message
+        env['PS1'] = '[HASHDIST DEBUG] %s' % os.environ['PS1']
+        # Create temporary file for env used by bash
+        tmpdir = tempfile.mkdtemp()
+        try:
+            rcfile = pjoin(tmpdir, 'env')
+            with open(rcfile, 'w') as f:
+                for key, value in env.iteritems():
+                    f.write("export %s='%s'\n" % (key, value))
+
+            with working_directory(env['PWD']):
+                sys.stderr.write('Entering Hashdist debug mode. Please execute the following command: \n')
+                sys.stderr.write('  %s\n' % args)
+                sys.stderr.write('\n')
+                sys.stderr.write('When you are done, "exit 1" to abort build, or "exit 0" to continue.\n\n')
+                proc = subprocess.Popen([self.debug_shell, '--noprofile', '--rcfile', rcfile])
+                retcode = proc.wait()
+                if retcode != 0:
+                    self.logger.error("Debug build manually aborted")
+                    raise RuntimeError("Debug build manually aborted")
+        finally:
+            shutil.rmtree(tmpdir)
 
     def logged_check_call(self, args, env, stdout_to):
         """

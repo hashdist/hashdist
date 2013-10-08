@@ -354,7 +354,8 @@ class BuildStore(object):
         build_spec = as_build_spec(build_spec)
         return self.resolve(build_spec.artifact_id) is not None
 
-    def ensure_present(self, build_spec, config, extra_env=None, virtuals=None, keep_build='never'):
+    def ensure_present(self, build_spec, config, extra_env=None, virtuals=None, keep_build='never',
+                       debug=False):
         """
         Builds an artifact (if it is not already present).
 
@@ -370,7 +371,7 @@ class BuildStore(object):
         build_spec = as_build_spec(build_spec)
         artifact_dir = self.resolve(build_spec.artifact_id)
         if artifact_dir is None:
-            builder = ArtifactBuilder(self, build_spec, extra_env, virtuals)
+            builder = ArtifactBuilder(self, build_spec, extra_env, virtuals, debug=debug)
             artifact_dir = builder.build(config, keep_build)
         return build_spec.artifact_id, artifact_dir
 
@@ -502,13 +503,14 @@ class BuildStore(object):
 
 
 class ArtifactBuilder(object):
-    def __init__(self, build_store, build_spec, extra_env, virtuals):
+    def __init__(self, build_store, build_spec, extra_env, virtuals, debug):
         self.build_store = build_store
         self.logger = build_store.logger.get_sub_logger(build_spec.doc['name'])
         self.build_spec = build_spec
         self.artifact_id = build_spec.artifact_id
         self.virtuals = virtuals
         self.extra_env = extra_env
+        self.debug = debug
 
     def find_complete_dependencies(self):
         """Return set of complete dependencies of the build spec
@@ -607,7 +609,7 @@ class ArtifactBuilder(object):
             try:
                 run_job.run_job(logger, self.build_store, job_spec,
                                 env, artifact_dir, self.virtuals, cwd=build_dir, config=config,
-                                temp_dir=job_tmp_dir)
+                                temp_dir=job_tmp_dir, debug=self.debug)
             except:
                 exc_type, exc_value, exc_tb = sys.exc_info()
                 # Python 2 'wrapped exception': We raise an exception with the same traceback
