@@ -435,6 +435,26 @@ class ArtifactBuilder(object):
         self.virtuals = virtuals
         self.extra_env = extra_env
 
+    def find_complete_dependencies(self):
+        """Return set of complete dependencies of the build spec
+
+        The purpose of this list is for garbage collection (currently we
+        just include everything, we could be more nuanced in the future).
+
+        We simply iterate through all the build imports, load their artifact.json,
+        and return the combined result. This will in turn be stored in artifact.json
+        for this build artifact.
+        """
+        build_imports = [entry['id'] for entry in self.build_spec.doc.get('build', {}).get('import', [])]
+        deps = set()
+        for artifact_id in build_imports:
+            artifact_dir = self.build_store.resolve(artifact_id)
+            with open(pjoin(artifact_dir, 'artifact.json')) as f:
+                doc = json.load(f)
+            deps.update(doc.get('dependencies', []))
+            deps.add(artifact_id)
+        return deps
+
     def build(self, config, keep_build):
         assert isinstance(config, dict), "caller not refactored"
         artifact_dir = self.build_store.make_artifact_dir(self.build_spec)
@@ -474,9 +494,11 @@ class ArtifactBuilder(object):
         return artifact_dir
 
     def make_artifact_json(self, artifact_dir):
+        deps = self.find_complete_dependencies()
         fname = pjoin(artifact_dir, 'artifact.json')
         doc = self.build_spec.doc
-        artifact_doc = {'name': doc['name']}
+        artifact_doc = {'name': doc['name'], 'dependencies': sorted(list(deps)),
+                        'id': self.build_spec.artifact_id}
         if 'version' in doc:
             artifact_doc['version'] = doc['version']
         with open(fname, 'w') as f:
