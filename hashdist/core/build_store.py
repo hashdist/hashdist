@@ -460,6 +460,10 @@ class BuildStore(object):
 
     def gc(self):
         """Run garbage collection, removing any unneeded artifacts.
+
+        For now, this doesn't care about virtual dependencies. They're not
+        used at the moment of writing this; it would have to be revisited
+        in the future.
         """
         # mark phase
         marked = set()
@@ -479,7 +483,8 @@ class BuildStore(object):
                 marked.update(doc['dependencies'])
         # Less confusing output if we first output all keep, then the removals
         for artifact_id in marked:
-            self.logger.info('Keeping %s' % shorten_artifact_id(artifact_id))
+            if not artifact_id.startswith('virtual:'):
+                self.logger.info('Keeping %s' % shorten_artifact_id(artifact_id))
         # sweep phase
         for artifact_name in os.listdir(self.artifact_root):
             for short_digest in os.listdir(pjoin(self.artifact_root, artifact_name)):
@@ -514,15 +519,23 @@ class ArtifactBuilder(object):
         We simply iterate through all the build imports, load their artifact.json,
         and return the combined result. This will in turn be stored in artifact.json
         for this build artifact.
+
+        virtual dependencies are not searched for further child dependencies,
+        but just included directly
         """
         build_imports = [entry['id'] for entry in self.build_spec.doc.get('build', {}).get('import', [])]
         deps = set()
         for artifact_id in build_imports:
-            artifact_dir = self.build_store.resolve(artifact_id)
-            with open(pjoin(artifact_dir, 'artifact.json')) as f:
-                doc = json.load(f)
-            deps.update(doc.get('dependencies', []))
             deps.add(artifact_id)
+            if not artifact_id.startswith('virtual:'):
+                artifact_dir = self.build_store.resolve(artifact_id)
+                if artifact_dir is None:
+                    msg = 'Required artifact not already present: %s' % artifact_id
+                    self.logger.error(msg)
+                    raise BuildFailedError(msg, None, None)
+                with open(pjoin(artifact_dir, 'artifact.json')) as f:
+                    doc = json.load(f)
+                deps.update(doc.get('dependencies', []))
         return deps
 
     def build(self, config, keep_build):
