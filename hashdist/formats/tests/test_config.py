@@ -17,6 +17,7 @@ def test_schema_error(d):
         cache: a
         build_temp: a
         source_caches: [{dir: a}]
+        gc_roots: a
     """)
     try:
         cfg = config.load_config_file('config.yaml')
