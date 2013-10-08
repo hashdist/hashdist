@@ -116,6 +116,11 @@ The database of GC roots is kept (by default) in
 (you may give them an arbitrary name, as long as they do not contain
 an underscore in front), or manually remove symlinks.
 
+.. warning::
+
+   As a corollary to the description above, if you do a plain
+   ``mv`` of a symlink to a profile, and then execute ``hit gc``,
+   then the software profile may be deleted by Hashdist.
 
 
 Debug features
