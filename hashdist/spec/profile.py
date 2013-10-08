@@ -28,9 +28,14 @@ class Profile(object):
         self.doc = doc
         self.parameters = dict(doc.get('parameters', {}))
         self.file_resolver = FileResolver(checkouts_manager, doc.get('package_dirs', []))
+        self.checkouts_manager = checkouts_manager
         self.hook_import_dirs = doc.get('hook_import_dirs', [])
         self.packages = doc['packages']
         self._yaml_cache = {} # (filename: [list of documents, possibly with when-clauses])
+
+    def resolve(self, path):
+        """Turn <repo>/path into /tmp/foo-342/path"""
+        return self.checkouts_manager.resolve(path)
 
     def load_package_yaml(self, pkgname, parameters):
         """

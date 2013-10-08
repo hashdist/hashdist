@@ -71,7 +71,7 @@ class PackageSpec(object):
             p = profile.find_package_file(self.name, from_name)
             if p is None:
                 raise ProfileError(from_name, 'file "%s" not found' % from_name)
-            with open(p) as f:
+            with open(profile.resolve(p)) as f:
                 files['_hashdist/' + to_name] = f.read()
         files['_hashdist/build.sh'] = build_script
         build_script_key = source_cache.put(files)

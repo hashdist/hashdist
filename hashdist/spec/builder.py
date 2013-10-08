@@ -154,7 +154,7 @@ class ProfileBuilder(object):
         return self.build_store.ensure_present(profile_build_spec, config)
 
     def _load_package_build_context(self, pkgname):
-        hook_files = self._package_specs[pkgname].hook_files
+        hook_files = [self.profile.resolve(fname) for fname in self._package_specs[pkgname].hook_files]
         dep_vars = [to_env_var(x) for x in self._package_specs[pkgname].build_deps]
         ctx = hook_api.PackageBuildContext(pkgname, dep_vars, self.profile.parameters)
         hook.load_hooks(ctx, hook_files)
