@@ -663,7 +663,7 @@ class CommandTreeExecution(object):
     def debug_call(self, args, env):
         env = dict(env)
         # leak PS1 from os environment, but prepend our message
-        env['PS1'] = '[HASHDIST DEBUG] %s' % os.environ['PS1']
+        env['PS1'] = '[HASHDIST DEBUG] %s' % os.environ.get('PS1', '')
         # Create temporary file for env used by bash
         tmpdir = tempfile.mkdtemp()
         try:
