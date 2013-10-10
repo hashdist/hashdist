@@ -9,9 +9,9 @@ Hashdist requires Python 2.7 and git.
 To start using Hashdist, clone the repo that contains the core tool, and put
 the ``bin``-directory in your ``PATH``::
 
-    $ git clone https://github.com/hashdist/hashdist.git /path/to/hashdist
-    $ cd /path/to/hashdist; git checkout spec  # this work only on spec branch
-    $ export PATH=/path/to/hashdist/bin:$PATH
+    $ git clone https://github.com/hashdist/hashdist.git 
+    $ cd hashdist
+    $ export PATH=$PWD/bin:$PATH
 
 The ``hit`` tool should now be available. You should now run the following command to
 create the directory ``~/.hashdist``::
