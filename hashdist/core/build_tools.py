@@ -238,9 +238,9 @@ _launcher_script = dedent("""\
         pdir=`pwd -P`
         d="$pdir"
 
-        # Loop to cd upwards towards root searching for "profile.json" file.
+        # Loop to cd upwards towards root searching for "artifact.json" file.
         while [ "$d" != / ]; do
-          [ -e profile.json ]&&cd "$o"&&exec "$d/bin/$i" "$0"%(arg_expr)s"$@"
+          [ -e artifact.json ]&&cd "$o"&&exec "$d/bin/$i" "$0"%(arg_expr)s"$@"
           cd ..
           d=`pwd -P`
         done
