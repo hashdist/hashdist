@@ -8,6 +8,8 @@ import errno
 
 def add_build_args(ap):
     ap.add_argument('-j', metavar='CPUCOUNT', default=1, type=int, help='number of CPU cores to utilize')
+    ap.add_argument('-k', metavar='KEEP_BUILD', default="never", type=str,
+            help='keep build directory: always, never, error (default: never)')
 
 def add_profile_args(ap):
     ap.add_argument('-p', '--profile', default='default.yaml', help='yaml file describing profile to build (default: default.yaml)')
@@ -61,19 +63,23 @@ class Build(ProfileFrontendBase):
         profile_symlink = self.args.profile[:-len('.yaml')]
         if self.args.package is not None:
             self.builder.build(self.args.package, self.ctx.get_config(), self.args.j,
-                               debug=self.args.debug)
+                               self.args.k, self.args.debug)
         else:
             ready = self.builder.get_ready_list()
             was_done = len(ready) == 0
             while len(ready) != 0:
                 self.builder.build(ready[0], self.ctx.get_config(), self.args.j,
-                                   debug=self.args.debug)
+                                   self.args.k, self.args.debug)
                 ready = self.builder.get_ready_list()
             artifact_id, artifact_dir = self.builder.build_profile(self.ctx.get_config())
             self.build_store.create_symlink_to_artifact(artifact_id, profile_symlink)
             if was_done:
                 sys.stdout.write('Up to date, link at: %s\n' % profile_symlink)
             else:
+                while len(ready) != 0:
+                    self.builder.build(ready[0], self.ctx.get_config(),
+                            self.args.j, self.args.k)
+                    ready = self.builder.get_ready_list()
                 sys.stdout.write('Profile build successful, link at: %s\n' % profile_symlink)
 
 
