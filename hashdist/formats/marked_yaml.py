@@ -191,6 +191,7 @@ def load_yaml_from_file(filename, parameters=None, filecaption=None):
 
     with open(filename) as file_stream:
         expanded_stream = TemplatedStream(file_stream, parameters)
+        expanded_stream.name = filename
         return marked_yaml_load(expanded_stream, filecaption)
 
 def validate_yaml(doc, schema):
