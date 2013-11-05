@@ -14,7 +14,6 @@ The loader is based on `SafeConstructor`, i.e., the behaviour of
 
 """
 
-
 from hashdist.deps.yaml.error import Mark
 from hashdist.deps.yaml.composer import Composer
 from hashdist.deps.yaml.reader import Reader
@@ -26,6 +25,8 @@ from hashdist.deps.yaml.constructor import (Constructor, BaseConstructor, SafeCo
                                             ConstructorError)
 from hashdist.deps.yaml import dump as _orig_yaml_dump
 from hashdist.deps import jsonschema
+
+from .templated_stream import TemplatedStream
 
 def _find_mark(doc):
     """Traverse a document to try to find a start_mark attribute"""
@@ -182,15 +183,15 @@ class MarkedLoader(Reader, Scanner, Parser, Composer, NodeConstructor, Resolver)
         Resolver.__init__(self)
 
 def marked_yaml_load(stream, filecaption=None):
-    try:
-        return MarkedLoader(stream, filecaption).get_single_data()
-    except ConstructorError as e:
-        raise ValidationError(e.problem_mark, e.problem, e)
+    return MarkedLoader(stream, filecaption).get_single_data()
 
-def load_yaml_from_file(filename, filecaption=None):
-    with open(filename) as f:
-        return marked_yaml_load(f, filecaption)
 
+def load_yaml_from_file(filename, parameters=None, filecaption=None):
+    if parameters == None: parameters = {}
+
+    with open(filename) as file_stream:
+        expanded_stream = TemplatedStream(file_stream, parameters)
+        return marked_yaml_load(expanded_stream, filecaption)
 
 def validate_yaml(doc, schema):
     try:
