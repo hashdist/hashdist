@@ -79,18 +79,23 @@ class PackageSpec(object):
                                        commands, [{'target': '.', 'key': build_script_key}])
         return build_spec
 
-    def assemble_link_dsl(self, parameters, ref, target):
+    def assemble_link_dsl(self, parameters, ref, target, link_type='relative'):
         """
         Creates the input document to ``hit create-links`` from the information in a package
         description.
         """
+
+        link_action_map = {'relative':'relative_symlink',
+                           'absolute':'absolute_symlink',
+                           'copy':'copy'}
+
         rules = []
         for in_stage in self.doc['profile_links']:
             out_stage = {}
             if 'link' in in_stage:
                 select = substitute_profile_parameters(in_stage["link"], parameters)
                 rules.append({
-                    "action": "relative_symlink",
+                    "action": link_action_map[link_type],
                     "select": "${%s_DIR}/%s" % (ref, select),
                     "prefix": "${%s_DIR}" % ref,
                     "target": target,

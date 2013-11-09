@@ -362,9 +362,12 @@ class BuildStore(object):
             raise ValueError("invalid keep_build value")
         build_spec = as_build_spec(build_spec)
         artifact_dir = self.resolve(build_spec.artifact_id)
+
+
         if artifact_dir is None:
             builder = ArtifactBuilder(self, build_spec, extra_env, virtuals)
             artifact_dir = builder.build(config, keep_build)
+
         return build_spec.artifact_id, artifact_dir
 
     def make_artifact_dir(self, build_spec):
@@ -443,13 +446,14 @@ class ArtifactBuilder(object):
         except:
             shutil.rmtree(artifact_dir)
             raise
-        os.system("chmod -R -w %s" % artifact_dir)
         return artifact_dir
 
     def build_to(self, artifact_dir, config, keep_build):
         if keep_build not in ('never', 'always', 'error'):
             raise ValueError("keep_build not in ('never', 'always', 'error')")
+
         build_dir = self.build_store.make_build_dir(self.build_spec)
+
         should_keep = False # failures in init are bugs in hashdist itself, no need to keep dir
         try:
             env = dict(self.extra_env)
@@ -470,9 +474,27 @@ class ArtifactBuilder(object):
                 should_keep = (keep_build in ('always', 'error'))
                 raise
         finally:
-            if not should_keep:
+            if build_dir != artifact_dir and not should_keep:
                 self.build_store.remove_build_dir(build_dir)
-        return artifact_dir
+
+
+    def build_out(self, artifact_dir, config):
+        """Builds an artifact outside of the BuildStore"""
+
+        build_dir = artifact_dir
+
+        env = dict(self.extra_env)
+        env['BUILD'] = build_dir
+        source_cache = SourceCache.create_from_config(config, self.logger)
+        self.build_store.prepare_build_dir(source_cache, self.build_spec, build_dir)
+
+        self.run_build_commands(build_dir, artifact_dir, env, config)
+
+        # Create 'id' marker for finished build by writing to _id and then mv to id
+        with open(pjoin(artifact_dir, '_id'), 'w') as f:
+            f.write('%s\n' % self.build_spec.artifact_id)
+        os.rename(pjoin(artifact_dir, '_id'), pjoin(artifact_dir, 'id'))
+
 
     def make_artifact_json(self, artifact_dir):
         fname = pjoin(artifact_dir, 'artifact.json')
@@ -527,4 +549,3 @@ def unpack_sources(logger, source_cache, doc, target_dir):
         target = pjoin(target_dir, source_item.get('target', '.'))
         logger.info('Unpacking sources %s' % key)
         source_cache.unpack(key, target)
-
