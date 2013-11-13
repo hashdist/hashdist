@@ -489,6 +489,7 @@ class ArtifactBuilder(object):
         self.build_store.prepare_build_dir(source_cache, self.build_spec, build_dir)
 
         self.run_build_commands(build_dir, artifact_dir, env, config)
+        self.make_artifact_json(artifact_dir)
 
         # Create 'id' marker for finished build by writing to _id and then mv to id
         with open(pjoin(artifact_dir, '_id'), 'w') as f:
