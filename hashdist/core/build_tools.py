@@ -240,7 +240,7 @@ _launcher_script = dedent("""\
 
         # Loop to cd upwards towards root searching for "artifact.json" file.
         while [ "$d" != / ]; do
-          [ -e artifact.json ]&&cd "$o"&&exec "$d/bin/$i" "$0"%(arg_expr)s"$@"
+          [ -e "$d/artifact.json" ]&&cd "$o"&&exec "$d/bin/$i" "$0"%(arg_expr)s"$@"
           cd ..
           d=`pwd -P`
         done
