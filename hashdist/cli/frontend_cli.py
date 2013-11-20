@@ -1,3 +1,4 @@
+import fnmatch
 import os
 import sys
 import shutil
@@ -188,3 +189,33 @@ class BuildDir(ProfileFrontendBase):
         ensure_target(self.args.target)
         build_spec = self.builder.get_build_spec(self.args.package)
         self.build_store.prepare_build_dir(self.source_cache, build_spec, self.args.target)
+
+@register_subcommand
+class PrintLibs(object):
+    """
+    Print all dynamic libraries from the given profile.
+
+    Example::
+
+        $ hit print-libs default                # print all .so libraries
+        $ hit print-libs default --suffix so    # print all .so libraries
+        $ hit print-libs default --suffix dylib # print all .dylib libraries
+        $ hit print-libs default --suffix dll   # print all .dll libraries
+
+    """
+
+    command = 'print-libs'
+
+    @staticmethod
+    def setup(ap):
+        ap.add_argument('profile', help='profile to check')
+        ap.add_argument('--suffix', default='so',
+                help="library suffix (default 'so')")
+
+    @staticmethod
+    def run(ctx, args):
+        libs = [os.path.join(dirpath, f)
+                for dirpath, dirnames, files in os.walk(args.profile)
+                for f in fnmatch.filter(files, "*.%s*" % args.suffix)]
+        for lib in libs:
+            sys.stdout.write(lib + '\n')
