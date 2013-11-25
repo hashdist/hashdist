@@ -1,0 +1,153 @@
+#!/usr/bin/env python
+
+from __future__ import print_function
+
+import os
+import subprocess
+import sys
+import textwrap
+
+hashdist_dir = os.path.realpath(os.path.join(os.path.dirname(os.path.realpath(__file__)), '..'))
+sys.path.insert(0, hashdist_dir)
+
+try:
+    import argparse
+except ImportError:
+    from hashdist.deps import argparse
+
+from hashdist.hdist_logging import Logger
+from hashdist.cli.main import HashdistCommandContext
+from hashdist.core import BuildStore
+from hashdist.formats.config import (DEFAULT_CONFIG_FILENAME_REPR,
+        DEFAULT_CONFIG_FILENAME)
+
+
+def system_lib(name):
+    if name == "":
+        return True
+    system_libs = [
+            # linux
+            "linux-vdso",
+            "linux-gate",
+
+            # libc
+            "libc",
+            "libm",
+            "libutil",
+            "libcrypt",
+            "libpthread",
+            "libdl",
+            "librt",
+            "libnsl",
+
+            # gcc
+            "libstdc++",
+            "libgfortran",
+            "libquadmath",
+            "libgcc_s",
+
+            # X11
+            "libX11",
+            "libXau",
+            "libXext",
+            "libxcb",
+            "libXdmcp",
+            ]
+
+    for lib in system_libs:
+        if name.startswith(lib + ".so"):
+            return True
+    return False
+
+def check_lib(filename, artifact_path):
+    s = subprocess.check_output(["ldd", filename])
+    lines = s.split("\n")
+    # Fill the libs_dict with library names, paths and addresses
+    libs_dict = {}
+    for line in lines:
+        line = line.strip()
+        if line == "":
+            continue
+        if "=>" in line:
+            lib, rest = line.split("=>")
+        else:
+            lib = ""
+            rest = line
+        rest = rest.strip()
+        idx = rest.rfind(" ")
+        if idx == -1:
+            path = ""
+            address = rest
+        else:
+            path = rest[:idx]
+            address = rest[idx:]
+
+        lib = lib.strip()
+        path = path.strip()
+        address = address.strip()
+        libs_dict[lib] = (path, address)
+
+    lib_clean = True
+    for lib in libs_dict:
+        if system_lib(lib):
+            continue
+        path, address = libs_dict[lib]
+        if path.startswith(artifact_path):
+            # Our lib
+            continue
+        lib_clean = False
+        print("Lib:", filename)
+        print(lib, path, address)
+        print()
+    return lib_clean
+
+def check_libs(profile, artifact_path):
+    s = subprocess.check_output(["hit", "print-libs", "--suffix", "so",
+        profile])
+    libs = s.split()
+    all_clean = True
+    for lib in libs:
+        if check_lib(lib, artifact_path) is False:
+            all_clean = False
+    return all_clean
+
+def main():
+    description = textwrap.dedent('''
+    Check that dynamic libraries are linked against our artifact cache.
+
+    Example:
+
+        $ hit-check-libs default
+
+    ''')
+
+    parser = argparse.ArgumentParser(description=description,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('profile', help='profile to check')
+
+    parser.add_argument('--config-file',
+                        help='Location of hashdist configuration file (default: %s)' % DEFAULT_CONFIG_FILENAME_REPR,
+                        default=DEFAULT_CONFIG_FILENAME)
+    parser.add_argument('-v', '--verbose', action='store_true', help='More verbose output')
+
+    args = parser.parse_args()
+    if args.verbose:
+        logger.set_level(DEBUG)
+    #parser.print_help()
+
+    subcmd_parsers = {}
+    env = os.environ
+    logger = Logger()
+    profile_path = args.profile
+    ctx = HashdistCommandContext(parser, subcmd_parsers, sys.stdout,
+            args.config_file, env, logger)
+    build_store = BuildStore.create_from_config(ctx.get_config(), logger)
+    print("Checking libs in '%s'..." % profile_path)
+    if check_libs(profile_path, build_store.artifact_root):
+        retcode = 0 # all libs are clean
+    else:
+        retcode = 1
+    return retcode
+
+if __name__ == '__main__':
+    sys.exit(main())
