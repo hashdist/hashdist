@@ -13,7 +13,7 @@ pjoin = os.path.join
 
 from ..source_cache import (ArchiveSourceCache, SourceCache,
         CorruptSourceCacheError, hit_pack, hit_unpack, scatter_files,
-        KeyNotFoundError, SourceNotFoundError, SecurityError)
+        KeyNotFoundError, SourceNotFoundError, SecurityError, RemoteFetchError)
 from ..hasher import Hasher, format_digest
 
 from .utils import temp_dir, working_directory, VERBOSE, logger, assert_raises, MemoryLogger
@@ -177,7 +177,7 @@ def test_curl_errors():
     with temp_source_cache() as sc:
         with assert_raises(ValueError):
             sc.fetch_archive('/tmp/foo/garbage.tar.gz') # malformed, would need file: prefix
-        with assert_raises(RuntimeError):
+        with assert_raises(RemoteFetchError):
             sc.fetch_archive('http://localhost:999/foo.tar.gz')
     
 
