@@ -110,8 +110,16 @@ class PackageSpec(object):
                               "select": "${%s_DIR}/%s" % (ref, select),
                               "prefix": "${%s_DIR}" % ref,
                               "target": target})
+            elif 'copy' in in_stage:
+                select = substitute_profile_parameters(in_stage["copy"], parameters)
+                rules.append({"action": "copy",
+                    "select": "${%s_DIR}/%s" % (ref, select),
+                    "prefix": "${%s_DIR}" % ref,
+                    "target": target,
+                    "dirs": in_stage.get("dirs", False)})
+
             else:
-                raise ValueError('Need either "link", "launcher" or "exclude" key in profile_links entries')
+                raise ValueError('Need either "copy", "link", "launcher" or "exclude" key in profile_links entries')
         return rules
 
     def assemble_build_import_commands(self, parameters, ref):
