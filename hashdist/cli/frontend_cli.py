@@ -186,7 +186,7 @@ class BuildDir(ProfileFrontendBase):
         add_target_args(ap)
 
     def profile_builder_action(self):
-        ensure_target(self.args.target)
+        self.ensure_target(self.args.target)
         build_spec = self.builder.get_build_spec(self.args.package)
         self.build_store.prepare_build_dir(self.source_cache, build_spec, self.args.target)
 
