@@ -68,6 +68,9 @@ def load_config_file(filename):
             entry['dir'] = _make_abs(basedir, entry['dir'])
     for key in ['build_temp', 'cache', 'gc_roots']:
         doc[key] = _make_abs(basedir, doc[key])
+    # optional key
+    if 'homebrew' in doc:
+        doc['homebrew'] = _make_abs(basedir, doc['homebrew'])
     return doc
 
 def get_config_example_filename():

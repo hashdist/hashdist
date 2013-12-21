@@ -85,6 +85,7 @@ from ..hdist_logging import null_logger
 
 from .ant_glob import ant_iglob
 
+from ..external import links as external_links
 
 def expandtemplate(s, env):
     return Template(s).substitute(env)
@@ -194,6 +195,16 @@ def _single_action(rule, excluded, makedirs_cache, env, actions):
         _put_actions(makedirs_cache, rule['action'], rule.get('overwrite', False),
                      source, target, actions)
 
+
+def is_external(rule):
+    return rule['action'] in external_links
+
+
+def _external_action(rule, excluded, makedirs_cache, env, actions):
+    add_external_action = external_links[rule['action']]
+    add_external_action(rule, actions, expandtemplate, env)
+
+
 def dry_run_links_dsl(rules, env={}):
     """Turns a DSL for creating links/copying files into a list of actions to be taken.
 
@@ -224,7 +235,9 @@ def dry_run_links_dsl(rules, env={}):
     excluded = set()
     makedirs_cache = set()
     for rule in rules:
-        if 'select' in rule:
+        if is_external(rule):
+            _external_action(rule, excluded, makedirs_cache, env, actions)
+        elif 'select' in rule:
             _glob_actions(rule, excluded, makedirs_cache, env, actions)
         else:
             _single_action(rule, excluded, makedirs_cache, env, actions)

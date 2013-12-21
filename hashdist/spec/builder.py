@@ -14,10 +14,11 @@ class ProfileBuilder(object):
     What can be known of a profile when all referenced package specs are loaded.
     Used to maintain state during the building process.
     """
-    def __init__(self, logger, source_cache, build_store, profile):
+    def __init__(self, logger, source_cache, build_store, external_stores, profile):
         self.logger = logger
         self.source_cache = source_cache
         self.build_store = build_store
+        self.external_stores = external_stores
         self.profile = profile
 
         self._built = set()  # cache for build_store
@@ -38,9 +39,18 @@ class ProfileBuilder(object):
                     raise ProfileError(pkgname, 'dependency cycle between packages, including package "%s"' % pkgname)
                 visiting.add(pkgname)
                 settings = self.profile.packages.get(pkgname, {})
-                use = settings.get('use', pkgname)
-                spec = package.PackageSpec.load(self.profile, use)
-                self._package_specs[pkgname] = spec
+                # actual package name to satisfy a dependency is controlled by "use"
+                use_pkgname = settings.get('use', pkgname)
+
+                # fixme: this needs to be adjusted so that user can set builder precedence
+                for store in self.external_stores:
+                    if store.has(use_pkgname):
+                        spec = store.get_package_spec(self.profile, use_pkgname)
+                        self._package_specs[pkgname] = spec
+                        break
+                else:
+                    spec = package.PackageSpec.load(self.profile, use_pkgname)
+                    self._package_specs[pkgname] = spec
                 for dep in spec.build_deps + spec.run_deps:
                     visit(dep)
                 visiting.remove(pkgname)

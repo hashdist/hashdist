@@ -30,7 +30,12 @@ class ProfileFrontendBase(object):
         self.build_store = BuildStore.create_from_config(ctx.get_config(), ctx.logger)
         self.checkouts = TemporarySourceCheckouts(self.source_cache)
         self.profile = load_profile(self.checkouts, args.profile)
-        self.builder = ProfileBuilder(self.ctx.logger, self.source_cache, self.build_store, self.profile)
+        # optional build stores - these need to be ordered in HashDist configuration
+        self.external_stores = []
+        if 'homebrew' in ctx.get_config():
+            from ..external.homebrew import HomebrewStore
+            self.external_stores.insert(0, HomebrewStore.create_from_config(ctx.get_config(), ctx.logger))
+        self.builder = ProfileBuilder(self.ctx.logger, self.source_cache, self.build_store, self.external_stores, self.profile)
 
     @classmethod
     def run(cls, ctx, args):
