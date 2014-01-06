@@ -11,7 +11,6 @@ def test_substitute():
     def check_raises(x):
         with assert_raises(ProfileError):
             utils.substitute_profile_parameters(x, env)
-    yield check_raises, "a{{Ax}}b"
     yield check_noop, "$A$B"
     yield check_noop, "${A}x"
     yield check_noop, "\\${A}x"
@@ -19,3 +18,4 @@ def test_substitute():
     yield check_noop, "${A}\$\${x}"
 
     yield check, "abcb\n\nb", "a{{B}}c{{B}}\n\n{{B}}"
+    yield check, "ab", "a{{Ax}}b"
