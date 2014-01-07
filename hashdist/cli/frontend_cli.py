@@ -81,6 +81,7 @@ class Build(ProfileFrontendBase):
 
     def profile_builder_action(self):
         from ..core import atomic_symlink
+        import hashlib
 
         if not self.args.profile.endswith('.yaml'):
             self.ctx.error('profile filename must end with yaml')
@@ -92,6 +93,9 @@ class Build(ProfileFrontendBase):
             self.build_profile_deps()
             artifact_id, artifact_dir = self.builder.build_profile(self.ctx.get_config())
             atomic_symlink(artifact_dir, profile_symlink)
+            gc_roots_dir = self.ctx.get_config()['gc_roots']
+            gc_root_target = os.getcwd() + '/' + profile_symlink
+            atomic_symlink(gc_root_target,  gc_roots_dir + '/' + hashlib.md5(gc_root_target).hexdigest())
             sys.stdout.write('Profile build successful, link at: %s\n' % profile_symlink)
 
 
