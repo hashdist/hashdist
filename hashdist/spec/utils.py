@@ -6,13 +6,12 @@ _STACK_SUBST_RE = re.compile(r'\{\{([^}]*)\}\}')
 def substitute_profile_parameters(s, parameters):
     """
     Substitutes using the syntax ``{{param}}``.
+
+    If {{param}} is undefined, the empty string is returned instead.
     """
     def repl(m):
-        try:
-            return parameters[m.group(1)]
-        except KeyError:
-            raise ProfileError(getattr(s, 'start_mark', None),
-                               'Tried to substitute undefined parameter "%s"' % m.group(1))
+        return parameters.get(m.group(1), '')
+
     return _STACK_SUBST_RE.subn(repl, s)[0]
 
 
