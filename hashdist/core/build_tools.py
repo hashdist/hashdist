@@ -232,30 +232,30 @@ _launcher_script = dedent("""\
     # After exiting loop, one is in the directory of the real script.
     p="$0"
     while true; do
-	# Must test for whether $p is a link, and we should continue looping
-	# or not, before we change directory.
-	test -L "$p"
-	il=$? # is_link
-	cd `dirname "$p"`
-	pdir=`pwd -P`
-	d="$pdir"
+        # Must test for whether $p is a link, and we should continue looping
+        # or not, before we change directory.
+        test -L "$p"
+        il=$? # is_link
+        cd `dirname "$p"`
+        pdir=`pwd -P`
+        d="$pdir"
 
-	# Loop to cd upwards towards root searching for "artifact.json" file.
-	while [ "$d" != / ]; do
+        # Loop to cd upwards towards root searching for "artifact.json" file.
+        while [ "$d" != / ]; do
 
-	  if [ -e "$d/artifact.json" ] ; then
-	     if [ ! -e "$d/bin/$i" ] ; then
-		echo "Unable to locate needed $i in $p/bin"
-		echo "HashDist profile $d has likely been corrupted, please try rebuilding."
-		exit 127
-	     fi
-	     cd "$o" && exec "$d/bin/$i" "$0"%(arg_expr)s"$@"
-	  fi
-	  cd ..
-	  d=`pwd -P`
-	done
+            if [ -e "$d/artifact.json" ] ; then
+                if [ ! -e "$d/bin/$i" ] ; then
+                    echo "Unable to locate needed $i in $p/bin"
+                    echo "HashDist profile $d has likely been corrupted, please try rebuilding."
+                    exit 127
+                fi
+                cd "$o" && exec "$d/bin/$i" "$0"%(arg_expr)s"$@"
+            fi
+            cd ..
+            d=`pwd -P`
+        done
 
-        # No is-profile found; 
+        # No is-profile found;
         cd "$pdir"
         if [ "$il" -ne 0 ];then break;fi
         p=`readlink $p`
@@ -266,8 +266,8 @@ _launcher_script = dedent("""\
 
     cd "$o"
     if [ ! -e "$p/$i" ] ; then
-       echo "Unable to locate needed $i in $p\n"
-       exit 127
+        echo "Unable to locate needed $i in $p\n"
+        exit 127
     fi
     exec "$p/$i" "$0"%(arg_expr)s"$@"
     exit 127
