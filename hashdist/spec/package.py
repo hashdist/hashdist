@@ -50,7 +50,7 @@ class PackageSpec(object):
         """
         Return build script (Bash script) that should be run to build package.
         """
-        lines = ['set -e', 'HDIST_IN_BUILD=yes']
+        lines = ['set -e', 'export HDIST_IN_BUILD=yes']
         for stage in self.doc['build_stages']:
             lines += ctx.dispatch_build_stage(stage)
         return '\n'.join(lines) + '\n'
