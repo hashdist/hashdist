@@ -34,7 +34,7 @@ def test_assemble_stages():
     script = p.assemble_build_script(ctx)
     assert script == dedent("""\
     set -e
-    HDIST_IN_BUILD=yes
+    export HDIST_IN_BUILD=yes
     ./configure --with-foo=somevalue
     make
     make install
