@@ -7,8 +7,8 @@ from .main import register_subcommand
 
 def add_build_args(ap):
     ap.add_argument('-j', metavar='CPUCOUNT', default=1, type=int, help='number of CPU cores to utilize')
-    ap.add_argument('-k', metavar='KEEP_BUILD', default="never", type=str,
-            help='keep build directory: always, never, error (default: never)')
+    ap.add_argument('-k', metavar='KEEP_BUILD', default="error", type=str,
+            help='keep build directory: always, never, error (default: error)')
 
 def add_profile_args(ap):
     ap.add_argument('-p', '--profile', default='default.yaml', help='yaml file describing profile to build (default: default.yaml)')
