@@ -13,6 +13,7 @@ from ..fileutils import touch
 
 from .. import build_tools
 
+from nose import SkipTest
 
 def test_execute_files_dsl():
     def assertions(dirname):
@@ -75,6 +76,9 @@ class MockBuildStore:
 
 @temp_working_dir_fixture
 def test_python_shebang(d):
+    if 'linux' not in sys.platform:
+        raise SkipTest('Linux only')
+
     from subprocess import Popen, PIPE
 
     makedirs(pjoin(d, 'my-python', 'bin'))
@@ -125,12 +129,12 @@ def test_python_shebang(d):
 
     for relative in ['./scriptlink', 'profile/bin/myscript']:
         for entry_point in [relative, os.path.realpath(relative)]:
-            touch(pjoin(d, 'profile', 'profile.json'))
+            touch(pjoin(d, 'profile', 'artifact.json'))
             #print cat(entry_point)
             intp = runit(entry_point)
             eq_("%s/profile/bin/python" % d, intp)
 
-            os.unlink(pjoin(d, 'profile', 'profile.json'))
+            os.unlink(pjoin(d, 'profile', 'artifact.json'))
             intp = runit(entry_point)
             assert "%s/my-python/bin/python" % d == intp
 

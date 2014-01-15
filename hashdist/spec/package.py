@@ -50,7 +50,7 @@ class PackageSpec(object):
         """
         Return build script (Bash script) that should be run to build package.
         """
-        lines = ['set -e']
+        lines = ['set -e', 'export HDIST_IN_BUILD=yes']
         for stage in self.doc['build_stages']:
             lines += ctx.dispatch_build_stage(stage)
         return '\n'.join(lines) + '\n'
@@ -79,18 +79,23 @@ class PackageSpec(object):
                                        commands, [{'target': '.', 'key': build_script_key}])
         return build_spec
 
-    def assemble_link_dsl(self, parameters, ref, target):
+    def assemble_link_dsl(self, parameters, ref, target, link_type='relative'):
         """
         Creates the input document to ``hit create-links`` from the information in a package
         description.
         """
+
+        link_action_map = {'relative':'relative_symlink',
+                           'absolute':'absolute_symlink',
+                           'copy':'copy'}
+
         rules = []
         for in_stage in self.doc['profile_links']:
             out_stage = {}
             if 'link' in in_stage:
                 select = substitute_profile_parameters(in_stage["link"], parameters)
                 rules.append({
-                    "action": "relative_symlink",
+                    "action": link_action_map[link_type],
                     "select": "${%s_DIR}/%s" % (ref, select),
                     "prefix": "${%s_DIR}" % ref,
                     "target": target,
@@ -105,8 +110,16 @@ class PackageSpec(object):
                               "select": "${%s_DIR}/%s" % (ref, select),
                               "prefix": "${%s_DIR}" % ref,
                               "target": target})
+            elif 'copy' in in_stage:
+                select = substitute_profile_parameters(in_stage["copy"], parameters)
+                rules.append({"action": "copy",
+                    "select": "${%s_DIR}/%s" % (ref, select),
+                    "prefix": "${%s_DIR}" % ref,
+                    "target": target,
+                    "dirs": in_stage.get("dirs", False)})
+
             else:
-                raise ValueError('Need either "link", "launcher" or "exclude" key in profile_links entries')
+                raise ValueError('Need either "copy", "link", "launcher" or "exclude" key in profile_links entries')
         return rules
 
     def assemble_build_import_commands(self, parameters, ref):
@@ -369,7 +382,7 @@ def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map,
     if 'PATH' in parameters:
         commands.insert(0, {"set": "PATH", "nohash_value": parameters['PATH']})
     commands.append({"cmd": ["$BASH", "_hashdist/build.sh"]})
-    commands.append({"hit": ["build-postprocess", "--write-protect"]})
+    commands.append({"hit": ["build-postprocess", "--shebang=multiline", "--write-protect"]})
     # assemble
     build_spec = {
         "name": pkg_name,

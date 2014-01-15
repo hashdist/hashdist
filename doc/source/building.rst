@@ -82,7 +82,7 @@ We want to search for interpreters for scripts as follows:
 
     $ hit build-postprocess --shebang=multiline path-or-script
 
-applies the multiline shebang. Test scrpt::
+applies the multiline shebang. Test script::
 
     #!/tmp/../usr/bin/python
 
