@@ -151,7 +151,7 @@ class Logger(object):
             self.set_error_occurred(True)
 
     def log_lines(self, level, text):
-        for line in textwrap.wrap(textwrap.dedent(text), 70).splitlines():
+        for line in textwrap.wrap(textwrap.dedent(text), 70):
             self.log(level, line)
 
     def debug(self, msg, *args):
