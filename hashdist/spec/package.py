@@ -2,6 +2,7 @@ import re
 from pprint import pprint
 import os
 from os.path import join as pjoin
+from collections import defaultdict
 
 from ..formats.marked_yaml import load_yaml_from_file, copy_dict_node, dict_like, list_node
 from .utils import substitute_profile_parameters, topological_sort, to_env_var
@@ -36,7 +37,7 @@ class PackageSpec(object):
         a transform pipeline to put the spec on a simple format where all information
         in ancestors is inlined, and stages are ordered.
         """
-        package_parameters = dict(profile.parameters)
+        package_parameters = defaultdict(str, profile.parameters)
         package_parameters.update(profile.packages.get(name, {}))
         doc, hook_files = load_and_inherit_package(profile, name, package_parameters)
         doc = order_package_stages(doc)
