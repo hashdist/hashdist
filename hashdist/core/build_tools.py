@@ -241,15 +241,25 @@ _launcher_script = dedent("""\
     # $p is the current link:
     p="$0"
     while true; do
-        # Must test for whether $p is a link, and we should continue looping
-        # or not, before we change directory.
+        # This loop tests whether $p is a link and if so, it continues
+        # following the symlinks (this happens e.g. when the user symlinks
+        # "ipython" from some profile into their ~/bin directory which is on
+        # the $PATH). For each step, it tries to determine whether it is in the
+        # profile and if so, executes the bin/$i from there, and if not,
+        # continue looping.
+        # If $p is not a symlink (and not in a profile), then it fails with an
+        # error. This outer loop must always terminate, because eventually $p
+        # will not be a symlink, and it will either be in a profile (success)
+        # or not (failure).
         test -L "$p"
         il=$? # is_link
         cd `dirname "$p"`
         pdir=`pwd -P`
         d="$pdir"
 
-        # Loop to cd upwards towards root searching for "artifact.json" file.
+        # In this inner loop we cd upwards towards root searching for
+        # "artifact.json" file. If we find it, we execute bin/$i from there. If
+        # we don't find it, we exit the loop without an error.
         while [ "$d" != / ]; do
 
             if [ -e "$d/artifact.json" ] ; then
@@ -264,14 +274,15 @@ _launcher_script = dedent("""\
             d=`pwd -P`
         done
 
-        # No is-profile found;
         cd "$pdir"
-        if [ "$il" -ne 0 ];then break;fi
+        if [ "$il" -ne 0 ] ; then
+            # $p is not a symlink and not in a profile (this simply means that
+            # no profile was found), so we terminate the loop with an error.
+            echo "No profile found."
+            exit 127
+        fi
         p=`readlink $p`
     done
-    # No profile found, we exit with en error.
-    echo "No profile found."
-    exit 127
 """)
 
 def _get_launcher(script_filename, shebang):
