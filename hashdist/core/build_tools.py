@@ -260,16 +260,7 @@ _launcher_script = dedent("""\
         if [ "$il" -ne 0 ];then break;fi
         p=`readlink $p`
     done
-    # No profile found, execute relative
-    cd "$r"
-    p=`pwd -P`
-
-    cd "$o"
-    if [ ! -e "$p/$i" ] ; then
-        echo "Unable to locate needed $i in $p\n"
-        exit 127
-    fi
-    exec "$p/$i" "$0"%(arg_expr)s"$@"
+    echo "No profile found."
     exit 127
 """)
 
