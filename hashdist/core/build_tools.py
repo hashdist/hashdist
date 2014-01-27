@@ -220,16 +220,25 @@ def make_relative_multiline_shebang(build_store, filename, scriptlines):
 # relative to the script location.
 
 _launcher_script = dedent("""\
-    r="%(relpath)s" # relative path to bin-directory if profile lookup fails
     i="%(interpreter)s" # interpreter base-name
     %(arg_assign)s # may be 'arg=...' if there is an argument
-    o=`pwd`
+
+    # If this script is called during "hit build" (i.e. HDIST_IN_BUILD=yes),
+    # then we simply call the $i (interpreter name) on this script (no lookup
+    # happens). This assumes that $i is in the path. Typically you put "python"
+    # into the $PATH while building Python packages and then assign $i=python.
 
     if [ "$HDIST_IN_BUILD" = "yes" ] ; then exec "$i" "$0"%(arg_expr)s"$@"; fi
 
-    # Loop to follow chain of links by cd-ing to their
-    # directories and calling readlink. $p is current link.
-    # After exiting loop, one is in the directory of the real script.
+    # If this script is called by the user (i.e. HDIST_IN_BUILD!=yes), then the
+    # script must be in a profile. As such, all we need to do is to loop to
+    # follow the chain of links by cd-ing to their directories and calling
+    # readlink, until we cd into the directory with artifact.json. From there
+    # we call bin/$i (i.e. typically bin/python) on this script. If
+    # artifact.json cannot be found, we exit with an error.
+
+    o=`pwd`
+    # $p is the current link:
     p="$0"
     while true; do
         # Must test for whether $p is a link, and we should continue looping
@@ -260,6 +269,7 @@ _launcher_script = dedent("""\
         if [ "$il" -ne 0 ];then break;fi
         p=`readlink $p`
     done
+    # No profile found, we exit with en error.
     echo "No profile found."
     exit 127
 """)
