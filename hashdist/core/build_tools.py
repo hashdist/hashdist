@@ -262,8 +262,8 @@ _launcher_script = dedent("""\
         # we don't find it, we exit the loop without an error.
         while [ "$d" != / ]; do
 
-            if [ -e "$d/artifact.json" ] ; then
-                if [ ! -e "$d/bin/$i" ] ; then
+            if [ -e "$d/artifact.json" ]; then
+                if [ ! -e "$d/bin/$i" ]; then
                     echo "Unable to locate needed $i in $p/bin"
                     echo "HashDist profile $d has likely been corrupted, please try rebuilding."
                     exit 127
@@ -275,7 +275,7 @@ _launcher_script = dedent("""\
         done
 
         cd "$pdir"
-        if [ "$il" -ne 0 ] ; then
+        if [ "$il" -ne 0 ]; then
             # $p is not a symlink and not in a profile (this simply means that
             # no profile was found), so we terminate the loop with an error.
             echo "No profile found."
