@@ -4,7 +4,7 @@ from . import utils
 from . import hook
 from . import hook_api
 from ..formats.marked_yaml import load_yaml_from_file
-from ..core import BuildSpec
+from ..core import BuildSpec, ArtifactBuilder
 from .utils import to_env_var
 from .exceptions import ProfileError
 
@@ -111,7 +111,7 @@ class ProfileBuilder(object):
                       for pkgname, build_spec in self._build_specs.iteritems())
         return report
 
-    def get_profile_build_spec(self):
+    def get_profile_build_spec(self, link_type='relative', write_protect=True):
         profile_list = [{"id": build_spec.artifact_id} for build_spec in self._build_specs.values()]
 
         # Topologically sort by run-time dependencies
@@ -129,10 +129,11 @@ class ProfileBuilder(object):
             pkg = self._package_specs[pkgname]
             ref = to_env_var(pkgname)
             commands += pkg.assemble_build_import_commands(self.profile.parameters, ref)
-            install_link_rules += pkg.assemble_link_dsl(self.profile.parameters, ref, '${ARTIFACT}')
+            install_link_rules += pkg.assemble_link_dsl(self.profile.parameters, ref, '${ARTIFACT}', link_type)
         commands.extend([{"hit": ["create-links", "$in0"],
-                          "inputs": [{"json": install_link_rules}]},
-                         {"hit": ["build-postprocess", "--write-protect"]}])
+                          "inputs": [{"json": install_link_rules}]}])
+        if write_protect:
+            commands.extend([{"hit": ["build-postprocess", "--write-protect"]}])
 
         return BuildSpec({
             "name": "profile",
@@ -143,15 +144,26 @@ class ProfileBuilder(object):
                 }
             })
 
-    def build(self, pkgname, config, worker_count):
+    def build(self, pkgname, config, worker_count, keep_build):
         self._package_specs[pkgname].fetch_sources(self.source_cache)
         extra_env = {'HASHDIST_CPU_COUNT': str(worker_count)}
-        self.build_store.ensure_present(self._build_specs[pkgname], config, extra_env=extra_env)
+        self.build_store.ensure_present(self._build_specs[pkgname], config,
+                extra_env=extra_env, keep_build=keep_build)
         self._built.add(pkgname)
 
     def build_profile(self, config):
         profile_build_spec = self.get_profile_build_spec()
         return self.build_store.ensure_present(profile_build_spec, config)
+
+    def build_profile_out(self, target, config, link_type):
+        """
+        Build a profile intended for use/modification outside of the BuildStore
+        """
+        profile_build_spec = self.get_profile_build_spec(link_type, write_protect=False)
+        extra_env = {}
+        virtuals = {}
+        builder = ArtifactBuilder(self.build_store, profile_build_spec, extra_env, virtuals)
+        builder.build_out(target, config)
 
     def _load_package_build_context(self, pkgname):
         hook_files = [self.profile.resolve(fname) for fname in self._package_specs[pkgname].hook_files]
