@@ -101,6 +101,7 @@ from contextlib import closing
 
 from .hasher import hash_document, format_digest, HashingReadStream, HashingWriteStream
 from .fileutils import silent_makedirs
+from .decorators import retry
 
 pjoin = os.path.join
 
@@ -109,6 +110,9 @@ TAG_RE = re.compile(TAG_RE_S)
 
 PACKS_DIRNAME = 'packs'
 GIT_DIRNAME = 'git'
+
+class RemoteFetchError(Exception):
+    pass
 
 class SourceCacheError(Exception):
     pass
@@ -239,7 +243,7 @@ class SourceCache(object):
         key : str
             The globally unique key; this is the git commit SHA-1 hash
             prepended by ``git:``.
-        
+
         """
         return GitSourceCache(self).fetch_git(repository, rev, repo_name)
 
@@ -258,7 +262,7 @@ class SourceCache(object):
         type : str (optional)
             Type of archive, such as ``"tar.gz"``, ``"tar.gz2"``. For use
             when this cannot be determined from the suffix of the url.
-        
+
         """
         return ArchiveSourceCache(self).fetch_archive(url, type, None)
 
@@ -291,6 +295,7 @@ class SourceCache(object):
             raise ValueError('does not recognize key prefix: %s' % type)
         return handler
 
+    @retry(max_tries=3, exceptions=(RemoteFetchError))
     def fetch(self, url, key, repo_name=None):
         """Fetch sources whose key is known.
 
@@ -361,29 +366,30 @@ class GitSourceCache(object):
         self.repo_path = pjoin(source_cache.cache_path, GIT_DIRNAME)
         self.logger = source_cache.logger
 
-    def git_interactive(self, repo_name, *args):
+    def git(self, repo_name, *args):
         # Inherit stdin/stdout in order to interact with user about any passwords
         # required to connect to any servers and so on
         if args[0] == 'init':
             env = os.environ
         else:
             env = self.get_repo_env(repo_name)
-        subprocess.check_call(['git'] + list(args), env=env)
-
-    def git(self, repo_name, *args):
-        p = subprocess.Popen(['git'] + list(args), env=self.get_repo_env(repo_name),
+        p = subprocess.Popen(['git'] + list(args), env=env,
                              stdout=subprocess.PIPE, stdin=subprocess.PIPE,
                              stderr=subprocess.PIPE)
         out, err = p.communicate()
         return p.returncode, out, err
 
     def checked_git(self, repo_name, *args):
+        if args[0] in ['ls-remote', 'fetch']:
+            error_dispatch=RemoteFetchError
+        else:
+            error_dispatch=RuntimeError
         retcode, out, err = self.git(repo_name, *args)
         # Just fetch the output
         if retcode != 0:
             msg = 'git call %r failed with code %d' % (args, retcode)
-            self.logger.error("Problem when trying to download repo %s: %s" % (repo_name, msg))
-            raise RuntimeError(msg)
+            self.logger.error(msg)
+            raise error_dispatch(msg)
         return out
 
     def get_repo_env(self, repo_name):
@@ -419,7 +425,7 @@ class GitSourceCache(object):
     def _does_branch_exist(self, repo_name, branch):
         retcode, out, err = self.git(repo_name,
                                      'show-ref', '--verify', '--quiet', 'refs/heads/%s' % branch)
-        return retcode == 0        
+        return retcode == 0
 
     def _mark_commit_as_in_use(self, repo_name, commit):
         retcode, out, err = self.git(repo_name, 'branch', 'inuse/%s' % commit, commit)
@@ -462,13 +468,10 @@ class GitSourceCache(object):
             # branch-names at all since we merge all projects encountered into the
             # same repo
             commit = self._resolve_remote_rev(repo_name, repo_url, rev)
-            
+
         if rev is not None:
-            try:
-                self.git_interactive(repo_name, 'fetch', repo_url, rev)
-            except subprocess.CalledProcessError:
-                self.logger.error('failed command: git fetch %s %s' % (repo_url, rev))
-                raise
+            self.checked_git(repo_name, 'fetch', repo_url, rev)
+
         else:
             # when rev is None, fetch all the remote heads; seems like one must
             # do a separate ls-remote...
@@ -476,8 +479,8 @@ class GitSourceCache(object):
             heads = [line.split()[1] for line in out.splitlines() if line.strip()]
             # Fix for https://github.com/hashdist/python-hpcmp2/issues/57
             heads = [x for x in heads if not x.endswith("^{}")]
-            self.git_interactive(repo_name, 'fetch', repo_url, *heads)
-            
+            self.checked_git(repo_name, 'fetch', repo_url, *heads)
+
         if not self._has_commit(repo_name, commit):
             raise SourceNotFoundError('Repository "%s" did not contain commit "%s"' %
                                       (repo_url, commit))
@@ -489,7 +492,7 @@ class GitSourceCache(object):
 
     def unpack(self, type, hash, target_path):
         import tarfile
-        
+
         assert type == 'git'
 
         # We don't want to require supplying a repo name, so for now
@@ -564,11 +567,11 @@ class ArchiveSourceCache(object):
             except urllib2.HTTPError, e:
                 msg = "urllib failed to download (code: %d): %s" % (e.code, url)
                 self.logger.error(msg)
-                raise RuntimeError(msg)
+                raise RemoteFetchError(msg)
             except urllib2.URLError, e:
                 msg = "urllib failed to download (reason: %s): %s" % (e.reason, url)
                 self.logger.error(msg)
-                raise RuntimeError(msg)
+                raise RemoteFetchError(msg)
 
         # Download file to a temporary file within self.packs_path, while hashing
         # it.
@@ -578,7 +581,10 @@ class ArchiveSourceCache(object):
             f = os.fdopen(temp_fd, 'wb')
             tee = HashingWriteStream(hashlib.sha256(), f)
             if use_urllib:
-                progress = ProgressBar(int(stream.headers["Content-Length"]))
+                if 'Content-Length' in stream.headers:
+                    progress = ProgressBar(int(stream.headers["Content-Length"]))
+                else:
+                    progress = None
             try:
                 n = 0
                 while True:
@@ -586,17 +592,19 @@ class ArchiveSourceCache(object):
                     if not chunk: break
                     if use_urllib:
                         n += len(chunk)
-                        progress.update(n)
+                        if progress: progress.update(n)
                     tee.write(chunk)
             finally:
                 stream.close()
                 f.close()
                 if use_urllib:
-                    progress.finish()
-        except:
+                    if progress: progress.finish()
+        except Exception as e:
             # Remove temporary file if there was a failure
             os.unlink(temp_path)
-            raise
+            msg = "Unhandled Exception in Download: %s" % e
+            self.logger.error(msg)
+            raise RemoteFetchError(msg)
 
         if not create_archive_handler(type).verify(temp_path):
             self.logger.error("File downloaded from '%s' is not a valid archive" % url)
@@ -670,7 +678,7 @@ class ArchiveSourceCache(object):
             with file(pack_filename, 'w') as f:
                 hit_pack(files, f)
         return key
-    
+
     def unpack(self, type, hash, target_dir):
         infile = self.open_file(type, hash)
         with infile:
@@ -697,7 +705,7 @@ class ArchiveSourceCache(object):
     #
     def _extract_hit_pack(self, f, key, target_dir):
         files = hit_unpack(f, key)
-        scatter_files(files, target_dir)        
+        scatter_files(files, target_dir)
 
 
 #
@@ -725,7 +733,7 @@ def common_path_prefix(paths):
 
 class TarballHandler(object):
     chunk_size = 16 * 1024
-    
+
     def verify(self, filename):
         import tarfile
         try:
@@ -823,9 +831,10 @@ class ZipHandler(object):
             # during extraction
             prefix_len = len(common_path_prefix([info.filename for info in infolist]))
             for info in infolist:
-                info.filename = info.filename[prefix_len:]
-                f.extract(info, target_dir)
-        
+                if len(info.filename) > prefix_len:
+                    info.filename = info.filename[prefix_len:]
+                    f.extract(info, target_dir)
+
 archive_ext_to_type = {}
 archive_handler_classes = {}
 archive_types = []
@@ -836,7 +845,7 @@ for cls in [TarGzHandler, TarBz2Handler, TarXzHandler, ZipHandler]:
     archive_types.append(cls.type)
 archive_types = sorted(archive_types)
 
-        
+
 def create_archive_handler(type):
     return archive_handler_classes[type]()
 
@@ -914,7 +923,7 @@ def hit_unpack(stream, key):
     if digest != format_digest(tee):
         raise CorruptSourceCacheError('hit-pack does not match key "%s"' % key)
     return files
-        
+
 def scatter_files(files, target_dir):
     """
     Given a list of filenames and their contents, write them to the file system.
@@ -951,4 +960,3 @@ def silent_unlink(path):
         os.unlink(temp_file)
     except:
         pass
-

@@ -55,7 +55,7 @@ class Profile(object):
                                                     pjoin(pkgname, pkgname + '-*.yaml')],
                                                    match_basename=True)
             self._yaml_cache['package', pkgname] = docs = [
-                load_yaml_from_file(filename) for filename in result.values()]
+                load_yaml_from_file(filename, parameters) for filename in result.values()]
         no_when_doc = None
         with_when_doc = None
         for doc in docs:

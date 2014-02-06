@@ -27,8 +27,6 @@ class PackageBuildContext(object):
         """
         Registers a function as a handler for a given stage handler type.
         """
-        if handler_name in self._build_stage_handlers:
-            raise IllegalHookFileError('handler for build stage "%s" already registered' % handler_name)
         self._build_stage_handlers[handler_name] = handler_func
 
     def register_module(self, mod):

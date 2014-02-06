@@ -17,6 +17,7 @@ import errno
 from ..formats.config import (load_config_file, DEFAULT_CONFIG_FILENAME_REPR, DEFAULT_CONFIG_FILENAME,
                               ValidationError)
 from ..formats.marked_yaml import ValidationError
+from ..core.source_cache import RemoteFetchError
 from ..hdist_logging import Logger, DEBUG, INFO
 
 try:
@@ -186,6 +187,12 @@ def help_on_exceptions(logger, func, *args, **kw):
             raise
         else:
             logger.error(str(e))
+            return 127
+    except RemoteFetchError as e:
+        if debug:
+            raise
+        else:
+            logger.error("You may wish to check your Internet connection or the remote server")
             return 127
     except:
         if debug:
