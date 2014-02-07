@@ -140,6 +140,7 @@ import re
 import errno
 import json
 from logging import DEBUG, ERROR
+import base64
 
 from .source_cache import SourceCache
 from .hasher import hash_document, prune_nohash
@@ -148,7 +149,7 @@ from .common import (InvalidBuildSpecError, BuildFailedError,
                      json_formatting_options, SHORT_ARTIFACT_ID_LEN,
                      working_directory)
 from .fileutils import silent_unlink, robust_rmtree, rmtree_up_to, silent_makedirs, gzip_compress, write_protect
-from .fileutils import rmtree_write_protected
+from .fileutils import rmtree_write_protected, atomic_symlink, realpath_to_symlink
 from . import run_job
 
 
@@ -247,13 +248,18 @@ class BuildStore(object):
         the meaning is that garbage collection will never remove contents
         outside of this directory.
 
+    gc_roots_dir : str
+        Directory of symlinks to symlinks to artifacts. Artifacts reached
+        through these will not be collected in garbage collection.
+
     logger : Logger
     """
 
 
-    def __init__(self, temp_build_dir, artifact_root, logger, create_dirs=False):
+    def __init__(self, temp_build_dir, artifact_root, gc_roots_dir, logger, create_dirs=False):
         self.temp_build_dir = os.path.realpath(temp_build_dir)
         self.artifact_root = os.path.realpath(artifact_root)
+        self.gc_roots_dir = gc_roots_dir
         self.logger = logger
         if create_dirs:
             for d in [self.temp_build_dir, self.artifact_root]:
@@ -280,6 +286,7 @@ class BuildStore(object):
 
         return BuildStore(config['build_temp'],
                           config['build_stores'][0]['dir'],
+                          config['gc_roots'],
                           logger,
                           **kw)
 
@@ -347,7 +354,8 @@ class BuildStore(object):
         build_spec = as_build_spec(build_spec)
         return self.resolve(build_spec.artifact_id) is not None
 
-    def ensure_present(self, build_spec, config, extra_env=None, virtuals=None, keep_build='never'):
+    def ensure_present(self, build_spec, config, extra_env=None, virtuals=None, keep_build='never',
+                       debug=False):
         """
         Builds an artifact (if it is not already present).
 
@@ -365,7 +373,7 @@ class BuildStore(object):
 
 
         if artifact_dir is None:
-            builder = ArtifactBuilder(self, build_spec, extra_env, virtuals)
+            builder = ArtifactBuilder(self, build_spec, extra_env, virtuals, debug=debug)
             artifact_dir = builder.build(config, keep_build)
 
         return build_spec.artifact_id, artifact_dir
@@ -416,7 +424,8 @@ class BuildStore(object):
         self.logger.debug('Removing build dir: %s' % build_dir)
         robust_rmtree(build_dir, self.logger)
 
-    def prepare_build_dir(self, source_cache, build_spec, target_dir):
+    def prepare_build_dir(self, config, logger, build_spec, target_dir):
+        source_cache = SourceCache.create_from_config(config, logger)
         self.serialize_build_spec(build_spec, target_dir)
         unpack_sources(self.logger, source_cache, build_spec.doc.get('sources', []), target_dir)
 
@@ -427,15 +436,112 @@ class BuildStore(object):
             f.write('\n')
         write_protect(fname)
 
+    def _encode_symlink(self, symlink):
+        """Format of Hashdist-managed entries in gc_roots directory; an underscore + base64"""
+        return '_' + base64.b64encode(symlink).replace('=', '-')
+
+    def create_symlink_to_artifact(self, artifact_id, symlink_target):
+        """Creates a symlink to an artifact (usually a 'profile')
+
+        The symlink can be placed anywhere the users wants to access it. In addition
+        to the symlink being created, it is listed in gc_roots.
+
+        The symlink will be created atomically, any target
+        file/symlink will be overwritten.
+        """
+        # We use base64-encoding of realpath_to_symlink(symlink_target) as the name of the link within gc_roots
+        symlink_target = realpath_to_symlink(symlink_target)
+        artifact_dir = self.resolve(artifact_id)
+        atomic_symlink(artifact_dir, symlink_target)
+        root_name = self._encode_symlink(symlink_target)
+        atomic_symlink(symlink_target, pjoin(self.gc_roots_dir, root_name))
+
+    def remove_symlink_to_artifact(self, symlink_target):
+        symlink_target = realpath_to_symlink(symlink_target)
+        root_name = self._encode_symlink(symlink_target)
+        silent_unlink(pjoin(self.gc_roots_dir, root_name))
+        silent_unlink(symlink_target)
+
+    def gc(self):
+        """Run garbage collection, removing any unneeded artifacts.
+
+        For now, this doesn't care about virtual dependencies. They're not
+        used at the moment of writing this; it would have to be revisited
+        in the future.
+        """
+        # mark phase
+        marked = set()
+        for gc_root in os.listdir(self.gc_roots_dir):
+            try:
+                f = open(pjoin(self.gc_roots_dir, gc_root, 'artifact.json'))
+            except IOError as e:
+                if e.errno == errno.ENOENT:
+                    self.logger.warning("GC root link does not lead to artifact, removing: %s" % gc_root)
+                    silent_unlink(pjoin(self.gc_roots_dir, gc_root))
+                else:
+                    raise
+            else:
+                with f:
+                    doc = json.load(f)
+                marked.add(doc['id'])
+                marked.update(doc['dependencies'])
+        # Less confusing output if we first output all keep, then the removals
+        for artifact_id in marked:
+            if not artifact_id.startswith('virtual:'):
+                self.logger.info('Keeping %s' % shorten_artifact_id(artifact_id))
+        # sweep phase
+        for artifact_name in os.listdir(self.artifact_root):
+            for short_digest in os.listdir(pjoin(self.artifact_root, artifact_name)):
+                artifact_dir = pjoin(self.artifact_root, artifact_name, short_digest)
+                artifact_id_file = pjoin(artifact_dir, 'id')
+                with open(artifact_id_file) as f:
+                    artifact_id = f.read().strip()
+                if artifact_id not in marked:
+                    # make sure 'id' is removed first, to de-mark the artifact as valid
+                    # before we go ahead and remove it
+                    self.logger.info('Removing %s' % shorten_artifact_id(artifact_id))
+                    os.chmod(artifact_dir, 0o777)
+                    os.unlink(artifact_id_file)
+                    rmtree_write_protected(artifact_dir)
+
 
 class ArtifactBuilder(object):
-    def __init__(self, build_store, build_spec, extra_env, virtuals):
+    def __init__(self, build_store, build_spec, extra_env, virtuals, debug):
         self.build_store = build_store
         self.logger = build_store.logger.get_sub_logger(build_spec.doc['name'])
         self.build_spec = build_spec
         self.artifact_id = build_spec.artifact_id
         self.virtuals = virtuals
         self.extra_env = extra_env
+        self.debug = debug
+
+    def find_complete_dependencies(self):
+        """Return set of complete dependencies of the build spec
+
+        The purpose of this list is for garbage collection (currently we
+        just include everything, we could be more nuanced in the future).
+
+        We simply iterate through all the build imports, load their artifact.json,
+        and return the combined result. This will in turn be stored in artifact.json
+        for this build artifact.
+
+        virtual dependencies are not searched for further child dependencies,
+        but just included directly
+        """
+        build_imports = [entry['id'] for entry in self.build_spec.doc.get('build', {}).get('import', [])]
+        deps = set()
+        for artifact_id in build_imports:
+            deps.add(artifact_id)
+            if not artifact_id.startswith('virtual:'):
+                artifact_dir = self.build_store.resolve(artifact_id)
+                if artifact_dir is None:
+                    msg = 'Required artifact not already present: %s' % artifact_id
+                    self.logger.error(msg)
+                    raise BuildFailedError(msg, None, None)
+                with open(pjoin(artifact_dir, 'artifact.json')) as f:
+                    doc = json.load(f)
+                deps.update(doc.get('dependencies', []))
+        return deps
 
     def build(self, config, keep_build):
         assert isinstance(config, dict), "caller not refactored"
@@ -458,8 +564,6 @@ class ArtifactBuilder(object):
         try:
             env = dict(self.extra_env)
             env['BUILD'] = build_dir
-            source_cache = SourceCache.create_from_config(config, self.logger)
-            self.build_store.prepare_build_dir(source_cache, self.build_spec, build_dir)
 
             should_keep = (keep_build == 'always')
             try:
@@ -498,17 +602,17 @@ class ArtifactBuilder(object):
 
 
     def make_artifact_json(self, artifact_dir):
+        deps = self.find_complete_dependencies()
         fname = pjoin(artifact_dir, 'artifact.json')
         doc = self.build_spec.doc
-        artifact_doc = {'name': doc['name']}
+        artifact_doc = {'name': doc['name'], 'dependencies': sorted(list(deps)),
+                        'id': self.build_spec.artifact_id}
         if 'version' in doc:
             artifact_doc['version'] = doc['version']
         with open(fname, 'w') as f:
             json.dump(artifact_doc, f, **json_formatting_options)
 
     def run_build_commands(self, build_dir, artifact_dir, env, config):
-        artifact_display_name = self.build_spec.digest[:SHORT_ARTIFACT_ID_LEN] + '..'
-
         job_tmp_dir = pjoin(build_dir, 'job')
         os.mkdir(job_tmp_dir)
         job_spec = self.build_spec.doc['build']
@@ -517,15 +621,18 @@ class ArtifactBuilder(object):
         log_filename = pjoin(build_dir, 'build.log')
         with file(log_filename, 'w') as log_file:
             if logger.level > DEBUG:
-                logger.info('Building %s, follow log with:' % artifact_display_name)
+                logger.info('Building %s, follow log with:' % self.build_spec.short_artifact_id)
                 logger.info('  tail -f %s' % log_filename)
             else:
-                logger.info('Building %s' % artifact_display_name)
+                logger.info('Building %s' % self.build_spec.short_artifact_id)
             logger.push_stream(log_file, raw=True)
+
+            self.build_store.prepare_build_dir(config, logger, self.build_spec, build_dir)
+
             try:
                 run_job.run_job(logger, self.build_store, job_spec,
                                 env, artifact_dir, self.virtuals, cwd=build_dir, config=config,
-                                temp_dir=job_tmp_dir)
+                                temp_dir=job_tmp_dir, debug=self.debug)
             except:
                 exc_type, exc_value, exc_tb = sys.exc_info()
                 # Python 2 'wrapped exception': We raise an exception with the same traceback
@@ -548,5 +655,5 @@ def unpack_sources(logger, source_cache, doc, target_dir):
     for source_item in doc:
         key = source_item['key']
         target = pjoin(target_dir, source_item.get('target', '.'))
-        logger.info('Unpacking sources %s' % key)
+        logger.debug('Unpacking sources %s' % key)
         source_cache.unpack(key, target)

@@ -70,10 +70,58 @@ becomes very powerful, as you can use git to navigate the history of
 or branches of your software profile repository, and then instantly switch to
 pre-built versions. [TODO: ``hit commit``, ``hit checkout`` commands.]
 
-Finally, if you want to have, e.g., release and debug profiles,
+If you want to have, e.g., release and debug profiles,
 you can create ``release.yaml`` and ``debug.yaml``, and use the
 ``-p`` flag to ``hit`` to select another profile than ``default.yaml``
 to build.
+
+Garbage collection
+------------------
+
+Hashdist does not have the concepts of "upgrade" or "uninstall", but
+simply keeps everything it has downloaded or built around forever. To
+free up disk space, you may invoke the garbage collector to remove
+unused builds.
+
+Currently the garbage collection strategy is very simple: When you
+invoke garbage collection manually, Hashdist removes anything that
+isn't currently in use. To figure out what that means, you may invoke
+``hit gc --list``; continueing on the example from above, we
+would find::
+
+    $ hit gc --list
+    List of GC roots:
+    /path/to/myprofile/default
+
+This indicates that if you run a plain ``hit gc``, software accessible
+through ``/path/to/myprofile/default`` will be kept, but all other builds
+will be removed from the Hashdist store. To try it, you may comment out
+the ``zlib`` line from ``default.yaml``, then run ``hit build``, and
+then ``hit gc`` -- the zlib software is removed at the last step.
+
+If you want to manipulate profile symlinks, you should use the ``hit
+cp``, ``hit mv``, and ``hit rm`` commands, so that Hashdist can
+correctly track the profile links. This is useful to keep multiple
+profiles around. E.g., if you first execute::
+
+    hit cp default old_profile
+
+and then modify ``default.yaml``, and then run ``hit build``,
+then after the build ``default`` and ``old_profile`` will point
+to different revisions of the software stacks, both usable at the
+same time. Garbage collection will keep software for either around.
+
+The database of GC roots is kept (by default) in
+``~/.hashdist/gcroots``.  You are free to put your own symlinks there
+(you may give them an arbitrary name, as long as they do not contain
+an underscore in front), or manually remove symlinks.
+
+.. warning::
+
+   As a corollary to the description above, if you do a plain
+   ``mv`` of a symlink to a profile, and then execute ``hit gc``,
+   then the software profile may be deleted by Hashdist.
+
 
 Debug features
 --------------

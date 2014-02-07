@@ -163,3 +163,13 @@ def touch(filename, readonly=False):
     if readonly:
         write_protect(filename)
 
+def realpath_to_symlink(filename):
+    """Acts like ``os.path.realpath`` on the parent directory of the given file
+
+    The reason to use this is that realpath would follow a symlink. This
+    function just follows symlinks in parent directories, but not the link
+    we are pointing to.
+    """
+    parent_dir, basename = os.path.split(filename)
+    result = pjoin(os.path.realpath(parent_dir), basename)
+    return result

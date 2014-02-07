@@ -91,6 +91,6 @@ def test_basic_build(tmpdir, sc, bldr, config):
     
     p = profile.load_profile(profile.TemporarySourceCheckouts(None), pjoin(d, "profile.yaml"))
     pb = builder.ProfileBuilder(logger, sc, bldr, p)
-    pb.build('the_dependency', config, 1, "never")
-    pb.build('copy_readme', config, 1, "never")
+    pb.build('the_dependency', config, 1, "never", False)
+    pb.build('copy_readme', config, 1, "never", False)
 

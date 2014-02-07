@@ -144,11 +144,11 @@ class ProfileBuilder(object):
                 }
             })
 
-    def build(self, pkgname, config, worker_count, keep_build):
+    def build(self, pkgname, config, worker_count, keep_build='never', debug=False):
         self._package_specs[pkgname].fetch_sources(self.source_cache)
         extra_env = {'HASHDIST_CPU_COUNT': str(worker_count)}
-        self.build_store.ensure_present(self._build_specs[pkgname], config,
-                extra_env=extra_env, keep_build=keep_build)
+        self.build_store.ensure_present(self._build_specs[pkgname], config, extra_env=extra_env,
+                                        keep_build=keep_build, debug=debug)
         self._built.add(pkgname)
 
     def build_profile(self, config):

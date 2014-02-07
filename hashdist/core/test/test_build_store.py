@@ -72,15 +72,15 @@ def fixture():
             tempdir = tempfile.mkdtemp()
             try:
                 os.makedirs(pjoin(tempdir, 'src'))
-                os.makedirs(pjoin(tempdir, 'opt'))
+                os.makedirs(pjoin(tempdir, 'tmp'))
                 os.makedirs(pjoin(tempdir, 'bld'))
-                os.makedirs(pjoin(tempdir, 'db'))
+                os.makedirs(pjoin(tempdir, 'gcroots'))
 
                 config = {
                     'source_caches': [{'dir': pjoin(tempdir, 'src')}],
-                    'build_stores': [{'dir': pjoin(tempdir, 'ba')}],
-                    'build_temp': pjoin(tempdir, 'bld'),
-                    'db': pjoin(tempdir, 'db'),
+                    'build_stores': [{'dir': pjoin(tempdir, 'bld')}],
+                    'build_temp': pjoin(tempdir, 'tmp'),
+                    'gc_roots': pjoin(tempdir, 'gcroots'),
                     }
 
                 sc = source_cache.SourceCache.create_from_config(config, logger)
@@ -142,16 +142,20 @@ def test_basic(tempdir, sc, bldr, config):
 
 @fixture()
 def test_artifact_json(tempdir, sc, bldr, config):
-    artifact = {
+    spec = {
         "name": "fooname",
+        "build":{"commands": []}
         }
-    spec = dict(artifact)
-    spec.update({"build":{"commands": []}})
     name, path = bldr.ensure_present(spec, config)
     with open(pjoin(path, 'artifact.json')) as f:
         obj = json.load(f)
-    assert obj == artifact
 
+    expected = {
+        "name": "fooname",
+        "id": "fooname/cwfxs3bhjvlxoczwlxlexklpeoewybcn",
+        "dependencies": []
+        }
+    assert expected == obj
 
 @fixture()
 def test_failing_build_and_multiple_commands(tempdir, sc, bldr, config):
