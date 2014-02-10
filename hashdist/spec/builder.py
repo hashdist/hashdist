@@ -155,14 +155,14 @@ class ProfileBuilder(object):
         profile_build_spec = self.get_profile_build_spec()
         return self.build_store.ensure_present(profile_build_spec, config)
 
-    def build_profile_out(self, target, config, link_type):
+    def build_profile_out(self, target, config, link_type, debug=False):
         """
         Build a profile intended for use/modification outside of the BuildStore
         """
         profile_build_spec = self.get_profile_build_spec(link_type, write_protect=False)
         extra_env = {}
         virtuals = {}
-        builder = ArtifactBuilder(self.build_store, profile_build_spec, extra_env, virtuals)
+        builder = ArtifactBuilder(self.build_store, profile_build_spec, extra_env, virtuals, debug)
         builder.build_out(target, config)
 
     def _load_package_build_context(self, pkgname):

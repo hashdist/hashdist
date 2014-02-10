@@ -589,9 +589,6 @@ class ArtifactBuilder(object):
 
         env = dict(self.extra_env)
         env['BUILD'] = build_dir
-        source_cache = SourceCache.create_from_config(config, self.logger)
-        self.build_store.prepare_build_dir(source_cache, self.build_spec, build_dir)
-
         self.run_build_commands(build_dir, artifact_dir, env, config)
         self.make_artifact_json(artifact_dir)
 

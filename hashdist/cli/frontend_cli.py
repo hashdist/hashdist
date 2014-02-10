@@ -11,6 +11,7 @@ def add_build_args(ap):
     ap.add_argument('-j', metavar='CPUCOUNT', default=1, type=int, help='number of CPU cores to utilize')
     ap.add_argument('-k', metavar='KEEP_BUILD', default="error", type=str,
             help='keep build directory: always, never, error (default: error)')
+    ap.add_argument('--debug', action='store_true', help='enter interactive debug mode')
 
 def add_profile_args(ap):
     ap.add_argument('-p', '--profile', default='default.yaml', help='yaml file describing profile to build (default: default.yaml)')
@@ -78,7 +79,6 @@ class Build(ProfileFrontendBase):
         add_profile_args(ap)
         add_build_args(ap)
         ap.add_argument('package', nargs='?', help='package to build (default: build all)')
-        ap.add_argument('--debug', action='store_true', help='enter interactive debug mode')
 
     def profile_builder_action(self):
         from ..core import atomic_symlink
@@ -138,7 +138,7 @@ class Develop(ProfileFrontendBase):
 
         self.ensure_target(target)
         self.build_profile_deps()
-        self.builder.build_profile_out(target, self.ctx.get_config(), self.args.link)
+        self.builder.build_profile_out(target, self.ctx.get_config(), self.args.link, self.args.debug)
         sys.stdout.write('Development profile build %s successful\n' % target)
 
 
