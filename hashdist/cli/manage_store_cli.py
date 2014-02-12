@@ -28,7 +28,7 @@ class InitHome(object):
                 ctx.logger.error('%s already exists, aborting\n' % x)
                 return 2
 
-        for x in ['ba', 'bld', 'src', 'db', 'cache']:
+        for x in ['ba', 'bld', 'src', 'db', 'cache', 'gcroots']:
             os.makedirs(pjoin(store_dir, x))
         sys.stdout.write('Directory %s created.\n' % store_dir)
         shutil.copyfile(get_config_example_filename(), DEFAULT_CONFIG_FILENAME)
