@@ -22,8 +22,7 @@ class TemplatedStream(StringIO):
         """
         Create a TemplatedStream by populating variables from the
         parameters mapping.  Silently passes matching strings that
-        do not have a corresponding key defined in parameters.
-
+        do not have a corresponding key defined in parameters as empty strings.
         """
 
         StringIO.__init__(self)
@@ -35,7 +34,7 @@ class TemplatedStream(StringIO):
                 # be re-run through the YAML parser anyway.
                 return str(parameters[match.group(1)])
             else:
-                return match.group(0)
+                return ''
         
         for line in stream:
             self.write(self.dbrace_re.sub(dbrace_expand, line))
