@@ -14,7 +14,7 @@ def add_build_args(ap):
     ap.add_argument('--debug', action='store_true', help='enter interactive debug mode')
 
 def add_profile_args(ap):
-    ap.add_argument('-p', '--profile', default='default.yaml', help='yaml file describing profile to build (default: default.yaml)')
+    ap.add_argument('profile', nargs='?', default='default.yaml', help='yaml file describing profile to build (default: default.yaml)')
 
 def add_develop_args(ap):
     ap.add_argument('-l', '--link', default='absolute', help='Link action: one of [absolute, relative, copy] (default: absolute)')
