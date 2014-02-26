@@ -86,7 +86,7 @@ class Build(ProfileFrontendBase):
         if not self.args.profile.endswith('.yaml'):
             self.ctx.error('profile filename must end with yaml')
 
-        profile_symlink = self.args.profile[:-len('.yaml')]
+        profile_symlink = os.path.basename(self.args.profile)[:-len('.yaml')]
         if self.args.package is not None:
             self.builder.build(self.args.package, self.ctx.get_config(), self.args.j,
                                self.args.k, self.args.debug)
