@@ -65,6 +65,8 @@ class PackageBuildContext(object):
             return self.sub(doc)
         elif isinstance(doc, (int, bool, float, types.NoneType)):
             return doc
+        elif (not doc):
+            return None
         else:
             raise TypeError("unexpected item in documents of type %r: %s" % (type(doc), doc))
 
