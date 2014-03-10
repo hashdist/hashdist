@@ -220,57 +220,69 @@ def make_relative_multiline_shebang(build_store, filename, scriptlines):
 # relative to the script location.
 
 _launcher_script = dedent("""\
-    r="%(relpath)s" # relative path to bin-directory if profile lookup fails
     i="%(interpreter)s" # interpreter base-name
     %(arg_assign)s # may be 'arg=...' if there is an argument
-    o=`pwd`
+
+    # If this script is called during "hit build" (i.e. HDIST_IN_BUILD=yes),
+    # then we simply call the $i (interpreter name) on this script (no lookup
+    # happens). This assumes that $i is in the path. Typically you put "python"
+    # into the $PATH while building Python packages and then assign $i=python.
 
     if [ "$HDIST_IN_BUILD" = "yes" ] ; then exec "$i" "$0"%(arg_expr)s"$@"; fi
 
-    # Loop to follow chain of links by cd-ing to their
-    # directories and calling readlink. $p is current link.
-    # After exiting loop, one is in the directory of the real script.
+    # If this script is called by the user (i.e. HDIST_IN_BUILD!=yes), then the
+    # script must be in a profile. As such, all we need to do is to loop to
+    # follow the chain of links by cd-ing to their directories and calling
+    # readlink, until we cd into the directory with artifact.json. From there
+    # we call bin/$i (i.e. typically bin/python) on this script. If
+    # artifact.json cannot be found, we exit with an error.
+
+    o=`pwd`
+    # $p is the current link:
     p="$0"
     while true; do
-	# Must test for whether $p is a link, and we should continue looping
-	# or not, before we change directory.
-	test -L "$p"
-	il=$? # is_link
-	cd `dirname "$p"`
-	pdir=`pwd -P`
-	d="$pdir"
+        # This loop tests whether $p is a link and if so, it continues
+        # following the symlinks (this happens e.g. when the user symlinks
+        # "ipython" from some profile into their ~/bin directory which is on
+        # the $PATH). For each step, it tries to determine whether it is in the
+        # profile and if so, executes the bin/$i from there, and if not,
+        # continue looping.
+        # If $p is not a symlink (and not in a profile), then it fails with an
+        # error. This outer loop must always terminate, because eventually $p
+        # will not be a symlink, and it will either be in a profile (success)
+        # or not (failure).
+        test -L "$p"
+        il=$? # is_link
+        cd `dirname "$p"`
+        pdir=`pwd -P`
+        d="$pdir"
 
-	# Loop to cd upwards towards root searching for "artifact.json" file.
-	while [ "$d" != / ]; do
+        # In this inner loop we cd upwards towards root searching for
+        # "artifact.json" file. If we find it, we execute bin/$i from there. If
+        # we don't find it, we exit the loop without an error.
+        while [ "$d" != / ]; do
 
-	  if [ -e "$d/artifact.json" ] ; then
-	     if [ ! -e "$d/bin/$i" ] ; then
-		echo "Unable to locate needed $i in $p/bin"
-		echo "HashDist profile $d has likely been corrupted, please try rebuilding."
-		exit 127
-	     fi
-	     cd "$o" && exec "$d/bin/$i" "$0"%(arg_expr)s"$@"
-	  fi
-	  cd ..
-	  d=`pwd -P`
-	done
+            if [ -e "$d/artifact.json" ]; then
+                if [ ! -e "$d/bin/$i" ]; then
+                    echo "Unable to locate needed $i in $p/bin"
+                    echo "HashDist profile $d has likely been corrupted, please try rebuilding."
+                    exit 127
+                fi
+                cd "$o" && exec "$d/bin/$i" "$0"%(arg_expr)s"$@"
+            fi
+            cd ..
+            d=`pwd -P`
+        done
 
-        # No is-profile found; 
         cd "$pdir"
-        if [ "$il" -ne 0 ];then break;fi
+        if [ "$il" -ne 0 ]; then
+            # $p is not a symlink and not in a profile (this simply means that
+            # no profile was found), so we terminate the loop with an error.
+            echo "No profile found."
+            exit 127
+        fi
         p=`readlink $p`
     done
-    # No profile found, execute relative
-    cd "$r"
-    p=`pwd -P`
-
-    cd "$o"
-    if [ ! -e "$p/$i" ] ; then
-       echo "Unable to locate needed $i in $p\n"
-       exit 127
-    fi
-    exec "$p/$i" "$0"%(arg_expr)s"$@"
-    exit 127
 """)
 
 def _get_launcher(script_filename, shebang):

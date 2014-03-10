@@ -831,8 +831,9 @@ class ZipHandler(object):
             # during extraction
             prefix_len = len(common_path_prefix([info.filename for info in infolist]))
             for info in infolist:
-                info.filename = info.filename[prefix_len:]
-                f.extract(info, target_dir)
+                if len(info.filename) > prefix_len:
+                    info.filename = info.filename[prefix_len:]
+                    f.extract(info, target_dir)
 
 archive_ext_to_type = {}
 archive_handler_classes = {}

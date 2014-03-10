@@ -13,6 +13,9 @@ import shutil
 from os.path import join as pjoin
 import re
 import glob
+from urlparse import urlsplit
+from urllib import urlretrieve
+import posixpath
 
 from ..formats.marked_yaml import load_yaml_from_file, is_null
 from .utils import substitute_profile_parameters
@@ -215,10 +218,18 @@ def load_and_inherit_profile(checkouts, include_doc, cwd=None):
     if cwd is None:
         cwd = os.getcwd()
 
-    def resolve_path(cwd, p):
-        if not os.path.isabs(p):
+    def resolve_profile(cwd, p):
+        split_url = urlsplit(p)
+        if split_url.scheme != '':
+            base_name = posixpath.basename(split_url.path)
+            urlretrieve(p, base_name)
+            p = pjoin(cwd, base_name)
+        elif not os.path.isabs(p):
             p = pjoin(cwd, p)
         return p
+
+    def resolve_path(profile_file):
+        return os.path.dirname(profile_file)
 
     if isinstance(include_doc, str):
         include_doc = {'file': include_doc}
@@ -232,8 +243,8 @@ def load_and_inherit_profile(checkouts, include_doc, cwd=None):
         checkouts.checkout(include_doc['name'], include_doc['key'], include_doc['urls'])
         cwd = '<%s>' % include_doc['name']
 
-    profile_file = resolve_path(cwd, include_doc['file'])
-    new_cwd = resolve_path(cwd, os.path.dirname(include_doc['file']))
+    profile_file = resolve_profile(cwd, include_doc['file'])
+    new_cwd = resolve_path(profile_file)
 
     doc = load_yaml_from_file(checkouts.resolve(profile_file))
     if doc is None:
@@ -248,7 +259,7 @@ def load_and_inherit_profile(checkouts, include_doc, cwd=None):
 
     for section in ['package_dirs', 'hook_import_dirs']:
         lst = doc.get(section, [])
-        doc[section] = [resolve_path(new_cwd, p) for p in lst]
+        doc[section] = [resolve_profile(new_cwd, p) for p in lst]
 
     # Merge package_dirs, hook_import_dirs with those of parents
     for section in ['package_dirs', 'hook_import_dirs']:

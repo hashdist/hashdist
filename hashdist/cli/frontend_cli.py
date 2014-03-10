@@ -9,11 +9,12 @@ import errno
 
 def add_build_args(ap):
     ap.add_argument('-j', metavar='CPUCOUNT', default=1, type=int, help='number of CPU cores to utilize')
-    ap.add_argument('-k', metavar='KEEP_BUILD', default="never", type=str,
-            help='keep build directory: always, never, error (default: never)')
+    ap.add_argument('-k', metavar='KEEP_BUILD', default="error", type=str,
+            help='keep build directory: always, never, error (default: error)')
+    ap.add_argument('--debug', action='store_true', help='enter interactive debug mode')
 
 def add_profile_args(ap):
-    ap.add_argument('-p', '--profile', default='default.yaml', help='yaml file describing profile to build (default: default.yaml)')
+    ap.add_argument('profile', nargs='?', default='default.yaml', help='yaml file describing profile to build (default: default.yaml)')
 
 def add_develop_args(ap):
     ap.add_argument('-l', '--link', default='absolute', help='Link action: one of [absolute, relative, copy] (default: absolute)')
@@ -86,17 +87,26 @@ class Build(ProfileFrontendBase):
         if not self.args.profile.endswith('.yaml'):
             self.ctx.error('profile filename must end with yaml')
 
-        profile_symlink = self.args.profile[:-len('.yaml')]
+        profile_symlink = os.path.basename(self.args.profile)[:-len('.yaml')]
         if self.args.package is not None:
-            self.builder.build(self.args.package, self.ctx.get_config(), self.args.j, self.args.k)
+            self.builder.build(self.args.package, self.ctx.get_config(), self.args.j,
+                               self.args.k, self.args.debug)
         else:
-            self.build_profile_deps()
+            ready = self.builder.get_ready_list()
+            was_done = len(ready) == 0
+            while len(ready) != 0:
+                self.builder.build(ready[0], self.ctx.get_config(), self.args.j,
+                                   self.args.k, self.args.debug)
+                ready = self.builder.get_ready_list()
             artifact_id, artifact_dir = self.builder.build_profile(self.ctx.get_config())
-            atomic_symlink(artifact_dir, profile_symlink)
+            self.build_store.create_symlink_to_artifact(artifact_id, profile_symlink)
             gc_roots_dir = self.ctx.get_config()['gc_roots']
-            gc_root_target = os.getcwd() + '/' + profile_symlink
-            atomic_symlink(gc_root_target,  gc_roots_dir + '/' + hashlib.md5(gc_root_target).hexdigest())
-            sys.stdout.write('Profile build successful, link at: %s\n' % profile_symlink)
+            gc_root_target = os.path.join(os.getcwd(), profile_symlink)
+            atomic_symlink(gc_root_target,  os.path.join(gc_roots_dir, hashlib.md5(gc_root_target).hexdigest()))
+            if was_done:
+                sys.stdout.write('Up to date, link at: %s\n' % profile_symlink)
+            else:
+                sys.stdout.write('Profile build successful, link at: %s\n' % profile_symlink)
 
 
 @register_subcommand
@@ -129,7 +139,7 @@ class Develop(ProfileFrontendBase):
 
         self.ensure_target(target)
         self.build_profile_deps()
-        self.builder.build_profile_out(target, self.ctx.get_config(), self.args.link)
+        self.builder.build_profile_out(target, self.ctx.get_config(), self.args.link, self.args.debug)
         sys.stdout.write('Development profile build %s successful\n' % target)
 
 
@@ -196,35 +206,6 @@ class BuildDir(ProfileFrontendBase):
         build_spec = self.builder.get_build_spec(self.args.package)
         self.build_store.prepare_build_dir(self.source_cache, build_spec, self.args.target)
 
-@register_subcommand
-class PrintLibs(object):
-    """
-    Print all dynamic libraries from the given profile.
-
-    Example::
-
-        $ hit print-libs default                # print all .so libraries
-        $ hit print-libs default --suffix so    # print all .so libraries
-        $ hit print-libs default --suffix dylib # print all .dylib libraries
-        $ hit print-libs default --suffix dll   # print all .dll libraries
-
-    """
-
-    command = 'print-libs'
-
-    @staticmethod
-    def setup(ap):
-        ap.add_argument('profile', help='profile to check')
-        ap.add_argument('--suffix', default='so',
-                help="library suffix (default 'so')")
-
-    @staticmethod
-    def run(ctx, args):
-        libs = [os.path.join(dirpath, f)
-                for dirpath, dirnames, files in os.walk(args.profile)
-                for f in fnmatch.filter(files, "*.%s*" % args.suffix)]
-        for lib in libs:
-            sys.stdout.write(lib + '\n')
 
 @register_subcommand
 class GC(object):
@@ -305,6 +286,7 @@ class CP(MvCpBase):
     """
     _action = 'copy'
 
+
 @register_subcommand
 class MV(MvCpBase):
     """
@@ -318,6 +300,7 @@ class MV(MvCpBase):
     @classmethod
     def _post_action(cls, ctx, args, build_store):
         build_store.remove_symlink_to_artifact(args.source)
+
 
 @register_subcommand
 class RM(object):
@@ -342,3 +325,33 @@ class RM(object):
             raise
         else:
             build_store.remove_symlink_to_artifact(args.what)
+
+            
+class PrintLibs(object):
+    """
+    Print all dynamic libraries from the given profile.
+
+    Example::
+
+        $ hit print-libs default                # print all .so libraries
+        $ hit print-libs default --suffix so    # print all .so libraries
+        $ hit print-libs default --suffix dylib # print all .dylib libraries
+        $ hit print-libs default --suffix dll   # print all .dll libraries
+
+    """
+
+    command = 'print-libs'
+
+    @staticmethod
+    def setup(ap):
+        ap.add_argument('profile', help='profile to check')
+        ap.add_argument('--suffix', default='so',
+                help="library suffix (default 'so')")
+
+    @staticmethod
+    def run(ctx, args):
+        libs = [os.path.join(dirpath, f)
+                for dirpath, dirnames, files in os.walk(args.profile)
+                for f in fnmatch.filter(files, "*.%s*" % args.suffix)]
+        for lib in libs:
+            sys.stdout.write(lib + '\n')
