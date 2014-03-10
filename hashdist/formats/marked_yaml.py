@@ -94,6 +94,9 @@ class unicode_node(unicode_node_base):
         return r
 
 class null_node(create_node_class(object, name='null_node')):
+    def __nonzero__(self):
+        return False
+
     def __repr__(self):
         return "null"
 
