@@ -102,10 +102,6 @@ class Build(ProfileFrontendBase):
             if was_done:
                 sys.stdout.write('Up to date, link at: %s\n' % profile_symlink)
             else:
-                while len(ready) != 0:
-                    self.builder.build(ready[0], self.ctx.get_config(),
-                            self.args.j, self.args.k)
-                    ready = self.builder.get_ready_list()
                 sys.stdout.write('Profile build successful, link at: %s\n' % profile_symlink)
 
 @register_subcommand

@@ -149,7 +149,7 @@ from .common import (InvalidBuildSpecError, BuildFailedError,
                      json_formatting_options, SHORT_ARTIFACT_ID_LEN,
                      working_directory)
 from .fileutils import silent_unlink, robust_rmtree, rmtree_up_to, silent_makedirs, gzip_compress, write_protect
-from .fileutils import rmtree_write_protected, atomic_symlink, realpath_to_symlink
+from .fileutils import unprotect, rmtree_write_protected, atomic_symlink, realpath_to_symlink
 from . import run_job
 
 
@@ -278,7 +278,7 @@ class BuildStore(object):
 
     @staticmethod
     def create_from_config(config, logger, **kw):
-        """Creates a SourceCache from the settings in the configuration
+        """Creates a BuildStore from the settings in the configuration
         """
         if len(config['build_stores']) != 1:
             logger.error("Only a single build store currently supported")
@@ -323,13 +323,11 @@ class BuildStore(object):
 
     def resolve(self, artifact_id):
         """Given an artifact_id, resolve the short path for it, or return
-        None if the artifact isn't built.
+        None if the artifact isn't built or cached.
         """
         name, digest = artifact_id.split('/')
         path = self._get_artifact_path(name, digest)
-        if not os.path.exists(path):
-            return None
-        else:
+        if os.path.exists(path):
             try:
                 f = open(pjoin(path, 'id'))
             except IOError:
@@ -349,13 +347,18 @@ class BuildStore(object):
                     self.logger.error('Please get in touch with the Hashdist developer mailing list.')
                     raise IllegalBuildStoreError('Hashes collide in first 12 chars: %s and %s' % (present_id, artifact_id))
             return path
+        if hasattr(self, 'source_cache'):
+            if self.source_cache.resolve(artifact_id, path):
+                return path
+        return None
+
 
     def is_present(self, build_spec):
         build_spec = as_build_spec(build_spec)
         return self.resolve(build_spec.artifact_id) is not None
 
     def ensure_present(self, build_spec, config, extra_env=None, virtuals=None, keep_build='never',
-                       debug=False):
+                       debug=False, cache=True):
         """
         Builds an artifact (if it is not already present).
 
@@ -369,12 +372,13 @@ class BuildStore(object):
         if keep_build not in ('never', 'error', 'always'):
             raise ValueError("invalid keep_build value")
         build_spec = as_build_spec(build_spec)
+
+        if cache:
+            self.source_cache = SourceCache.create_from_config(config, self.logger)
         artifact_dir = self.resolve(build_spec.artifact_id)
-
-
         if artifact_dir is None:
             builder = ArtifactBuilder(self, build_spec, extra_env, virtuals, debug=debug)
-            artifact_dir = builder.build(config, keep_build)
+            artifact_dir = builder.build(config, keep_build, cache)
 
         return build_spec.artifact_id, artifact_dir
 
@@ -439,6 +443,7 @@ class BuildStore(object):
     def _encode_symlink(self, symlink):
         """Format of Hashdist-managed entries in gc_roots directory; an underscore + base64"""
         return '_' + base64.b64encode(symlink).replace('=', '-')
+
 
     def create_symlink_to_artifact(self, artifact_id, symlink_target):
         """Creates a symlink to an artifact (usually a 'profile')
@@ -543,7 +548,7 @@ class ArtifactBuilder(object):
                 deps.update(doc.get('dependencies', []))
         return deps
 
-    def build(self, config, keep_build):
+    def build(self, config, keep_build, cache=True):
         assert isinstance(config, dict), "caller not refactored"
         artifact_dir = self.build_store.make_artifact_dir(self.build_spec)
         try:
@@ -552,7 +557,10 @@ class ArtifactBuilder(object):
         except:
             shutil.rmtree(artifact_dir)
             raise
+        if cache:
+            self.cache_build(config, artifact_dir)
         return artifact_dir
+                
 
     def build_to(self, artifact_dir, config, keep_build):
         if keep_build not in ('never', 'always', 'error'):
@@ -597,6 +605,16 @@ class ArtifactBuilder(object):
             f.write('%s\n' % self.build_spec.artifact_id)
         os.rename(pjoin(artifact_dir, '_id'), pjoin(artifact_dir, 'id'))
 
+    def cache_build(self, config, artifact_dir):
+        """cache_build(self, config, artifact_dir)
+
+        Cache the results of build in artifact_dir into the source cache.
+        """
+
+        source_cache = SourceCache.create_from_config(config, self.logger)
+        key = source_cache.put_build(artifact_dir, self.artifact_id)
+        self.logger.info('Cached build directory {}'.format(artifact_dir))
+        self.logger.info('Key: {}'.format(key))
 
     def make_artifact_json(self, artifact_dir):
         deps = self.find_complete_dependencies()
@@ -642,7 +660,46 @@ class ArtifactBuilder(object):
                 logger.pop_stream()
         log_gz_filename = pjoin(artifact_dir, 'build.log.gz')
         gzip_compress(pjoin(build_dir, 'build.log'), log_gz_filename)
+        self.relocate_binaries(artifact_dir)
         write_protect(log_gz_filename)
+
+    def _fix_install_name_darwin(self, filepath):
+        try:
+            import subprocess
+            import posixpath
+            file_ext = posixpath.splitext(filepath)[-1]
+            if file_ext not in ['.so', '.dylib']:
+                return
+            output = subprocess.check_output(["otool", "-D", filepath])
+            install_name = output.splitlines()[1]
+            # Don't mess with any other magics for now
+            if install_name.startswith('@'):
+                return
+            libname = os.path.split(install_name)[1]
+            rpathname = "@rpath/" + libname
+            unprotect(filepath)
+            subprocess.check_call(["install_name_tool", "-id", rpathname, filepath])    
+            self.logger.info('In: {} [changed install_name]'.format(filepath))
+            self.logger.info('{}->{}'.format(install_name, rpathname))
+            loader_path = "@loader_path/../lib"
+            subprocess.check_call(["install_name_tool", "-add_rpath", loader_path, filepath])
+            self.logger.info('In: {} [added rpath]'.format(filepath))
+            self.logger.info('{}'.format(loader_path))
+        except:
+            pass
+
+    def relocate_binaries(self, artifact_dir):
+        """
+        Removes hard-coded paths in binaries.
+
+        Currently only implemented for Darwin.
+        """
+        if sys.platform != 'darwin':
+            return
+        self.logger.info('Relocating binaries in {}'.format(artifact_dir))
+        for root, dirs, files in os.walk(artifact_dir):
+            for file in files:
+                self._fix_install_name_darwin(os.path.join(root, file))
 
 
 def unpack_sources(logger, source_cache, doc, target_dir):

@@ -153,7 +153,7 @@ class ProfileBuilder(object):
 
     def build_profile(self, config):
         profile_build_spec = self.get_profile_build_spec()
-        return self.build_store.ensure_present(profile_build_spec, config)
+        return self.build_store.ensure_present(profile_build_spec, config, cache=False)
 
     def build_profile_out(self, target, config, link_type, debug=False):
         """

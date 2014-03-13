@@ -137,6 +137,12 @@ def write_protect(filename):
         mode = os.stat(filename).st_mode
         os.chmod(filename, mode & ~0o222)
 
+def unprotect(filename):
+    if not os.path.islink(filename):
+        mode = os.stat(filename).st_mode
+        os.chmod(filename, mode | 0o200)
+
+
 def rmtree_write_protected(rootpath):
     """
     Like shutil.rmtree, but removes files/directories that are write-protected.

@@ -96,8 +96,7 @@ def make_launcher(src, dst, launcher_program):
     argv[0] target (read: Python). The action depends on the source type:
 
     program (i.e., executable not starting with #!):
-        Set up as symlink to "launcher", which is copied into same directory;
-        and "$dst.link" is set up to point relatively to "$src".
+        Copy the binary directly into the target path
 
     symlink:
         Copy it verbatim. Thus, e.g., ``python -> python2.7'' will point to the
@@ -119,14 +118,7 @@ def make_launcher(src, dst, launcher_program):
     if type in 'symlink':
         os.symlink(os.readlink(src), dst)
     elif type == 'program':
-        if launcher_program is None or not os.path.exists(launcher_program):
-            raise TypeError('Did not provide path to "launcher" program')
-        dst_launcher = pjoin(dstdir, 'launcher')
-        if not os.path.exists(dst_launcher):
-            shutil.copy(launcher_program, dst_launcher)
-        with open(dst + '.link', 'w') as f:
-            f.write(os.path.relpath(src, dstdir))
-        os.symlink('launcher', dst)
+        shutil.copy(src, dst)
     else:
         os.symlink(os.path.relpath(src, dstdir), dst)
 

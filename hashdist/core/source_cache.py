@@ -109,6 +109,7 @@ TAG_RE_S = r'^[a-zA-Z-_+=]+$'
 TAG_RE = re.compile(TAG_RE_S)
 
 PACKS_DIRNAME = 'packs'
+BUILDS_DIRNAME = 'builds'
 GIT_DIRNAME = 'git'
 
 class RemoteFetchError(Exception):
@@ -326,6 +327,19 @@ class SourceCache(object):
         handler = self._get_handler(type)
         handler.fetch(url, type, hash, repo_name)
 
+    def resolve(self, artifact_id, artifact_dir):
+        return ArchiveSourceCache(self).resolve(artifact_id, artifact_dir)
+
+    def put_build(self, archive_dir, artifact_id):
+        """
+        Packs the contents of `archive_dir` and stores them in the
+        `SourceCache`, then returns the key to the archive and the
+        resolved file
+        """
+
+        return ArchiveSourceCache(self).put_build(archive_dir, artifact_id)
+        
+
     def unpack(self, key, target_path):
         """
         Unpacks the sources identified by `key` to `target_path`
@@ -535,8 +549,18 @@ class ArchiveSourceCache(object):
         self.source_cache = source_cache
         self.files_path = source_cache.cache_path
         self.packs_path = source_cache._ensure_subdir(PACKS_DIRNAME)
+        self.builds_path = source_cache._ensure_subdir(BUILDS_DIRNAME)
         self.mirrors = source_cache.mirrors
         self.logger = self.source_cache.logger
+
+    def _ensure_link_path(self, artifact_id):
+        link_filename = self.get_link_filename(artifact_id)
+        build_subdir = os.path.split(link_filename)[0]
+        mkdir_if_not_exists(build_subdir)
+        return link_filename
+
+    def get_link_filename(self, artifact_id):
+        return pjoin(self.builds_path, artifact_id)
 
     def get_pack_filename(self, type, hash):
         d = self.files_path if type == 'files' else self.packs_path
@@ -561,7 +585,8 @@ class ArchiveSourceCache(object):
                 raise SourceNotFoundError(str(e))
         else:
             # Make request.
-            sys.stderr.write('Downloading %s...\n' % url)
+            self.logger.info("Downloading '%s'" % url)
+            # sys.stderr.write('Downloading %s...\n' % url)
             try:
                 stream = urllib2.urlopen(url)
             except urllib2.HTTPError, e:
@@ -575,7 +600,6 @@ class ArchiveSourceCache(object):
 
         # Download file to a temporary file within self.packs_path, while hashing
         # it.
-        self.logger.info("Downloading '%s'" % url)
         temp_fd, temp_path = tempfile.mkstemp(prefix='downloading-', dir=self.packs_path)
         try:
             f = os.fdopen(temp_fd, 'wb')
@@ -612,6 +636,30 @@ class ArchiveSourceCache(object):
 
         return temp_path, format_digest(tee)
 
+    def _put_build(self, archive_dir):
+        """Packs archive directory to a temporary location and caches it
+
+        Returns
+        -------
+
+        key - Lookup key for retrieving this directory in the future
+        link - Hashed build spec
+        """
+
+        type = TarBz2Handler.type
+
+        # Create temporary archive within self.packs_path
+        self.logger.debug("Archiving '%s'" % archive_dir)
+        temp_fd, temp_path = tempfile.mkstemp(prefix='archiving-', dir=self.packs_path)
+        os.close(temp_fd)
+        try:
+            create_archive_handler(type).pack(temp_path, archive_dir)
+            key = self.fetch_archive('file:' + temp_path, type, None)
+        finally:
+            os.unlink(temp_path)
+
+        return key
+
     def _ensure_type(self, url, type):
         if type is not None:
             if type not in archive_types:
@@ -626,9 +674,50 @@ class ArchiveSourceCache(object):
     def contains(self, type, hash):
         return os.path.exists(self.get_pack_filename(type, hash))
 
+
+    def resolve(self, artifact_id, artifact_dir):
+        link_filename = self.get_link_filename(artifact_id)
+        if not os.path.exists(link_filename):
+            if not self.resolve_from_mirrors(artifact_id, artifact_dir):
+                return False
+        self.logger.info('Unpacking cached build {}'.format(artifact_id))
+        with open(link_filename) as f:
+            key = f.read()
+        type, hash = key.split(':')
+        self.unpack(type, hash, artifact_dir)
+        self.logger.info('Unpacked cache {}'.format(key))
+        return True
+
+
+    def resolve_from_mirrors(self, artifact_id, artifact_dir):
+        for mirror in self.mirrors:
+            url = '%s/%s/%s' % (mirror, BUILDS_DIRNAME, artifact_id)
+            if 'dropbox' in mirror:
+                url += '?dl=1'
+            try:
+                key = urllib2.urlopen(url).read()
+                type, hash = key.split(':')
+            except Exception:
+                # whatever the problem, just move on
+                continue
+            self.logger.info('Found cached build on {}'.format(mirror))
+            try:
+                self.fetch_archive(url, type, hash)
+            except SourceNotFoundError:
+                continue
+            else:
+                link_filename = self._ensure_link_path(artifact_id)
+                with open(link_filename, 'w') as f:
+                    f.write(key)
+                return True # found and downloaded it
+        return False
+
+
     def fetch_from_mirrors(self, type, hash):
         for mirror in self.mirrors:
             url = '%s/%s/%s/%s' % (mirror, PACKS_DIRNAME, type, hash)
+            if 'dropbox' in mirror:
+                url += '?dl=1'
             try:
                 self._download_archive(url, type, hash)
             except SourceNotFoundError:
@@ -667,6 +756,17 @@ class ArchiveSourceCache(object):
         finally:
             silent_unlink(temp_file)
         return '%s:%s' % (type, hash)
+
+
+    def put_build(self, archive_dir, artifact_id):
+        key = self._put_build(archive_dir)
+        link_filename = self._ensure_link_path(artifact_id)
+        if os.path.exists(link_filename):
+            msg = 'Attempted to link {} from {} but file already exists!'
+            raise ValueError(msg.format(key, link_filename))
+        with open(link_filename, 'w') as f:
+            f.write(key)
+        return key
 
     def put(self, files):
         if isinstance(files, dict):
@@ -745,6 +845,14 @@ class TarballHandler(object):
         except tarfile.ReadError:
             return False
 
+
+    def pack(self, outfile, archive_dir, archive_name='.'):
+        import tarfile
+        archive_dir = os.path.abspath(archive_dir)
+        with tarfile.open(outfile, mode=self.write_mode) as archive:
+            archive.add(archive_dir, arcname=archive_name)
+            
+
     def unpack(self, infile, target_dir, hash):
         import tarfile
         target_dir = os.path.abspath(target_dir)
@@ -782,17 +890,19 @@ class TarGzHandler(TarballHandler):
     type = 'tar.gz'
     exts = ['tar.gz', 'tgz']
     read_mode = 'r:gz'
-
+    write_mode = 'w:gz'
 
 class TarBz2Handler(TarballHandler):
     type = 'tar.bz2'
     exts = ['tar.bz2', 'tb2', 'tbz2']
     read_mode = 'r:bz2'
+    write_mode = 'w:bz2'
 
 class TarXzHandler(TarballHandler):
     type = 'tar.xz'
     exts = ['tar.xz']
     read_mode = 'r'
+    write_mode = 'w'
 
     # XXX: tarfile has built-in 'r:xz' support only in Python 3,
     # XXX: so we use lzma module for Python 2 compatibility.
