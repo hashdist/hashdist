@@ -88,6 +88,28 @@ class Fetch(object):
 
 register_subcommand(Fetch)
 
+class Put(object):
+    __doc__ = """
+    Store a binary build to the source cache
+    """
+
+    @staticmethod
+    def setup(ap):
+        ap.add_argument('path', help='Path to build')
+        ap.add_argument('key', nargs='?', help='Desired id for build')
+
+    @staticmethod
+    def run(ctx, args):
+        store = SourceCache.create_from_config(ctx.get_config(), ctx.logger)
+        sys.stderr.write('Archiving...\n')
+        key = store.put_build(args.path, args.key)
+        sys.stderr.write('\n')
+        sys.stdout.write('Archived as {}\n'.format(key))
+        return 0
+
+register_subcommand(Put)
+
+
 class Unpack(object):
     """
     Unpacks sources that are stored in the source cache to a local directory

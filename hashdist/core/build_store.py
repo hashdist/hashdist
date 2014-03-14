@@ -663,28 +663,85 @@ class ArtifactBuilder(object):
         self.relocate_binaries(artifact_dir)
         write_protect(log_gz_filename)
 
-    def _fix_install_name_darwin(self, filepath):
+    def _fix_config(self, artifact_dir, filepath):
+        try:
+            import subprocess
+            import posixpath
+            if 'bin' in filepath and filepath.endswith('-config'):
+                with open(filepath) as f:
+                    script = f.readlines()
+                # we'll use a shell-ism below
+                assert 'sh' in script[0]
+                for line in script:
+                    if artifact_dir in line:
+                        relocatable_path = '`( cd \"`dirname \"$0\"`\" && pwd )`'
+                        line.replace(artifact_dir, relocatable_path)
+                        self.logger.info('In: {} [relocated script]'.format(filepath))
+                        self.logger.info('{}->{}'.format(filepath, relocatable_path))
+                unprotect(filepath)
+                with open(filepath,'w') as f:
+                    f.writelines(script)
+        except:
+            pass
+
+    def _fix_dynamic_libraries_darwin(self, artifact_dir, filepath):
         try:
             import subprocess
             import posixpath
             file_ext = posixpath.splitext(filepath)[-1]
             if file_ext not in ['.so', '.dylib']:
                 return
-            output = subprocess.check_output(["otool", "-D", filepath])
-            install_name = output.splitlines()[1]
-            # Don't mess with any other magics for now
-            if install_name.startswith('@'):
-                return
-            libname = os.path.split(install_name)[1]
-            rpathname = "@rpath/" + libname
             unprotect(filepath)
-            subprocess.check_call(["install_name_tool", "-id", rpathname, filepath])    
-            self.logger.info('In: {} [changed install_name]'.format(filepath))
-            self.logger.info('{}->{}'.format(install_name, rpathname))
-            loader_path = "@loader_path/../lib"
+
+            # add rpaths
+            local_path_to_lib = os.path.split(filepath.replace(artifact_dir, ''))[0]
+            # def reverse_local_path(path):
+            #     rev = ''
+            #     path, rem = os.path.split(path)
+            #     while rem:
+            #         path, rem = os.path.split(path)
+            #         rev = os.path.join(rev, os.pardir)
+            #     return rev
+            #
+            # reverse_path_from_lib = reverse_local_path(local_path_to_lib)
+            # assert os.path.abspath(os.path.join(local_path_to_lib, reverse_path_from_lib)) == '/'
+
+            # assume standard locations of binaries in profile/bin
+            loader_path = "@executable_path/../"
             subprocess.check_call(["install_name_tool", "-add_rpath", loader_path, filepath])
             self.logger.info('In: {} [added rpath]'.format(filepath))
             self.logger.info('{}'.format(loader_path))
+
+            # fix install_name
+            output = subprocess.check_output(["otool", "-D", filepath])
+            if len(output) < 2:
+                # this library doesn't have an install name
+                return
+            install_name = output.splitlines()[1]
+            # Don't mess with any other magics for now
+
+            def local_to_rpath(link, local_path_to_lib):
+                if local_path_to_lib in link:
+                    return "@rpath" + local_path_to_lib + link.split(local_path_to_lib)[1]
+                return None
+
+            if not install_name.startswith('@'):
+                rpathname = local_to_rpath(install_name, local_path_to_lib)
+                if rpathname:
+                    subprocess.check_call(["install_name_tool", "-id", rpathname, filepath])
+                    self.logger.info('In: {} [changed install_name]'.format(filepath))
+                    self.logger.info('{}->{}'.format(install_name, rpathname))
+
+            # Now fix any other hardcoded *local* libraries
+            output = subprocess.check_output(["otool", "-L", filepath])
+            library_links = [library_line.split()[0] for library_line in output.splitlines()[2:]]
+            for library_lin in library_links:
+                rpath_link = local_to_rpath(library_link, local_path_to_lib)
+                if rpath_link and rpath_link not in library_links:
+                    subprocess.check_call(["install_name_tool", "-change", library_link, rpath_link, filepath])
+                    self.logger.info('In: {} [changed library link]'.format(filepath))
+                    self.logger.info('{}->{}'.format(library_link, rpath_link))
+
         except:
             pass
 
@@ -699,8 +756,8 @@ class ArtifactBuilder(object):
         self.logger.info('Relocating binaries in {}'.format(artifact_dir))
         for root, dirs, files in os.walk(artifact_dir):
             for file in files:
-                self._fix_install_name_darwin(os.path.join(root, file))
-
+                self._fix_dynamic_libraries_darwin(artifact_dir, os.path.join(root, file))
+                self._fix_config(artifact_dir, os.path.join(root, file))
 
 def unpack_sources(logger, source_cache, doc, target_dir):
     """
