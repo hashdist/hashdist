@@ -203,7 +203,7 @@ class BuildDir(ProfileFrontendBase):
     def profile_builder_action(self):
         self.ensure_target(self.args.target)
         build_spec = self.builder.get_build_spec(self.args.package)
-        self.build_store.prepare_build_dir(self.source_cache, build_spec, self.args.target)
+        self.build_store.prepare_build_dir(self.ctx.get_config(), self.ctx.logger, build_spec, self.args.target)
 
 @register_subcommand
 class GC(object):
