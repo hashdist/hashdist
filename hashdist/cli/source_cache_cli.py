@@ -36,7 +36,7 @@ class FetchGit(object):
     @staticmethod
     def run(ctx, args):
         if args.project is None:
-            ctx.error('Must currently set the -p flag')
+            ctx.error('Must set the --project flag to avoid name collisions.')
         store = SourceCache.create_from_config(ctx.get_config(), ctx.logger)
         key = store.fetch_git(args.repo_url, args.rev, args.project)
         sys.stderr.write('\n')
