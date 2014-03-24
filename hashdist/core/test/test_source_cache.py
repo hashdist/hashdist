@@ -200,6 +200,14 @@ def test_git_fetch_git():
             sc.unpack(key, pjoin(d, 'foo'))
             with file(pjoin(d, 'foo', 'README')) as f:
                 assert f.read() == 'First revision'
+            # The unpack should be a git checkout positioned in the right commit
+            with working_directory(pjoin(d, 'foo')):
+                assert os.path.isdir('.git')
+                p = subprocess.Popen(['git', 'rev-parse', 'HEAD'], stdout=subprocess.PIPE,
+                                     stderr=None if VERBOSE else subprocess.PIPE)
+                out, err = p.communicate()
+                assert p.wait() == 0
+                assert out.strip() == mock_git_commit
 
 def test_git_fetch():
     with temp_source_cache() as sc:

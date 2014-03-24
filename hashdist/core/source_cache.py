@@ -99,6 +99,7 @@ import stat
 from timeit import default_timer as clock
 from contextlib import closing
 
+from .common import working_directory
 from .hasher import hash_document, format_digest, HashingReadStream, HashingWriteStream
 from .fileutils import silent_makedirs
 from .decorators import retry
@@ -387,19 +388,23 @@ class GitSourceCache(object):
         retcode, out, err = self.git(repo_name, *args)
         # Just fetch the output
         if retcode != 0:
-            msg = 'git call %r failed with code %d' % (args, retcode)
+            msg = 'git call %r failed with code %d:\n%s' % (args, retcode, err)
             self.logger.error(msg)
             raise error_dispatch(msg)
         return out
 
-    def get_repo_env(self, repo_name):
-        repo_path = pjoin(self.repo_path, repo_name)
-        if not os.path.exists(repo_path):
-            # TODO: This is not race-safe
-            os.makedirs(repo_path)
-            self.checked_git(repo_name, 'init', '--bare', '-q', repo_path)
+    def get_bare_repo_path(self, repo_name):
+        return pjoin(self.repo_path, repo_name)
+
+    def get_repo_env(self, repo_name=None):
         env = dict(os.environ)
-        env['GIT_DIR'] = repo_path
+        if repo_name:
+            repo_path = self.get_bare_repo_path(repo_name)
+            if not os.path.exists(repo_path):
+                # TODO: This is not race-safe
+                os.makedirs(repo_path)
+                self.checked_git(repo_name, 'init', '--bare', '-q', repo_path)
+            env['GIT_DIR'] = repo_path
         return env
 
     def _resolve_remote_rev(self, repo_name, repo_url, rev):
@@ -491,8 +496,6 @@ class GitSourceCache(object):
         return 'git:%s' % commit
 
     def unpack(self, type, hash, target_path):
-        import tarfile
-
         assert type == 'git'
 
         # We don't want to require supplying a repo name, so for now
@@ -510,13 +513,13 @@ class GitSourceCache(object):
         else:
             raise KeyNotFoundError('Source item not present: git:%s' % hash)
 
-        p = subprocess.Popen(['git', 'archive', '--format=tar', hash],
-                             env=self.get_repo_env(repo_name),
-                             stdout=subprocess.PIPE)
-        # open in stream mode with the "r|" mode
-        with closing(tarfile.open(fileobj=p.stdout, mode='r|')) as archive:
-            archive.extractall(target_path)
-        retcode = p.wait()
+        # We clone the repo with 'git clone --shared' and check out the hash
+        repo_path = self.get_bare_repo_path(repo_name)
+        self.checked_git(repo_name, 'clone', '--shared', repo_path, target_path)
+        with working_directory(target_path):
+            self.checked_git(None, 'checkout', hash)
+
+
         if retcode != 0:
             raise CalledProcessError('git error: %d' % retcode)
 
