@@ -12,7 +12,7 @@ before_install:
   - git config --global user.email "hashdist@h.com";
     git config --global user.name "Hashdist"
 script:
-  - nosetests -v -s
+  - VERBOSE=1 nosetests -v -s
 branches:
   only:
     - master
