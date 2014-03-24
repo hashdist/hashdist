@@ -490,8 +490,9 @@ class GitSourceCache(object):
             raise SourceNotFoundError('Repository "%s" did not contain commit "%s"' %
                                       (repo_url, commit))
 
-        # Create a branch so that 'git gc' doesn't collect it
-        self._mark_commit_as_in_use(repo_name, commit)
+
+        self._mark_commit_as_in_use(repo_name, commit)  # Create a branch so that 'git gc' doesn't collect it
+        self._fetch_submodules(repo_name, commit)
 
         return 'git:%s' % commit
 
@@ -519,9 +520,80 @@ class GitSourceCache(object):
         with working_directory(target_path):
             self.checked_git(None, 'checkout', hash)
 
+        # Check out any submodules:
+        # a) Pare .gitmodules
+        # b) For each submodule, put override of url .git/config to point to source cache
+        # c) git submodule update --init
+        with working_directory(target_path):
+            if os.path.exists('.gitmodules'):
+                submodules = self._parse_submodule_config(repo_name, '.gitmodules')
+                for key, submod in submodules.items():
+                    self.checked_git(None, 'config', 'submodule.%s.url' % key, self.get_bare_repo_path(submod['name']))
+                self.checked_git(None, 'submodule', 'update', '--init')
 
+    #
+    # Submodule support
+    #
+
+    def _parse_submodule_config(self, root_repo_name, filename):
+        out = self.checked_git(None, 'config', '-f', filename, '--list')
+
+        # Example from unit-test of 'out' at this stage:
+        # submodule.subdir/submod.path=subdir/submod
+        # submodule.subdir/submod.url=/tmp/tmpuj84SH
+        # submodule.submod.path=submod
+        # submodule.submod.url=/tmp/tmpuj84SH
+
+        # Parse this into the structure we need.
+        submodules = {}
+        for line in out.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            key, value = line.split('=')
+            if key.startswith('submodule.'):
+                key = key[len('submodule.'):]
+                for attrname in ['path', 'url']:
+                    if key.endswith('.' + attrname):
+                        key = key[:-len('.' + attrname)]
+                        submodules.setdefault(key, {})[attrname] = value
+                        break
+        # So we now have:
+        # {'subdir/submod': {'path': 'subdir/submod', 'url': '/tmp/tmpFYjDuO'},
+        # 'submod': {'path': 'submod', 'url': '/tmp/tmpFYjDuO'}}
+
+        # As our "repo_name" for each submodule we use a dotted repo-name under root_repo_name
+        for submod in submodules.values():
+            submod['name'] = root_repo_name + '.' + submod['path'].replace('/', '.').replace('\\', '.')
+        return submodules
+
+    def _fetch_submodules(self, repo_name, commit):
+        # use 'git show' to extract .gitmodules from the right commit
+        retcode, out, err = self.git(repo_name, 'show', '%s:.gitmodules' % commit)
         if retcode != 0:
-            raise CalledProcessError('git error: %d' % retcode)
+            # No .gitmodules found
+            return
+        # the 'git config' tool needs to read the input from a file though...
+        temp_dir = tempfile.mkdtemp()
+        try:
+            modules_config = pjoin(temp_dir, 'temp_gitmodules')
+            with open(modules_config, 'w') as f:
+                f.write(out)
+            submodules = self._parse_submodule_config(repo_name, modules_config)
+        finally:
+            shutil.rmtree(temp_dir)
+
+        # Recursively fetch the submodules. We need to look up the
+        # commit using 'git ls-tree', since 'git submodule status'
+        # doesn't work on bare repositories.
+        for submod in submodules.values():
+            out = self.checked_git(repo_name, 'ls-tree', commit, submod['path'])
+            mode, type, commit_hash, file = out.split()
+            if type != 'commit':
+                msg = 'Expected a submodule, not a %s at %s' (type, submod['path'])
+                self.logger.error(msg)
+                raise RuntimeError(msg)
+            self.fetch_git(submod['url'], rev=None, repo_name=submod['name'], commit=commit_hash)
 
 
 SIMPLE_FILE_URL_RE = re.compile(r'^file:/?[^/]+.*$')
