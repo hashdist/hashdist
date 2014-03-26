@@ -169,6 +169,21 @@ class ProgressBar(object):
     def finish(self):
         sys.stdout.write("\n")
 
+class ProgressSpinner(object):
+    """Replacement for ProgressBar when we don't know the file length."""
+    ANIMATE = ['-', '/', '|', '\\']
+
+    def __init__(self):
+        self._i = 0
+
+    def update(self, current_size):
+        sys.stdout.write('\r{}'.format(self.ANIMATE[self._i]))
+        sys.stdout.flush()
+        self._i = (self._i + 1) % len(self.ANIMATE)
+
+    def finish(self):
+        sys.stdout.write("\n")
+
 def mkdir_if_not_exists(path):
     try:
         os.mkdir(path)
@@ -659,7 +674,7 @@ class ArchiveSourceCache(object):
                 if 'Content-Length' in stream.headers:
                     progress = ProgressBar(int(stream.headers["Content-Length"]))
                 else:
-                    progress = None
+                    progress = ProgressSpinner()
             try:
                 n = 0
                 while True:
@@ -667,13 +682,13 @@ class ArchiveSourceCache(object):
                     if not chunk: break
                     if use_urllib:
                         n += len(chunk)
-                        if progress: progress.update(n)
+                        progress.update(n)
                     tee.write(chunk)
             finally:
                 stream.close()
                 f.close()
                 if use_urllib:
-                    if progress: progress.finish()
+                    progress.finish()
         except Exception as e:
             # Remove temporary file if there was a failure
             os.unlink(temp_path)
