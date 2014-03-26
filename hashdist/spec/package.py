@@ -40,7 +40,9 @@ class PackageSpec(object):
         package_parameters = defaultdict(str, profile.parameters)
         package_parameters.update(profile.packages.get(name, {}))
         doc, hook_files = load_and_inherit_package(profile, name, package_parameters)
+        doc = transform_requested_sources(doc, package_parameters)
         doc = order_package_stages(doc)
+
         return PackageSpec(name, doc, hook_files)
 
     def fetch_sources(self, source_cache):
@@ -127,6 +129,7 @@ class PackageSpec(object):
         cmds = [_process_when_build_dependency(env_action, parameters, ref)
                 for env_action in self.doc.get('when_build_dependency', [])]
         return cmds
+
 
 
 def _extend_list(to_insert, lst):
@@ -221,6 +224,32 @@ def load_and_inherit_package(profile, package_name, parameters, encountered=None
     if 'extends' in doc:
         del doc['extends']
     return doc, hook_files
+
+def transform_requested_sources(doc, package_parameters):
+    '''Allow user to directly inject sources into profiles
+
+    Supports "sources" and "github" parameters
+    '''
+    
+    if 'sources' in package_parameters:
+        doc['sources'] = package_parameters['sources']
+    elif 'github' in package_parameters:
+        # profile has requested a specific commit, overriding package defaults
+        from urlparse import urlsplit
+        import posixpath
+        target_url = package_parameters['github']
+        split_url = urlsplit(target_url)
+        git_id = posixpath.split(split_url.path)[1]
+        git_repo = target_url.rsplit('/commit/')[0] + '.git'
+        sources = doc.get('sources', [])
+        if len(sources) != 1:
+            raise ProfileError('GitHub URL provided but only one source can be overriden')
+        source = sources[0]
+        source['url'] = git_repo
+        source['key'] = 'git:' + git_id
+        doc['sources'] = [source]
+    return doc
+
 
 def order_package_stages(package_spec):
     """
