@@ -97,6 +97,8 @@ import struct
 import errno
 import stat
 from timeit import default_timer as clock
+import contextlib
+import urlparse
 from contextlib import closing
 
 from .common import working_directory
@@ -422,6 +424,25 @@ class GitSourceCache(object):
             env['GIT_DIR'] = repo_path
         return env
 
+    @contextlib.contextmanager
+    def _marked_commit(self, repo_name, commit):
+        """Create temporary branch reference to commit"""
+        mark = 'tempmark/%s' % commit
+
+        self._ensure_branch(repo_name, mark, commit)
+        try:
+            yield mark
+        finally:
+            self.checked_git(repo_name, 'branch', '-D', mark)
+
+    def _ensure_branch(self, repo_name, branch, commit):
+        retcode, out, err = self.git(repo_name, 'branch', branch, commit)
+        if retcode != 0:
+            # Did it already exist? If so we're good (except if hashdist gc runs
+            # at the same time...)
+            if not self._does_branch_exist(repo_name, branch):
+                raise RuntimeError('git branch failed with code %d: %s' % (retcode, err))
+
     def _resolve_remote_rev(self, repo_name, repo_url, rev):
         # Resolve the rev (if it is a branch/tag) to a commit hash
         p = self.checked_git(repo_name, 'ls-remote', repo_url, rev)
@@ -448,12 +469,7 @@ class GitSourceCache(object):
         return retcode == 0
 
     def _mark_commit_as_in_use(self, repo_name, commit):
-        retcode, out, err = self.git(repo_name, 'branch', 'inuse/%s' % commit, commit)
-        if retcode != 0:
-            # Did it already exist? If so we're good (except if hashdist gc runs
-            # at the same time...)
-            if not self._does_branch_exist(repo_name, 'inuse/%s' % commit):
-                raise RuntimeError('git branch failed with code %d: %s' % (retcode, err))
+        self._ensure_branch(repo_name, 'inuse/%s' % commit, commit)
 
     def fetch(self, url, type, commit, repo_name):
         assert type == 'git'
@@ -507,7 +523,7 @@ class GitSourceCache(object):
 
 
         self._mark_commit_as_in_use(repo_name, commit)  # Create a branch so that 'git gc' doesn't collect it
-        self._fetch_submodules(repo_name, commit)
+        self._fetch_submodules(repo_name, repo_url, commit)
 
         return 'git:%s' % commit
 
@@ -531,9 +547,12 @@ class GitSourceCache(object):
 
         # We clone the repo with 'git clone --shared' and check out the hash
         repo_path = self.get_bare_repo_path(repo_name)
-        self.checked_git(repo_name, 'clone', '--shared', repo_path, target_path)
-        with working_directory(target_path):
-            self.checked_git(None, 'checkout', hash)
+
+        with self._marked_commit(repo_name, hash) as branch:
+            with working_directory(target_path):
+                self.checked_git(None, 'init')
+                self.checked_git(None, 'fetch', repo_path, branch)
+                self.checked_git(None, 'checkout', hash)
 
         # Check out any submodules:
         # a) Pare .gitmodules
@@ -582,7 +601,7 @@ class GitSourceCache(object):
             submod['name'] = root_repo_name + '.' + submod['path'].replace('/', '.').replace('\\', '.')
         return submodules
 
-    def _fetch_submodules(self, repo_name, commit):
+    def _fetch_submodules(self, repo_name, repo_url, commit):
         # use 'git show' to extract .gitmodules from the right commit
         retcode, out, err = self.git(repo_name, 'show', '%s:.gitmodules' % commit)
         if retcode != 0:
@@ -608,7 +627,9 @@ class GitSourceCache(object):
                 msg = 'Expected a submodule, not a %s at %s' (type, submod['path'])
                 self.logger.error(msg)
                 raise RuntimeError(msg)
-            self.fetch_git(submod['url'], rev=None, repo_name=submod['name'], commit=commit_hash)
+            # safely turn relative URLs into absolute URLs (idempotent on absolute URLs)
+            absolute_submod_url = urlparse.urljoin(repo_url+'/', submod['url'])
+            self.fetch_git(absolute_submod_url, rev=None, repo_name=submod['name'], commit=commit_hash)
 
 
 SIMPLE_FILE_URL_RE = re.compile(r'^file:/?[^/]+.*$')
