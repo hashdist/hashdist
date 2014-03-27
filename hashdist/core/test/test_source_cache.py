@@ -94,7 +94,7 @@ def make_mock_zipfile():
 def git(*args, **kw):
     repo = kw['repo']
     git_env = dict(os.environ)
-    git_env['GIT_DIR'] = repo
+    git_env['CWD'] = repo
     p = subprocess.Popen(['git'] + list(args), env=git_env, stdout=subprocess.PIPE,
                          stderr=None if VERBOSE else subprocess.PIPE)
     out, err = p.communicate()
@@ -230,8 +230,8 @@ def test_git_fetch_submodules():
     with temp_source_cache() as sc:
         # A 'fetch' should recursively fetch the submodules and give them dotted names
         sc.fetch(root_repo, 'git:' + master_commit, 'rootproject')
-        assert (os.listdir(pjoin(sc.cache_path, 'git')) ==
-                ['rootproject', 'rootproject.submod', 'rootproject.subdir.submod'])
+        assert (os.listdir(pjoin(sc.cache_path, 'git')).sort() ==
+                ['rootproject', 'rootproject.submod', 'rootproject.subdir.submod'].sort())
         # An unpack should include the submodules
         with temp_dir() as d:
             sc.unpack('git:' + master_commit, d)
