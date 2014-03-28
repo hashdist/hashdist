@@ -419,7 +419,11 @@ def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map,
     if 'PATH' in parameters:
         commands.insert(0, {"set": "PATH", "nohash_value": parameters['PATH']})
     commands.append({"cmd": ["$BASH", "_hashdist/build.sh"]})
-    commands.append({"hit": ["build-postprocess", "--shebang=multiline", "--write-protect"]})
+
+    post_proc = ["--shebang=multiline", "--write-protect"]
+    if parameters.get('relative_rpath', True):
+        post_proc.append("--relative-rpath")
+    commands.append({"hit": ["build-postprocess"] + post_proc})
     # assemble
     build_spec = {
         "name": pkg_name,

@@ -64,7 +64,7 @@ class BuildUnpackSources(object):
     Extracts a set of sources as described in a ``build.json`` spec
 
     Extraction is to  the current directory. Example specification::
-        
+
         {
             ...
            "sources" : [
@@ -88,7 +88,7 @@ class BuildUnpackSources(object):
         already extracted contents will not be removed, so one should
         always extract into a temporary directory, and recursively
         remove it if there was a failure.
-        
+
     """
 
     command = 'build-unpack-sources'
@@ -136,7 +136,7 @@ class BuildWriteFiles(object):
 
     * **target**: Target filename. Variable substitution is performed,
       so it is possible to put ``$ARTIFACT/filename`` here.
-      
+
     * **text**: Contents as a list of lines which will be joined with "\\n".
 
     * **object**: As an alternative to *text*, one can provide an object
@@ -148,7 +148,7 @@ class BuildWriteFiles(object):
       (defaults to False)
 
     Order does not affect hashing. Files will always be encoded in UTF-8.
-        
+
     """
 
     command = 'build-write-files'
@@ -210,6 +210,15 @@ class BuildPostprocess(object):
 
         Remove all 'w' mode bits.
 
+    --relative-rpath:
+
+        Patches the RPATH of all executables to turn them from
+        absolute RPATHS to relative RPATHS. The details vary across
+        platforms, but the goal is to make the artifact
+        relocatable. If relocatability is not supported for the
+        platform, the command exists silently.
+
+
     """
     command = 'build-postprocess'
 
@@ -217,6 +226,7 @@ class BuildPostprocess(object):
     def setup(ap):
         ap.add_argument('--shebang', choices=['multiline', 'launcher', 'none'], default='none')
         ap.add_argument('--write-protect', action='store_true')
+        ap.add_argument('--relative-rpath', action='store_true')
         ap.add_argument('--pyc', action='store_true')
         ap.add_argument('path', nargs='?', help='dir/file to post-process (dirs are handled '
                         'recursively)')
@@ -226,7 +236,7 @@ class BuildPostprocess(object):
         from ..core import build_tools
         from ..core import BuildStore
         handlers = []
-        
+
         if args.shebang == 'launcher':
             try:
                 launcher = ctx.env['LAUNCHER']
@@ -242,6 +252,9 @@ class BuildPostprocess(object):
             build_store = BuildStore.create_from_config(ctx.get_config(), ctx.logger)
             handlers.append(partial(build_tools.postprocess_multiline_shebang,
                                     build_store))
+
+        if args.relative_rpath:
+            handlers.append(lambda filename: build_tools.postprocess_rpath(ctx.logger, ctx.env, filename))
 
         if args.write_protect:
             handlers.append(build_tools.postprocess_write_protect)
@@ -262,6 +275,7 @@ class BuildPostprocess(object):
         else:
             for dirpath, dirnames, filenames in os.walk(args.path, topdown=False):
                 for filename in filenames + [dirpath]:
-                    for handler in handlers:
-                        handler(pjoin(dirpath, filename))
-        
+                    if not os.path.islink(filename):
+                        for handler in handlers:
+                            handler(pjoin(dirpath, filename))
+

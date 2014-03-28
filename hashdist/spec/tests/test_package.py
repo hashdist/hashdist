@@ -65,11 +65,10 @@ def test_create_build_spec():
             "commands": [
                 {"set": "BASH", "nohash_value": "/bin/bash"},
                 {"cmd": ["$BASH", "_hashdist/build.sh"]},
-                {'hit': ['build-postprocess', '--shebang=multiline', '--write-protect']}]},
+                {'hit': ['build-postprocess', '--shebang=multiline', '--write-protect', '--relative-rpath']}]},
         "sources": [
             {"key": "git:a3c39a03e7b8e9a3321d69ff877338f99ebb4aa2", "target": "."}
             ]}
-
     assert expected == build_spec.doc
 
 

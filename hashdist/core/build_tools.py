@@ -8,12 +8,14 @@ Reference
 
 """
 
+import sys
 import os
 from os.path import join as pjoin
 import json
 from string import Template
 from textwrap import dedent
 import re
+import subprocess
 
 from .common import json_formatting_options
 from .build_store import BuildStore
@@ -37,7 +39,7 @@ def execute_files_dsl(files, env):
     """
     def subs(x):
         return Template(x).substitute(env)
-    
+
     for file_spec in files:
         target = subs(file_spec['target'])
         # Automatically create parent directory of target
@@ -97,7 +99,7 @@ def postprocess_launcher_shebangs(filename, launcher_program):
         return
     if 'bin' not in filename:
         return
-    
+
     if is_executable(filename):
         with open(filename) as f:
             is_script = (f.read(2) == '#!')
@@ -148,7 +150,7 @@ def postprocess_multiline_shebang(build_store, filename):
         if mod_scriptlines != scriptlines:
             with open(filename, 'w') as f:
                 f.write(''.join(mod_scriptlines))
-        
+
 
 def postprocess_write_protect(filename):
     """
@@ -158,6 +160,52 @@ def postprocess_write_protect(filename):
     if not os.path.isfile(filename):
         return
     write_protect(filename)
+
+
+def postprocess_rpath(logger, env, filename):
+    if os.path.islink(filename) or not os.path.isfile(filename) or not is_executable(filename):
+        return
+    if 'linux' in sys.platform:
+        postprocess_rpath_linux(logger, env, filename)
+    # Noop for Darwin etc. for now
+
+
+def _check_call(logger, cmd):
+    """
+    Like subprocess.check_call but additionally captures stdout/stderr, and returns stdout.
+    """
+    p = subprocess.Popen(cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+    out, err = p.communicate()
+    if p.wait() != 0:
+        logger.error('%r failed: %d' % (cmd, p.wait()))
+        raise subprocess.CalledProcessError(
+            'Command %r failed with code %d and stderr:\n%s' % (cmd, p.wait(), err))
+    return out
+
+def postprocess_rpath_linux(logger, env, filename):
+    if 'PATCHELF' not in env:
+        raise Exception('PATCHELF environment variable must be set on Linux')
+    patchelf = env['PATCHELF']
+
+    # Read first 4 bytes to check for ELF magic
+    with open(filename) as f:
+        if f.read(4) != '\x7fELF':
+            # Not an ELF file
+            return
+
+    # OK, we have an ELF, patch it. We first shrink the RPATH to what is actually used.
+    _check_call(logger, [patchelf, '--shrink-rpath', filename])
+
+    # Then grab the RPATH, make each path relative to ${ORIGIN}, and set again.
+    out = _check_call(logger, [patchelf, '--print-rpath', filename]).strip()
+    if out:
+        # non-empty RPATH, patch it
+        abs_rpaths = out.strip().split(':')
+        d = os.path.dirname(os.path.realpath(filename))
+        rel_rpaths = ['${ORIGIN}/' + os.path.relpath(abs_rpath, d) for abs_rpath in abs_rpaths]
+        rel_rpaths_str = ':'.join(rel_rpaths)
+        logger.debug('Setting RPATH to %s on %s' % (rel_rpaths_str, filename))
+        _check_call(logger, [patchelf, '--set-rpath', rel_rpaths_str, filename])
 
 
 #
@@ -385,4 +433,4 @@ def add_modelines(scriptlines, language):
         vi_modeline = []
     return shebang + emacs_modeline + body + vi_modeline
 
-    
+
