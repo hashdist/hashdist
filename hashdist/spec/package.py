@@ -421,7 +421,7 @@ def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map,
         commands.insert(0, {"set": "PATH", "nohash_value": parameters['PATH']})
     commands.append({"cmd": ["$BASH", "_hashdist/build.sh"]})
 
-    post_proc = ["--shebang=multiline", "--write-protect"]
+    post_proc = ["--shebang=multiline", "--write-protect", "--remove-pkgconfig"]
     if parameters.get('relative_rpath', True):
         post_proc.append("--relative-rpath")
     if parameters.get('check_relocateable', 'linux' in sys.platform):

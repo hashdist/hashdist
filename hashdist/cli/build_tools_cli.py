@@ -218,6 +218,11 @@ class BuildPostprocess(object):
         relocatable. If relocatability is not supported for the
         platform, the command exists silently.
 
+
+        Remove pkgconfig files as they are not relocateable (at least
+        yet)
+
+    --relative-shell-script=pattern
     --check-relocateable
 
         Complain loudly if the full path ${ARTIFACT} string is found
@@ -261,6 +266,9 @@ class BuildPostprocess(object):
 
         if args.relative_rpath:
             handlers.append(lambda filename: build_tools.postprocess_rpath(ctx.logger, ctx.env, filename))
+
+        if args.remove_pkgconfig:
+            handlers.append(lambda filename: build_tools.postprocess_remove_pkgconfig(ctx.logger, filename))
 
         if args.check_relocateable:
             if 'ARTIFACT' not in ctx.env:

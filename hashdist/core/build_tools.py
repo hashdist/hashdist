@@ -19,7 +19,7 @@ import subprocess
 
 from .common import json_formatting_options
 from .build_store import BuildStore
-from .fileutils import rmdir_empty_up_to, write_protect
+from .fileutils import rmdir_empty_up_to, write_protect, silent_unlink
 
 def execute_files_dsl(files, env):
     """
@@ -162,7 +162,7 @@ def postprocess_write_protect(filename):
     write_protect(filename)
 
 #
-# RPATH
+# Relocateability
 #
 
 def postprocess_rpath(logger, env, filename):
@@ -210,9 +210,19 @@ def postprocess_rpath_linux(logger, env, filename):
         logger.debug('Setting RPATH to %s on %s' % (rel_rpaths_str, filename))
         _check_call(logger, [patchelf, '--set-rpath', rel_rpaths_str, filename])
 
-#
-# Relocateability check
-#
+
+PKG_CONFIG_FILES_RE = re.compile(r'.*/lib/pkgconfig/.*\.pc$')
+def postprocess_remove_pkgconfig(logger, filename):
+    """
+    pkg-config .pc-files include the absolute path. For now, we simply remove the files;
+    in time we may want to submit a PR for https://github.com/pkgconf/pkgconf
+    that allows somehow gracefully handling relative paths in these files
+    """
+    if PKG_CONFIG_FILES_RE.match(os.path.realpath(filename)):
+        logger.info('Removing %s' % filename)
+        silent_unlink(filename)
+
+
 def check_relocateable(logger, artifact, filename):
     """
     Checks whether `filename` contains the string `artifact`, in which case it is not
