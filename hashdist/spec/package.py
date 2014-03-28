@@ -1,3 +1,4 @@
+import sys
 import re
 from pprint import pprint
 import os
@@ -423,6 +424,8 @@ def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map,
     post_proc = ["--shebang=multiline", "--write-protect"]
     if parameters.get('relative_rpath', True):
         post_proc.append("--relative-rpath")
+    if parameters.get('check_relocateable', 'linux' in sys.platform):
+        post_proc.append("--check-relocateable")
     commands.append({"hit": ["build-postprocess"] + post_proc})
     # assemble
     build_spec = {

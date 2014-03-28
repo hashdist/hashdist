@@ -161,6 +161,9 @@ def postprocess_write_protect(filename):
         return
     write_protect(filename)
 
+#
+# RPATH
+#
 
 def postprocess_rpath(logger, env, filename):
     if os.path.islink(filename) or not os.path.isfile(filename) or not is_executable(filename):
@@ -206,6 +209,27 @@ def postprocess_rpath_linux(logger, env, filename):
         rel_rpaths_str = ':'.join(rel_rpaths)
         logger.debug('Setting RPATH to %s on %s' % (rel_rpaths_str, filename))
         _check_call(logger, [patchelf, '--set-rpath', rel_rpaths_str, filename])
+
+#
+# Relocateability check
+#
+def check_relocateable(logger, artifact, filename):
+    """
+    Checks whether `filename` contains the string `artifact`, in which case it is not
+    relocateable.
+
+    For now we simply load the entire file into memory.
+    """
+    artifact = artifact.encode(sys.getfilesystemencoding())
+    baddies = []
+    if os.path.isfile(filename) and not os.path.islink(filename):
+        with open(filename) as f:
+            data = f.read()
+        if artifact in data:
+            logger.error('File contains "%s" and can not be relocated: %s' % (artifact, filename))
+            baddies.append(filename)
+    if baddies:
+        raise Exception('Files not relocateable:\n%s' % ('\n'.join('  ' + x for x in baddies)))
 
 
 #

@@ -190,7 +190,7 @@ class BuildWhitelist(object):
 class BuildPostprocess(object):
     """
     Walks through directories to perform the actions given by flags
-    (to be used after the build process). Default pat is the one
+    (to be used after the build process). Default path is the one
     given by ``$ARTIFACT``.
 
     --shebang=$technique:
@@ -218,6 +218,11 @@ class BuildPostprocess(object):
         relocatable. If relocatability is not supported for the
         platform, the command exists silently.
 
+    --check-relocateable
+
+        Complain loudly if the full path ${ARTIFACT} string is found
+        anywhere within the artifact.
+
 
     """
     command = 'build-postprocess'
@@ -227,6 +232,7 @@ class BuildPostprocess(object):
         ap.add_argument('--shebang', choices=['multiline', 'launcher', 'none'], default='none')
         ap.add_argument('--write-protect', action='store_true')
         ap.add_argument('--relative-rpath', action='store_true')
+        ap.add_argument('--check-relocateable', action='store_true')
         ap.add_argument('--pyc', action='store_true')
         ap.add_argument('path', nargs='?', help='dir/file to post-process (dirs are handled '
                         'recursively)')
@@ -255,6 +261,11 @@ class BuildPostprocess(object):
 
         if args.relative_rpath:
             handlers.append(lambda filename: build_tools.postprocess_rpath(ctx.logger, ctx.env, filename))
+
+        if args.check_relocateable:
+            if 'ARTIFACT' not in ctx.env:
+                ctx.logger.error('ARTIFACT environment variable not set')
+            handlers.append(lambda filename: build_tools.check_relocateable(ctx.logger, ctx.env['ARTIFACT'], filename))
 
         if args.write_protect:
             handlers.append(build_tools.postprocess_write_protect)
