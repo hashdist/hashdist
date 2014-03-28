@@ -30,7 +30,7 @@ def test_assemble_stages():
     """)
     ctx = hook_api.PackageBuildContext(None, {}, {})
     ctx.parameters['foo'] = 'somevalue'
-    p = package.PackageSpec("mypackage", doc, [])
+    p = package.PackageSpec("mypackage", doc, [], {})
     script = p.assemble_build_script(ctx)
     assert script == dedent("""\
     set -e
@@ -99,7 +99,7 @@ def test_inheritance_collision():
         'base1.yaml': 'build_stages: [{name: stage1}]',
         'base2.yaml': 'build_stages: [{name: stage1}]'}
     with assert_raises(ProfileError):
-        doc = package.load_and_inherit_package(MockProfile(files), 'child', {})
+        package.load_and_inherit_package(MockProfile(files), 'child', {})
 
 
 def test_load_and_inherit_package():
@@ -175,7 +175,7 @@ def test_load_and_inherit_package():
 
     prof = MockProfile(files)
 
-    doc, hook_files = package.load_and_inherit_package(prof, 'mypackage', {})
+    doc, hook_files, parameters = package.load_and_inherit_package(prof, 'mypackage', {})
     assert hook_files == ['grandparent.py', 'base1.py', 'mypackage.py']
 
     # the below relies on an unstable ordering as the lists are not sorted, but

@@ -11,6 +11,7 @@ from ...core import SourceCache
 from ...core.test.utils import *
 from ...core.test.test_source_cache import temp_source_cache
 from .. import profile
+from .. import package
 from ..exceptions import ProfileError
 
 def gitify(dir):
@@ -270,3 +271,57 @@ def test_load_and_inherit_profile(d):
                                'numpy': {'host': False},
                                'gcc': {},
                                'mpi': {'use': 'openmpi'}}
+
+
+@temp_working_dir_fixture
+def test_defaults_section_in_package(d):
+    dump(pjoin(d, "without_override.yaml"), """\
+        package_dirs:
+        - .
+        packages:
+          mypkg:
+    """)
+
+    dump(pjoin(d, "with_package.yaml"), """\
+        package_dirs:
+        - .
+        packages:
+          mypkg:
+            foo: false
+            exit_code: 1
+    """)
+
+    dump(pjoin(d, "with_global.yaml"), """\
+        package_dirs:
+        - .
+        parameters:
+          foo: false
+          exit_code: 1
+        packages:
+          mypkg:
+    """)
+
+    dump(pjoin(d, "mypkg.yaml"), """\
+        defaults:
+          foo: true
+          exit_code: 0
+        build_stages:
+          - handler: bash
+            bash: |
+              exit {{exit_code}}
+
+          - when: foo
+            handler: bash
+    """)
+
+    def get_build_stages_of_mypkg(profile_file):
+        with profile.TemporarySourceCheckouts(None) as checkouts:
+            prf = profile.Profile(profile.load_and_inherit_profile(checkouts, pjoin(d, profile_file)), checkouts)
+            pkg = package.PackageSpec.load(prf, 'mypkg')
+            return pkg.doc['build_stages']
+
+
+    assert get_build_stages_of_mypkg('without_override.yaml') == [
+        {'handler': 'bash'}, {'handler': 'bash', 'bash': 'exit 0\n'}]
+    assert get_build_stages_of_mypkg('with_global.yaml') == [{'handler': 'bash', 'bash': 'exit 1\n'}]
+    assert get_build_stages_of_mypkg('with_package.yaml') == [{'handler': 'bash', 'bash': 'exit 1\n'}]

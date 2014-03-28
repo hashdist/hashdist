@@ -20,13 +20,14 @@ class PackageSpec(object):
     from a profile, this includes pre-preprocessing to assemble together the
     package spec with its ancestor specifications (given in the `extends` clause).
     """
-    def __init__(self, name, doc, hook_files):
+    def __init__(self, name, doc, hook_files, parameters):
         self.name = name
         self.doc = doc
         self.hook_files = hook_files
         deps = doc.get('dependencies', {})
         self.build_deps = deps.get('build', [])
         self.run_deps = deps.get('run', [])
+        self.parameters = parameters
         if not isinstance(self.build_deps, list) or not isinstance(self.run_deps, list):
             raise TypeError('dependencies must be a list')
 
@@ -39,11 +40,11 @@ class PackageSpec(object):
         """
         package_parameters = defaultdict(str, profile.parameters)
         package_parameters.update(profile.packages.get(name, {}))
-        doc, hook_files = load_and_inherit_package(profile, name, package_parameters)
+        package_parameters['package'] = name
+        doc, hook_files, package_parameters = load_and_inherit_package(profile, name, package_parameters)
         doc = transform_requested_sources(doc, package_parameters)
         doc = order_package_stages(doc)
-
-        return PackageSpec(name, doc, hook_files)
+        return PackageSpec(name, doc, hook_files, package_parameters)
 
     def fetch_sources(self, source_cache):
         for source_clause in self.doc.get('sources', []):
@@ -160,13 +161,13 @@ def name_anonymous_stages(stages):
     return [process(stage) for stage in stages]
 
 
-def load_and_inherit_package(profile, package_name, parameters, encountered=None):
+def load_and_inherit_package(profile, package_name, profile_parameters, encountered=None):
     """
     Loads a package from the given profile, and transforms the package spec to
     include the parts of the spec inherited through the `extends` section.
     The `extends` section is removed.
 
-    Returns ``(spec_doc, hook_files)``. `hook_files` is a list of
+    Returns ``(spec_doc, hook_files, package_parameters)``. `hook_files` is a list of
     Python hooks to load; max. one per package/proto-package involved
     """
     if encountered is None:
@@ -176,7 +177,9 @@ def load_and_inherit_package(profile, package_name, parameters, encountered=None
                            'twice when traversing parents' % package_name)
     encountered.add(package_name)
     hook_files = []
-    doc = profile.load_package_yaml(package_name, parameters)
+
+    # The 'defaults' section can not take effect for the when clause selecting a YAML file to load
+    doc = profile.load_package_yaml(package_name, profile_parameters)
     if doc is None:
         raise ProfileError(package_name, 'Package specification not found: %s' % package_name)
     hook = profile.find_package_file(package_name, package_name + '.py')
@@ -184,6 +187,10 @@ def load_and_inherit_package(profile, package_name, parameters, encountered=None
         hook_files.append(hook)
 
     doc = dict(doc)  # shallow copy
+
+    # Default values for parameters loaded from 'defaults' clause
+    parameters = defaultdict(str, doc.get('defaults', {}))
+    parameters.update(profile_parameters)
 
     # Process when clauses. The top-level when to select the doc already done by
     # profile.load_package_yaml.
@@ -196,8 +203,8 @@ def load_and_inherit_package(profile, package_name, parameters, encountered=None
     # level. This strategy must be changed if we want to support diamond inheritance.
     parent_docs = []
     for parent_name in sorted(doc.get('extends', [])):
-        parent_doc, parent_hook_files = load_and_inherit_package(
-            profile, parent_name, parameters, encountered=encountered)
+        parent_doc, parent_hook_files, parent_parameters = load_and_inherit_package(
+            profile, parent_name, profile_parameters, encountered=encountered)
         parent_docs.append(parent_doc)
         hook_files[0:0] = parent_hook_files
 
@@ -223,7 +230,7 @@ def load_and_inherit_package(profile, package_name, parameters, encountered=None
 
     if 'extends' in doc:
         del doc['extends']
-    return doc, hook_files
+    return doc, hook_files, parameters
 
 def transform_requested_sources(doc, package_parameters):
     '''Allow user to directly inject sources into profiles

@@ -6,7 +6,7 @@ Not supported:
 
 """
 
-from pprint import pprint
+import collections
 import tempfile
 import os
 import shutil
@@ -17,7 +17,7 @@ from urlparse import urlsplit
 from urllib import urlretrieve
 import posixpath
 
-from ..formats.marked_yaml import load_yaml_from_file, is_null
+from ..formats.marked_yaml import load_yaml_from_file, is_null, marked_yaml_load
 from .utils import substitute_profile_parameters
 from .. import core
 from .exceptions import ProfileError
@@ -49,6 +49,15 @@ class Profile(object):
         otherwise an exception is raised. A document without a when-clause
         is overridden by those with a when-clause.
         """
+        def load_file(filename):
+            # To support the defaults section we first load the file, read defaults,
+            # then load file again (since parameter expansion is currently done on
+            # stream level not AST level).
+            doc = load_yaml_from_file(filename, collections.defaultdict(str))
+            param_dict = collections.defaultdict(str, doc.get('defaults', {}))
+            param_dict.update(parameters)
+            return load_yaml_from_file(filename, param_dict)
+
         from .package import eval_condition
 
         docs = self._yaml_cache.get(('package', pkgname), None)
@@ -58,7 +67,7 @@ class Profile(object):
                                                     pjoin(pkgname, pkgname + '-*.yaml')],
                                                    match_basename=True)
             self._yaml_cache['package', pkgname] = docs = [
-                load_yaml_from_file(filename, parameters) for filename in result.values()]
+                load_file(filename) for filename in result.values()]
         no_when_doc = None
         with_when_doc = None
         for doc in docs:

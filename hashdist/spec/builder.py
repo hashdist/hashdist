@@ -61,7 +61,7 @@ class ProfileBuilder(object):
 
         def process(pkgname, pkgspec):
             with hook.python_path_and_modules_sandbox(python_path):
-                ctx = self._load_package_build_context(pkgname)
+                ctx = self._load_package_build_context(pkgname, pkgspec)
                 self._build_specs[pkgname] = pkgspec.assemble_build_spec(
                     self.source_cache,
                     ctx,
@@ -165,10 +165,10 @@ class ProfileBuilder(object):
         builder = ArtifactBuilder(self.build_store, profile_build_spec, extra_env, virtuals, debug)
         builder.build_out(target, config)
 
-    def _load_package_build_context(self, pkgname):
-        hook_files = [self.profile.resolve(fname) for fname in self._package_specs[pkgname].hook_files]
+    def _load_package_build_context(self, pkgname, pkgspec):
+        hook_files = [self.profile.resolve(fname) for fname in pkgspec.hook_files]
         dep_vars = [to_env_var(x) for x in self._package_specs[pkgname].build_deps]
-        ctx = hook_api.PackageBuildContext(pkgname, dep_vars, self.profile.parameters)
+        ctx = hook_api.PackageBuildContext(pkgname, dep_vars, pkgspec.parameters)
         hook.load_hooks(ctx, hook_files)
         ctx.parameters.update(self.profile.parameters)
         return ctx
