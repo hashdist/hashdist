@@ -2,7 +2,7 @@
 
 Example usage:
 
-hit skeleton pypi Django
+hit skeleton-pypi Django
 
 Note that pypi is case sensitive.
 """
@@ -31,6 +31,13 @@ sources:
 class SkeletonPypi(object):
     """
     Fetches a pypi package and creates a yaml package for it.
+
+    Example:
+
+    hit skeleton-pypi Django
+
+    This will create ./pkgs/Django.yaml with the yaml package (by default it
+    will refuse to override it if it already exists).
 
     Note that while pypi packages support specifying dependencies they
     are almost always missing: you have to add dependencies manually.
