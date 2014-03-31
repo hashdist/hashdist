@@ -8,7 +8,6 @@ Note that pypi is case sensitive.
 """
 import json
 import os
-import posixpath
 import urllib2
 
 from .main import register_subcommand
@@ -36,11 +35,11 @@ class SkeletonPypi(object):
 
     hit skeleton-pypi Django
 
-    This will create ./pkgs/Django.yaml with the yaml package (by default it
-    will refuse to override it if it already exists).
+    This will create ./pkgs/Django.yaml from the pypi package.  By
+    default this command will refuse to override an existing file.
 
-    Note that while pypi packages support specifying dependencies they
-    are almost always missing: you have to add dependencies manually.
+    Note that while pypi packages support specifying dependencies, they
+    are almost always missing; you have to add dependencies manually.
     """
     command = 'skeleton-pypi'
 
@@ -67,13 +66,13 @@ class SkeletonPypi(object):
             ctx.logger.error('Could not load pypi json  metadata: %s', e)
             return 2
 
-        dest_path = posixpath.join('.', 'pkgs', '{}.yaml'.format(args.project))
+        dest_path = os.path.join('.', 'pkgs', '{}.yaml'.format(args.project))
         try:
             os.makedirs('pkgs')
         except os.error:
             pass
 
-        if posixpath.exists(dest_path) and not args.overwrite_existing:
+        if os.path.exists(dest_path) and not args.overwrite_existing:
             ctx.logger.error(
                 'Package already exists: %s. '
                 'Use --overwrite-existing to overwrite.', dest_path)
