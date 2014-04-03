@@ -218,11 +218,20 @@ class BuildPostprocess(object):
         relocatable. If relocatability is not supported for the
         platform, the command exists silently.
 
+    --remove-pkgconfig:
 
         Remove pkgconfig files as they are not relocateable (at least
         yet)
 
-    --relative-shell-script=pattern
+    --relative-sh-script=pattern
+
+        Files that matches 'pattern' will be modified so that
+        references to $ARTIFACT will be replaced with a path relative
+        from the script location. For instance, use the pattern
+        `bin/.*-config` to match config-scripts. Code will be inserted
+        at top introducing a hashdist_artifact variable in the script,
+        and then references to $ARTIFACT will be
+
     --check-relocateable
 
         Complain loudly if the full path ${ARTIFACT} string is found
@@ -237,6 +246,8 @@ class BuildPostprocess(object):
         ap.add_argument('--shebang', choices=['multiline', 'launcher', 'none'], default='none')
         ap.add_argument('--write-protect', action='store_true')
         ap.add_argument('--relative-rpath', action='store_true')
+        ap.add_argument('--remove-pkgconfig', action='store_true')
+        ap.add_argument('--relative-sh-script', action='append')
         ap.add_argument('--check-relocateable', action='store_true')
         ap.add_argument('--pyc', action='store_true')
         ap.add_argument('path', nargs='?', help='dir/file to post-process (dirs are handled '
@@ -264,16 +275,25 @@ class BuildPostprocess(object):
             handlers.append(partial(build_tools.postprocess_multiline_shebang,
                                     build_store))
 
+        if args.relative_sh_script or args.check_relocateable:
+            if 'ARTIFACT' not in ctx.env:
+                ctx.logger.error('ARTIFACT environment variable not set')
+            artifact_dir = ctx.env['ARTIFACT']
+
         if args.relative_rpath:
             handlers.append(lambda filename: build_tools.postprocess_rpath(ctx.logger, ctx.env, filename))
+
+        if args.relative_sh_script:
+            handlers.append(lambda filename: build_tools.postprocess_sh_script(ctx.logger,
+                                                                               args.relative_sh_script,
+                                                                               artifact_dir,
+                                                                               filename))
 
         if args.remove_pkgconfig:
             handlers.append(lambda filename: build_tools.postprocess_remove_pkgconfig(ctx.logger, filename))
 
         if args.check_relocateable:
-            if 'ARTIFACT' not in ctx.env:
-                ctx.logger.error('ARTIFACT environment variable not set')
-            handlers.append(lambda filename: build_tools.check_relocateable(ctx.logger, ctx.env['ARTIFACT'], filename))
+            handlers.append(lambda filename: build_tools.check_relocateable(ctx.logger, artifact_dir, filename))
 
         if args.write_protect:
             handlers.append(build_tools.postprocess_write_protect)

@@ -223,6 +223,50 @@ def postprocess_remove_pkgconfig(logger, filename):
         silent_unlink(filename)
 
 
+def postprocess_sh_script(logger, patterns, artifact_dir, filename):
+    """
+    `patterns` should only match files that should be modified.
+    Assuming the script is a bash/sh script, we modify it
+    """
+    if not os.path.isfile(filename) or os.path.islink(filename):
+        return
+    filename = os.path.realpath(filename)
+    s = filename[len(artifact_dir):]
+    for pattern in patterns:
+        if re.match(pattern, s):
+            break
+    else:
+        return
+
+    # Number of .. to get from script-dir to artifact_dir
+    up = os.path.relpath(artifact_dir, os.path.dirname(filename))
+
+    # Pattern matches, let's modify the file:
+    # a) Insert a small script to set HASHDIST_ARTIFACT to the artifact containing the script
+    # b) Replace occurences of the artifact dir with ${HASHDIST_ARTIFACT}
+    logger.info('Patching %s to compute artifact path dynamically' % filename)
+    script = ['# Compute HASHDIST_ARTIFACT\n'] + pack_sh_script(dedent("""\
+        o=`pwd`
+        p="$0"
+        while test -L "$p"; do  # while it is a link
+            cd `dirname "$p"`
+            p=`readlink $p`
+        done
+        cd `dirname $p`/%(up)s
+        HASHDIST_ARTIFACT=`pwd -P`
+        cd "$o"
+    """ % dict(up=up))).splitlines(True)
+    with open(filename) as f:
+        lines = f.readlines(True)  # keepends=True
+    if not lines:
+        # empty
+        return
+    i = 1 if lines[0].startswith('#!') else 0
+    lines = lines[:i] + script + [line.replace(artifact_dir, '${HASHDIST_ARTIFACT}') for line in lines[i:]]
+    with open(filename, 'w') as f:
+        f.write(''.join(lines))
+
+
 def check_relocateable(logger, artifact, filename):
     """
     Checks whether `filename` contains the string `artifact`, in which case it is not
@@ -240,7 +284,6 @@ def check_relocateable(logger, artifact, filename):
             baddies.append(filename)
     if baddies:
         raise Exception('Files not relocateable:\n%s' % ('\n'.join('  ' + x for x in baddies)))
-
 
 #
 # Shebang

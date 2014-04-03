@@ -100,7 +100,7 @@ class ProfileBuilder(object):
     def get_build_script(self, pkgname):
         python_path = self.profile.hook_import_dirs
         with hook.python_path_and_modules_sandbox(python_path):
-            ctx = self._load_package_build_context(pkgname)
+            ctx = self._load_package_build_context(pkgname, self._package_specs[pkgname])
             return self._package_specs[pkgname].assemble_build_script(ctx)
 
     def get_status_report(self):
