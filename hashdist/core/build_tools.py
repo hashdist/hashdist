@@ -250,9 +250,10 @@ def postprocess_sh_script(logger, patterns, artifact_dir, filename):
         p="$0"
         while test -L "$p"; do  # while it is a link
             cd `dirname "$p"`
-            p=`readlink $p`
+            b=`basename "$p"`
+            p=`readlink "$p"`
         done
-        cd `dirname $p`/%(up)s
+        cd `dirname "$p"`/%(up)s
         HASHDIST_ARTIFACT=`pwd -P`
         cd "$o"
     """ % dict(up=up))).splitlines(True)
@@ -406,7 +407,7 @@ _launcher_script = dedent("""\
             echo "No profile found."
             exit 127
         fi
-        p=`readlink $p`
+        p=`readlink $p`  # TODO should this not be readlink of `basename $p`?
     done
 """)
 
