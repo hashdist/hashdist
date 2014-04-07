@@ -10,10 +10,10 @@ from nose import SkipTest
 
 def test_topological_stage_sort():
     stages = [dict(name='z', value='z'),
-              dict(name='a', value='a', before=['c', 'b']),
+              dict(name='a', value='a', before=['c', 'b', 'nonexisting']),
               dict(name='c', value='c'),
               dict(name='b', value='b'),
-              dict(name='aa', value='aa', before='c', after='b')]
+              dict(name='aa', value='aa', before='c', after=['b', 'nonexisting'])]
     stages = package.normalize_stages(stages)
     stages = package.topological_stage_sort(stages)
     assert stages == [{'value': 'a'}, {'value': 'b'}, {'value': 'aa'}, {'value': 'c'}, {'value': 'z'}]
@@ -65,7 +65,8 @@ def test_create_build_spec():
             "commands": [
                 {"set": "BASH", "nohash_value": "/bin/bash"},
                 {"cmd": ["$BASH", "_hashdist/build.sh"]},
-                {'hit': ['build-postprocess', '--shebang=multiline', '--write-protect', '--relative-rpath']}]},
+                {'hit': ['build-postprocess', '--shebang=multiline', '--write-protect', '--remove-pkgconfig',
+                         '--relative-rpath', '--check-relocateable']}]},
         "sources": [
             {"key": "git:a3c39a03e7b8e9a3321d69ff877338f99ebb4aa2", "target": "."}
             ]}

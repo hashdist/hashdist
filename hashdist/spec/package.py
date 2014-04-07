@@ -320,16 +320,19 @@ def topological_stage_sort(stages):
         for later_stage_name in stage['before']:
             try:
                 later_stage = stage_by_name[later_stage_name]
-            except:
-                raise ValueError('stage "%s" referred to, but not available' % later_stage_name)
+            except KeyError:
+                pass  # we allow non-existing stages
             later_stage['after'] = later_stage['after'] + [stage['name']]  # copy
 
     visited = set()
     visiting = set()
     ordered_stage_names = topological_sort(
         sorted(stage_by_name.keys()),
-        lambda stage_name: sorted(stage_by_name[stage_name]['after']))
-    ordered_stages = [stage_by_name[stage_name] for stage_name in ordered_stage_names]
+        lambda stage_name: (
+            sorted(stage_by_name[stage_name]['after']) if stage_name in stage_by_name
+            else []))
+    ordered_stages = [stage_by_name[stage_name] for stage_name in ordered_stage_names
+                      if stage_name in stage_by_name]
     for stage in ordered_stages:
         del stage['after']
         del stage['before']
