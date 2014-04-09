@@ -218,6 +218,12 @@ class BuildPostprocess(object):
         relocatable. If relocatability is not supported for the
         platform, the command exists silently.
 
+    --relative-symlinks:
+
+        Rewrites absolute symlinks pointing within the $ARTIFACT
+        as relative symlinks, and gives an error on symlinks pointing
+        out of the artifact.
+
     --remove-pkgconfig:
 
         Remove pkgconfig files as they are not relocateable (at least
@@ -237,6 +243,10 @@ class BuildPostprocess(object):
         Complain loudly if the full path ${ARTIFACT} string is found
         anywhere within the artifact.
 
+    --check-ignore=REGEX
+
+        Ignore filenames matching REGEX for the relocateability check
+
 
     """
     command = 'build-postprocess'
@@ -248,7 +258,9 @@ class BuildPostprocess(object):
         ap.add_argument('--relative-rpath', action='store_true')
         ap.add_argument('--remove-pkgconfig', action='store_true')
         ap.add_argument('--relative-sh-script', action='append')
+        ap.add_argument('--relative-symlinks', action='store_true')
         ap.add_argument('--check-relocateable', action='store_true')
+        ap.add_argument('--check-ignore', action='append')
         ap.add_argument('--pyc', action='store_true')
         ap.add_argument('path', nargs='?', help='dir/file to post-process (dirs are handled '
                         'recursively)')
@@ -275,7 +287,7 @@ class BuildPostprocess(object):
             handlers.append(partial(build_tools.postprocess_multiline_shebang,
                                     build_store))
 
-        if args.relative_sh_script or args.check_relocateable:
+        if args.relative_sh_script or args.check_relocateable or args.relative_symlinks:
             if 'ARTIFACT' not in ctx.env:
                 ctx.logger.error('ARTIFACT environment variable not set')
             artifact_dir = ctx.env['ARTIFACT']
@@ -289,11 +301,17 @@ class BuildPostprocess(object):
                                                                                artifact_dir,
                                                                                filename))
 
+        if args.relative_symlinks:
+            handlers.append(lambda filename: build_tools.postprocess_relative_symlinks(ctx.logger, artifact_dir,
+                                                                                       filename))
+
+
         if args.remove_pkgconfig:
             handlers.append(lambda filename: build_tools.postprocess_remove_pkgconfig(ctx.logger, filename))
 
         if args.check_relocateable:
-            handlers.append(lambda filename: build_tools.check_relocateable(ctx.logger, artifact_dir, filename))
+            handlers.append(lambda filename: build_tools.check_relocateable(ctx.logger, args.check_ignore,
+                                                                            artifact_dir, filename))
 
         if args.write_protect:
             handlers.append(build_tools.postprocess_write_protect)
@@ -306,15 +324,12 @@ class BuildPostprocess(object):
                 raise
 
         # we traverse post-order so that write-protection of
-        # directories happens very last.  (Although, currently only
-        # files are write-protected so that rm -rf works.)
+        # directories happens very last
         if os.path.isfile(args.path):
             for handler in handlers:
                 handler(args.path)
         else:
             for dirpath, dirnames, filenames in os.walk(args.path, topdown=False):
-                for filename in filenames + [dirpath]:
-                    if not os.path.islink(filename):
-                        for handler in handlers:
-                            handler(pjoin(dirpath, filename))
-
+                for filename in dirnames + filenames:
+                    for handler in handlers:
+                        handler(pjoin(dirpath, filename))

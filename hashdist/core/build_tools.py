@@ -95,7 +95,7 @@ def is_executable(filename):
     return os.stat(filename).st_mode & 0o111 != 0
 
 def postprocess_launcher_shebangs(filename, launcher_program):
-    if not os.path.isfile(filename):
+    if not os.path.isfile(filename) or os.path.islink(filename):
         return
     if 'bin' not in filename:
         return
@@ -130,7 +130,7 @@ def postprocess_multiline_shebang(build_store, filename):
     Try to rewrite the shebang of scripts. This function deals with
     detecting whether the script is a shebang, and if so, rewrite it.
     """
-    if not os.path.isfile(filename) or not is_executable(filename):
+    if not os.path.isfile(filename) or os.path.islink(filename) or not is_executable(filename):
         return
 
     with open(filename) as f:
@@ -157,13 +157,30 @@ def postprocess_write_protect(filename):
     Write protect files. Leave directories alone because the inability
     to rm -rf is very annoying.
     """
-    if not os.path.isfile(filename):
+    if not os.path.isfile(filename) or os.path.islink(filename):
         return
     write_protect(filename)
 
 #
 # Relocateability
 #
+def postprocess_relative_symlinks(logger, artifact_dir, filename):
+    """
+    Turns absolute symlinks that points inside the artifact_dir into relative
+    symlinks, and gives an error on symlinks that points out of the artifact
+    """
+    if os.path.islink(filename):
+        target = os.readlink(filename)
+        if os.path.isabs(target):
+            if not filename.startswith(artifact_dir):
+                msg = 'Absolute symlink %s points to %s outside of %s' % (filename, target, artifact_dir)
+                logger.error(msg)
+                raise ValueError(msg)
+            else:
+                new_target = os.path.relpath(target, os.path.dirname(filename))
+                logger.debug('Rewriting symlink "%s" from "%s" to "%s"' % (filename, target, new_target))
+                os.unlink(filename)
+                os.symlink(new_target, filename)
 
 def postprocess_rpath(logger, env, filename):
     if os.path.islink(filename) or not os.path.isfile(filename) or not is_executable(filename):
@@ -203,11 +220,12 @@ def postprocess_rpath_linux(logger, env, filename):
     out = _check_call(logger, [patchelf, '--print-rpath', filename]).strip()
     if out:
         # non-empty RPATH, patch it
-        abs_rpaths = out.strip().split(':')
+        abs_rpaths_str = out.strip()
+        abs_rpaths = abs_rpaths_str.split(':')
         d = os.path.dirname(os.path.realpath(filename))
         rel_rpaths = ['${ORIGIN}/' + os.path.relpath(abs_rpath, d) for abs_rpath in abs_rpaths]
         rel_rpaths_str = ':'.join(rel_rpaths)
-        logger.debug('Setting RPATH to %s on %s' % (rel_rpaths_str, filename))
+        logger.debug('Rewriting RPATH on "%s" from "%s" to "%s"' % (filename, abs_rpaths_str, rel_rpaths_str))
         _check_call(logger, [patchelf, '--set-rpath', rel_rpaths_str, filename])
 
 
@@ -268,20 +286,32 @@ def postprocess_sh_script(logger, patterns, artifact_dir, filename):
         f.write(''.join(lines))
 
 
-def check_relocateable(logger, artifact, filename):
+def check_relocateable(logger, ignore_patterns, artifact_dir, filename):
     """
-    Checks whether `filename` contains the string `artifact`, in which case it is not
+    Checks whether `filename` contains the string `artifact_dir`, in which case it is not
     relocateable.
 
     For now we simply load the entire file into memory.
     """
-    artifact = artifact.encode(sys.getfilesystemencoding())
+    if not filename.startswith(artifact_dir):
+        raise ValueError('filename must be prefixed with artifact_dir')
+    s = filename[len(artifact_dir):]
+    for pattern in ignore_patterns:
+        if re.match(pattern, s):
+            return
+
+    artifact_dir_b = artifact_dir.encode(sys.getfilesystemencoding())
     baddies = []
-    if os.path.isfile(filename) and not os.path.islink(filename):
+    is_link = os.path.islink(filename)
+    if not is_link and os.path.isfile(filename):
         with open(filename) as f:
             data = f.read()
-        if artifact in data:
-            logger.error('File contains "%s" and can not be relocated: %s' % (artifact, filename))
+        if artifact_dir_b in data:
+            logger.error('File contains "%s" and can not be relocated: %s' % (artifact_dir_b, filename))
+            baddies.append(filename)
+    elif is_link:
+        if artifact_dir_b in os.readlink(filename):
+            logger.error('Symlink contains "%s" and can not be relocated: %s' % (artifact_dir_b, filename))
             baddies.append(filename)
     if baddies:
         raise Exception('Files not relocateable:\n%s' % ('\n'.join('  ' + x for x in baddies)))
