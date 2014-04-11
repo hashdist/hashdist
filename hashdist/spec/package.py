@@ -430,8 +430,8 @@ def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map,
     if parameters.get('relocateable', 'linux' in sys.platform):
         post_proc.extend(["--relative-symlinks",
                           "--check-relocateable",
-                          "--check-ignore='.*\.pyc\$'",
-                          "--check-ignore='.*\.pyo\$'"])
+                          "--check-ignore=.*\\.pyc\\$",  # \$ -> $ by the build spec runner in run_job.py
+                          "--check-ignore=.*\\.pyo\\$"])
     commands.append({"hit": ["build-postprocess"] + post_proc})
     # assemble
     build_spec = {
