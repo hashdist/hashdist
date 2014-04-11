@@ -45,20 +45,20 @@ def test_symlinks():
         assert os.path.realpath('bar/bin/ls') == '/bin/ls'
 
 @temp_working_dir_fixture
-def test_postprocess_check_relocateable_ok(d):
+def test_postprocess_check_relocatable_ok(d):
     # should ignore pyo and pyc files with the right flags
     dump(pjoin(d, 'a', 'b', 'c.pyc'), 'foo%sfoo' % d)
     dump(pjoin(d, 'a', 'b', 'c.pyo'), 'foo%sfoo' % d)
     env = dict(os.environ)
     env['ARTIFACT'] = d
-    hit('build-postprocess', '--check-relocateable', '--check-ignore=.*\\.pyc$', '--check-ignore=.*\\.pyo$',
+    hit('build-postprocess', '--check-relocatable', '--check-ignore=.*\\.pyc$', '--check-ignore=.*\\.pyo$',
         env=env)
 
 
 @temp_working_dir_fixture
-def test_postprocess_check_relocateable_fails(d):
+def test_postprocess_check_relocatable_fails(d):
     # should ignore pyo and pyc files with the right flags
     dump(pjoin(d, 'a', 'b', 'c.txt'), 'foo%sfoo' % d)
     env = dict(os.environ)
     env['ARTIFACT'] = d
-    hit('build-postprocess', '--check-relocateable', expected_status=127, env=env)
+    hit('build-postprocess', '--check-relocatable', expected_status=127, env=env)

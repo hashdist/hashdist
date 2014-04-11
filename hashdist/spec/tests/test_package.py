@@ -66,7 +66,7 @@ def test_create_build_spec():
                 {"set": "BASH", "nohash_value": "/bin/bash"},
                 {"cmd": ["$BASH", "_hashdist/build.sh"]},
                 {'hit': ['build-postprocess', '--shebang=multiline', '--write-protect', '--remove-pkgconfig',
-                         '--relative-rpath', '--relative-symlinks', '--check-relocateable',
+                         '--relative-rpath', '--relative-symlinks', '--check-relocatable',
                          "--check-ignore=.*\\.pyc\\$",
                          "--check-ignore=.*\\.pyo\\$"]}]},
         "sources": [

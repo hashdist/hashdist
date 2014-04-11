@@ -286,10 +286,10 @@ def postprocess_sh_script(logger, patterns, artifact_dir, filename):
         f.write(''.join(lines))
 
 
-def check_relocateable(logger, ignore_patterns, artifact_dir, filename):
+def check_relocatable(logger, ignore_patterns, artifact_dir, filename):
     """
     Checks whether `filename` contains the string `artifact_dir`, in which case it is not
-    relocateable.
+    relocatable.
 
     For now we simply load the entire file into memory.
     """
@@ -314,7 +314,7 @@ def check_relocateable(logger, ignore_patterns, artifact_dir, filename):
             logger.error('Symlink contains "%s" and can not be relocated: %s' % (artifact_dir_b, filename))
             baddies.append(filename)
     if baddies:
-        raise Exception('Files not relocateable:\n%s' % ('\n'.join('  ' + x for x in baddies)))
+        raise Exception('Files not relocatable:\n%s' % ('\n'.join('  ' + x for x in baddies)))
 
 #
 # Shebang

@@ -198,7 +198,7 @@ class BuildPostprocess(object):
         All scripts (executables starting with #!) are re-wired to
         a) if within a profile, launch the interpreter of the profile,
         b) if not in a profile, launch the interpreter using a relative
-        path instead of absolute one to make the artifact relocateable.
+        path instead of absolute one to make the artifact relocatable.
 
         The technique used depends on the value; multiline will use a
         polyglot script fragment to insert a 'multi-line shebang',
@@ -226,7 +226,7 @@ class BuildPostprocess(object):
 
     --remove-pkgconfig:
 
-        Remove pkgconfig files as they are not relocateable (at least
+        Remove pkgconfig files as they are not relocatable (at least
         yet)
 
     --relative-sh-script=pattern
@@ -238,7 +238,7 @@ class BuildPostprocess(object):
         at top introducing a hashdist_artifact variable in the script,
         and then references to $ARTIFACT will be
 
-    --check-relocateable
+    --check-relocatable
 
         Complain loudly if the full path ${ARTIFACT} string is found
         anywhere within the artifact.
@@ -259,7 +259,7 @@ class BuildPostprocess(object):
         ap.add_argument('--remove-pkgconfig', action='store_true')
         ap.add_argument('--relative-sh-script', action='append')
         ap.add_argument('--relative-symlinks', action='store_true')
-        ap.add_argument('--check-relocateable', action='store_true')
+        ap.add_argument('--check-relocatable', action='store_true')
         ap.add_argument('--check-ignore', action='append')
         ap.add_argument('--pyc', action='store_true')
         ap.add_argument('path', nargs='?', help='dir/file to post-process (dirs are handled '
@@ -287,7 +287,7 @@ class BuildPostprocess(object):
             handlers.append(partial(build_tools.postprocess_multiline_shebang,
                                     build_store))
 
-        if args.relative_sh_script or args.check_relocateable or args.relative_symlinks:
+        if args.relative_sh_script or args.check_relocatable or args.relative_symlinks:
             if 'ARTIFACT' not in ctx.env:
                 ctx.logger.error('ARTIFACT environment variable not set')
             artifact_dir = ctx.env['ARTIFACT']
@@ -309,8 +309,8 @@ class BuildPostprocess(object):
         if args.remove_pkgconfig:
             handlers.append(lambda filename: build_tools.postprocess_remove_pkgconfig(ctx.logger, filename))
 
-        if args.check_relocateable:
-            handlers.append(lambda filename: build_tools.check_relocateable(ctx.logger, args.check_ignore,
+        if args.check_relocatable:
+            handlers.append(lambda filename: build_tools.check_relocatable(ctx.logger, args.check_ignore,
                                                                             artifact_dir, filename))
 
         if args.write_protect:

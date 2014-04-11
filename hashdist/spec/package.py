@@ -427,9 +427,9 @@ def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map,
     post_proc = ["--shebang=multiline", "--write-protect", "--remove-pkgconfig"]
     if parameters.get('relative_rpath', True):
         post_proc.append("--relative-rpath")
-    if parameters.get('relocateable', 'linux' in sys.platform):
+    if parameters.get('relocatable', 'linux' in sys.platform):
         post_proc.extend(["--relative-symlinks",
-                          "--check-relocateable",
+                          "--check-relocatable",
                           "--check-ignore=.*\\.pyc\\$",  # \$ -> $ by the build spec runner in run_job.py
                           "--check-ignore=.*\\.pyo\\$"])
     commands.append({"hit": ["build-postprocess"] + post_proc})
