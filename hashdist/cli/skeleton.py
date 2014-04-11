@@ -15,7 +15,7 @@ from ..core import SourceCache
 
 
 PACKAGE_TEMPLATE = """\
-extends: [distutils_package]
+extends: [setuptools_package]
 
 dependencies:
   build: [{build_dependencies}]
