@@ -728,6 +728,7 @@ class CommandTreeExecution(object):
         logger = self.logger
         stdout_fd, stderr_fd = proc.stdout.fileno(), proc.stderr.fileno()
         fds = [stdout_fd, stderr_fd]
+        encoding = sys.stderr.encoding
         for fd in fds: # set O_NONBLOCK
             fcntl.fcntl(fd, fcntl.F_SETFL, fcntl.fcntl(fd, fcntl.F_GETFL) | os.O_NONBLOCK)
 
@@ -760,7 +761,7 @@ class CommandTreeExecution(object):
                         for line in lines:
                             if line[-1] == '\n':
                                 line = line[:-1]
-                            logger.debug(line)
+                            logger.debug(line.decode(encoding))
                     
             if proc.poll() is not None:
                 break
