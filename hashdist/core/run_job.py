@@ -761,8 +761,10 @@ class CommandTreeExecution(object):
                         for line in lines:
                             if line[-1] == '\n':
                                 line = line[:-1]
-                            logger.debug(line.decode(encoding))
-                    
+                            if encoding:
+                                logger.debug(line.decode(encoding))
+                            else:
+                                logger.debug(line)
             if proc.poll() is not None:
                 break
         for buf in buffers.values():
