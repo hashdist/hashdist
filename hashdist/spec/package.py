@@ -109,10 +109,11 @@ class PackageSpec(object):
                               "select": select})
             elif 'launcher' in in_stage:
                 select = substitute_profile_parameters(in_stage["launcher"], parameters)
-                rules.append({"action": "launcher",
-                              "select": "${%s_DIR}/%s" % (ref, select),
-                              "prefix": "${%s_DIR}" % ref,
-                              "target": target})
+                if link_type != 'copy':
+                    rules.append({"action": "launcher",
+                                  "select": "${%s_DIR}/%s" % (ref, select),
+                                  "prefix": "${%s_DIR}" % ref,
+                                  "target": target})
             elif 'copy' in in_stage:
                 select = substitute_profile_parameters(in_stage["copy"], parameters)
                 rules.append({"action": "copy",

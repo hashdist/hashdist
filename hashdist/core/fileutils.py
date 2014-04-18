@@ -1,5 +1,6 @@
 import os
 import errno
+import filecmp
 import shutil
 import time
 import gzip
@@ -8,9 +9,15 @@ from contextlib import closing
 
 def silent_copy(src, dst):
     try:
-        shutil.copy(src, dst)
+        if os.path.isdir(src):
+            shutil.copytree(src, dst)
+        else:
+            shutil.copy(src, dst)
     except OSError, e:
         if e.errno != errno.EEXIST:
+            raise
+    except IOError, e:
+        if not filecmp.cmp(src, dst):
             raise
 
 def silent_relative_symlink(src, dst):
