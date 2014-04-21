@@ -148,16 +148,6 @@ def postprocess_multiline_shebang(build_store, filename):
         if mod_scriptlines != scriptlines:
             with open(filename, 'w') as f:
                 f.write(''.join(mod_scriptlines))
-        
-
-def postprocess_write_protect(filename):
-    """
-    Write protect files. Leave directories alone because the inability
-    to rm -rf is very annoying.
-    """
-    if not os.path.isfile(filename):
-        return
-    write_protect(filename)
 
 
 #

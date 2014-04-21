@@ -244,7 +244,7 @@ class BuildPostprocess(object):
                                     build_store))
 
         if args.write_protect:
-            handlers.append(build_tools.postprocess_write_protect)
+            handlers.append(build_tools.write_protect)
 
         if args.path is None:
             try:
@@ -261,7 +261,8 @@ class BuildPostprocess(object):
                 handler(args.path)
         else:
             for dirpath, dirnames, filenames in os.walk(args.path, topdown=False):
-                for filename in filenames + [dirpath]:
-                    for handler in handlers:
+                for handler in handlers:
+                    for filename in filenames:
                         handler(pjoin(dirpath, filename))
+                    handler(dirpath)
         
