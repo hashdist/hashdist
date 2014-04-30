@@ -122,8 +122,4 @@ def has_permission(path):
     """
     Returns True if we have 'listdir' permissions. False otherwise.
     """
-    try:
-        l = os.listdir(path)
-        return True
-    except OSError:
-        return False
+    return os.access(path, os.R_OK)
