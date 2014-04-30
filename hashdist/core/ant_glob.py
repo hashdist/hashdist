@@ -109,6 +109,21 @@ def ant_iglob(pattern, cwd='', include_dirs=True):
             for name in os.listdir(cwd):
                 path = pjoin(ret_cwd, name)
                 if part_re.match(name) and os.path.isdir(path):
-                    for x in ant_iglob(parts[1:], path, include_dirs):
+                    parts_ = parts[1:]
+                    while not has_permission(path):
+                        if '**' in parts[0]:
+                            raise NotImplementedError('Cannot use ** in directories without read permission')
+                        path = pjoin(path, parts_[0])
+                        parts_ = parts_[1:]
+                    for x in ant_iglob(parts_, path, include_dirs):
                         yield x
-        
+
+def has_permission(path):
+    """
+    Returns True if we have 'listdir' permissions. False otherwise.
+    """
+    try:
+        l = os.listdir(path)
+        return True
+    except OSError:
+        return False
