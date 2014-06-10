@@ -34,7 +34,7 @@ Note: ``master`` is the development branch.
 Copyright and license
 ---------------------
 
-Copyright (c) 2012, HashDist Developers. All rights
+Copyright (c) 2012-2014, HashDist Developers. All rights
 reserved.
 
 HashDist is licensed under the BSD 3-clause license. See LICENSE.txt
