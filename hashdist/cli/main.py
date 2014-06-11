@@ -58,24 +58,28 @@ class HashdistCommandContext(object):
         self._config_filename = config_filename
         self._config = None
 
-    def _init_home(self):
+    def _ensure_home(self):
         from .manage_store_cli import InitHome
         InitHome.run(self, None)
 
+    def _ensure_config(self):
+        if self._config_filename is None and 'HDIST_CONFIG' in self.env:
+            self._config = json.loads(env['HDIST_CONFIG'])
+        else:
+            try:
+                config = load_config_file(self._config_filename, self.logger)
+            except IOError as e:
+                if e.errno == errno.ENOENT:
+                    self.logger.info('Unable to find %s, running hit init-home.\n' % self._config_filename)
+                    self._ensure_home()
+                    config = load_config_file(self._config_filename, self.logger)
+                else:
+                    raise
+        self._config = config
+
     def get_config(self):
         if self._config is None:
-            if self._config_filename is None and 'HDIST_CONFIG' in self.env:
-                return json.loads(env['HDIST_CONFIG'])
-            else:
-                try:
-                    config = load_config_file(self._config_filename)
-                except IOError as e:
-                    if e.errno == errno.ENOENT:
-                        self._init_home()
-                        config = load_config_file(self._config_filename)
-                    else:
-                        raise
-            self._config = config
+            self._ensure_config()
         return self._config
 
     def error(self, msg):
