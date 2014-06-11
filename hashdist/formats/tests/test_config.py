@@ -4,7 +4,7 @@ from os.path import join as pjoin
 from textwrap import dedent
 from .. import config
 from .. import marked_yaml
-from ...core.test.utils import temp_working_dir_fixture, working_directory, dump, assert_raises
+from ...core.test.utils import temp_working_dir_fixture, working_directory, dump, logger
 
 
 
@@ -20,7 +20,7 @@ def test_schema_error(d):
         gc_roots: a
     """)
     try:
-        cfg = config.load_config_file('config.yaml')
+        cfg = config.load_config_file('config.yaml', logger)
     except marked_yaml.ValidationError as e:
         assert str(e) == "config.yaml, line 3: {'a': 3} is not of type 'array'"
     else:
@@ -39,7 +39,7 @@ def test_load_config(d):
         gc_roots: ./gcroots
     """)
     with working_directory('/'):
-        c = config.load_config_file(pjoin(d, 'config.yaml'))
+        c = config.load_config_file(pjoin(d, 'config.yaml'), logger)
 
     assert c == {
         'build_stores': [{'dir': pjoin(d, 'ba')}],
