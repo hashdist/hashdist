@@ -34,6 +34,7 @@ class Profile(object):
         self.checkouts_manager = checkouts_manager
         self.hook_import_dirs = doc.get('hook_import_dirs', [])
         self.packages = doc['packages']
+        self.default_use = doc.get('default_use', {})
         self._yaml_cache = {} # (filename: [list of documents, possibly with when-clauses])
 
     def resolve(self, path):
@@ -196,7 +197,7 @@ class FileResolver(object):
         return result
 
 
-def load_and_inherit_profile(checkouts, include_doc, cwd=None):
+def load_and_inherit_profile(checkouts, include_doc, default_profile, cwd=None):
     """
     Loads a Profile given an include document fragment, e.g.::
 
@@ -251,11 +252,11 @@ def load_and_inherit_profile(checkouts, include_doc, cwd=None):
         doc = {}
 
     if 'extends' in doc:
-        parents = [load_and_inherit_profile(checkouts, parent_include_doc, cwd=new_cwd)
+        parents = [load_and_inherit_profile(checkouts, parent_include_doc, default_profile, cwd=new_cwd)
                    for parent_include_doc in doc['extends']]
         del doc['extends']
     else:
-        parents = []
+        parents = [default_profile] if default_profile else []
 
     for section in ['package_dirs', 'hook_import_dirs']:
         lst = doc.get(section, [])
@@ -266,17 +267,19 @@ def load_and_inherit_profile(checkouts, include_doc, cwd=None):
         for parent_doc in parents:
             doc[section].extend(parent_doc.get(section, []))
 
-    # Merge parameters. Can't have the same parameter from more than one parent
-    # *unless* it's overriden by this document, in which case it's OK.
-    parameters = doc.setdefault('parameters', {})
-    overridden = parameters.keys()
-    for parent_doc in parents:
-        for k, v in parent_doc.get('parameters', {}).iteritems():
-            if k not in overridden:
-                if k in parameters:
-                    raise ProfileError(doc, 'two base profiles set same parameter %s, please set it '
-                                       'explicitly in descendant profile')
-                parameters[k] = v
+    # Merge parameters and default_use. Can't have the same parameter from more than one parent
+    # *unless* it's overridden by this document, in which case it's OK.
+
+    for section in ['parameters', 'default_use']:
+        doc_section = doc.setdefault(section, {})
+        overridden = doc_section.keys()
+        for parent_doc in parents:
+            for k, v in parent_doc.get(section, {}).iteritems():
+                if k not in overridden:
+                    if k in doc_section:
+                        raise ProfileError(doc, 'two base profiles set same %s %s, please set it '
+                                           'explicitly in descendant profile' % (section, k))
+                    doc_section[k] = v
 
     # Merge packages section
     packages = {}
@@ -296,6 +299,6 @@ def load_and_inherit_profile(checkouts, include_doc, cwd=None):
     doc['packages'] = packages
     return doc
 
-def load_profile(checkout_manager, profile_file):
-    doc = load_and_inherit_profile(checkout_manager, profile_file)
+def load_profile(checkout_manager, profile_file, default_profile=None):
+    doc = load_and_inherit_profile(checkout_manager, profile_file, default_profile)
     return Profile(doc, checkout_manager)

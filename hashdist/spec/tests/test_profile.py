@@ -101,7 +101,7 @@ def test_load_and_inherit_profile_dir_treatment(d):
     """ % (pjoin(d, 'gitrepo'), commit))
     os.mkdir(pjoin(d, 'src'))
     with profile.TemporarySourceCheckouts(SourceCache(pjoin(d, 'src'), logger)) as checkouts:
-        doc = profile.load_and_inherit_profile(checkouts, pjoin(d, 'user', 'profile.yaml'))
+        doc = profile.load_and_inherit_profile(checkouts, pjoin(d, 'user', 'profile.yaml'), None)
         assert doc['hook_import_dirs'] == ['%s/user/utils' % d, '<repo1>/subdir/utils',
                                            '<repo1>/subdir/../utils', '/some/absolute/path']
         assert doc['package_dirs'] == ['%s/user/pkgs_user' % d, '<repo1>/subdir/pkgs_subdir',
@@ -133,7 +133,7 @@ def test_profile_parameters(d):
     """)
 
     with profile.TemporarySourceCheckouts(None) as checkouts:
-        doc = profile.load_and_inherit_profile(checkouts, "profile.yaml")
+        doc = profile.load_and_inherit_profile(checkouts, "profile.yaml", None)
     assert doc['parameters'] == {'a': 1, 'b': 2, 'c': 3, 'd': 4,
                                  'set_in_both_but_overridden': 0}
 
@@ -149,7 +149,7 @@ def test_parameter_collision(d):
     dump("base2.yaml", "parameters: {a: 1}")
     with profile.TemporarySourceCheckouts(None) as checkouts:
         with assert_raises(ProfileError):
-            doc = profile.load_and_inherit_profile(checkouts, "profile.yaml")
+            doc = profile.load_and_inherit_profile(checkouts, "profile.yaml", None)
 
 @temp_working_dir_fixture
 def test_file_resolver(d):
@@ -213,7 +213,7 @@ def test_resource_resolution(d):
     dump(pjoin(d, "level1", "pkgs", "bar.yaml"), "{}")
 
     with profile.TemporarySourceCheckouts(None) as checkouts:
-        doc = profile.load_and_inherit_profile(checkouts, pjoin(d, "level3", "profile.yaml"))
+        doc = profile.load_and_inherit_profile(checkouts, pjoin(d, "level3", "profile.yaml"), None)
         p = profile.Profile(doc, checkouts)
         assert (pjoin(d, "level2", "pkgs", "foo", "foo.yaml") ==
                 os.path.realpath(p.find_package_file("foo", "foo.yaml")))
@@ -238,6 +238,11 @@ def test_load_and_inherit_profile(d):
         extends:
           - file: base1.yaml
           - file: base2.yaml
+
+        default_use:
+          mpi: mpich2
+          blas: openblas
+          not_used: godot
 
         packages:
           gcc:
@@ -265,8 +270,28 @@ def test_load_and_inherit_profile(d):
 
 
     with profile.TemporarySourceCheckouts(None) as checkouts:
-        p = profile.load_and_inherit_profile(checkouts, pjoin(d, "user.yaml"))
+        p = profile.load_and_inherit_profile(checkouts, pjoin(d, "user.yaml"), None)
     yield eq_, p['packages'], {'python': {'host': True},
                                'numpy': {'host': False},
                                'gcc': {},
                                'mpi': {'use': 'openmpi'}}
+
+@temp_working_dir_fixture
+def test_load_and_inherit_with_default_profile(d):
+    dump(pjoin(d, "user.yaml"), """\
+        packages:
+          gcc:
+          blas:
+    """)
+
+    default_profile = {'parameters': {'platform': 'Darwin'},
+                       'default_use': {'blas': 'host-osx-framework-accelerate',
+                                       'unused': 'godot'}}
+
+    with profile.TemporarySourceCheckouts(None) as checkouts:
+        p = profile.load_and_inherit_profile(checkouts, pjoin(d, "user.yaml"), default_profile)
+    assert p['parameters'] == {'platform': 'Darwin'}
+
+    # default_use values are not used until the builder actually attempts the build.
+    yield eq_, p['packages'], {'gcc': {},
+                               'blas': {}}

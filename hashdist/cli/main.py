@@ -82,6 +82,10 @@ class HashdistCommandContext(object):
             self._ensure_config()
         return self._config
 
+    def get_default_profile(self):
+        config = self.get_config()
+        return config.get('default_profile', {})
+
     def error(self, msg):
         self.argparser.error(msg)
 

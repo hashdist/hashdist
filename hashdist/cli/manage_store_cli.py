@@ -2,7 +2,6 @@ import sys
 import os
 import shutil
 from os.path import join as pjoin, exists as pexists
-from textwrap import dedent
 
 from ..formats.config import (
     DEFAULT_STORE_DIR,
@@ -12,6 +11,27 @@ from ..formats.config import (
     get_config_example_filename
 )
 from .main import register_subcommand
+
+@register_subcommand
+class InitConfig(object):
+    __doc__ = """
+    Initializes %s configuration file.
+    """ % DEFAULT_CONFIG_FILENAME_REPR
+    command = 'init-config'
+
+    @staticmethod
+    def setup(ap):
+        pass
+
+    @staticmethod
+    def run(ctx, args):
+        if pexists(DEFAULT_CONFIG_FILENAME):
+            ctx.logger.error('%s already exists, remove if you would like to overwrite it.\n' % path)
+            return 2
+        config_example_filename = get_config_example_filename()
+        shutil.copyfile(config_example_filename, DEFAULT_CONFIG_FILENAME)
+        sys.stdout.write('Default configuration from %s written to %s.\n' %
+                         (config_example_filename, DEFAULT_CONFIG_FILENAME))
 
 @register_subcommand
 class InitHome(object):
@@ -28,16 +48,15 @@ class InitHome(object):
 
     @staticmethod
     def run(ctx, args):
-        for path in [DEFAULT_STORE_DIR, DEFAULT_CONFIG_FILENAME]:
-            if pexists(path):
-                ctx.logger.error('%s already exists, aborting\n' % path)
-                return 2
 
         for path in DEFAULT_CONFIG_DIRS:
-            os.makedirs(pjoin(DEFAULT_STORE_DIR, path))
-            sys.stdout.write('Directory %s created.\n' % path)
-        shutil.copyfile(get_config_example_filename(), DEFAULT_CONFIG_FILENAME)
-        sys.stdout.write('Default configuration file %s written.\n' % DEFAULT_CONFIG_FILENAME)
+            abs_path = pjoin(DEFAULT_STORE_DIR, path)
+            if not os.path.isdir(abs_path):
+                os.makedirs(abs_path)
+                sys.stdout.write('Directory %s created.\n' % abs_path)
+            else:
+                sys.stdout.write('Directory %s already exists.\n' % abs_path)
+        InitConfig.run(ctx, args)
 
 @register_subcommand
 class SelfCheck(object):

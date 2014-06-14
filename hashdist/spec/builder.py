@@ -38,7 +38,8 @@ class ProfileBuilder(object):
                     raise ProfileError(pkgname, 'dependency cycle between packages, including package "%s"' % pkgname)
                 visiting.add(pkgname)
                 settings = self.profile.packages.get(pkgname, {})
-                use = settings.get('use', pkgname)
+                default_use = self.profile.default_use.get(pkgname, pkgname)
+                use = settings.get('use', default_use)
                 spec = package.PackageSpec.load(self.profile, use)
                 self._package_specs[pkgname] = spec
                 for dep in spec.build_deps + spec.run_deps:

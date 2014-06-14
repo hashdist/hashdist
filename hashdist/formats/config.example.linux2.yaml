@@ -35,3 +35,27 @@ cache: ./cache
 ## pointed to through here will not be deleted when garbage-collected.
 
 gc_roots: ./gcroots
+
+## The default_profile contains profile parameters that are populated by
+## default on all builds.  Typically, this is where you would put information
+## specific to your operating system.
+
+default_profile:
+  package_dirs:
+    - pkgs
+    - base
+
+  hook_import_dirs:
+    - base
+
+  parameters:
+    platform: linux # more correct than linux2
+    pyver: '2.7'  # as in used in lib/pythonX.Y/site-packages
+    python_site_packages_rel: 'lib/python2.7/site-packages'
+
+    BASH: /bin/bash
+    PATH: /usr/bin:/bin:/usr/sbin:/sbin
+    PROLOGUE: |
+
+  default_use:
+    blas: host-blas

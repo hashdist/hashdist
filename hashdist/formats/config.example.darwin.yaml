@@ -1,0 +1,63 @@
+## Configuration file for Hashdist
+
+## All relative paths are relative to the directory containing this
+## configuration file.
+
+## Where to store the built software
+
+build_stores:
+ - dir: ./bld
+
+
+## Location where temporary directories for building software are created.
+## Such directories are by default removed again once the build is done.
+
+build_temp: ./tmp
+
+
+## Locations of downloaded tarballs and git repositories.  A location
+## can either be a local filesystem, or a URL to an online, read-only
+## mirror. Only the first location, which should be a local directory,
+## will be written to.
+
+source_caches:
+ - dir: ./src
+## For additional source cache mirror:
+## - url: https://some.server.org/hashdist/src
+
+
+## The cache directory is used for misc. caching (e.g., probing of host
+## system).  The contents can always be wiped without resulting in rebuilds.
+
+cache: ./cache
+
+## The roots directory contains links to (links to) profiles. Anything
+## pointed to through here will not be deleted when garbage-collected.
+
+gc_roots: ./gcroots
+
+## The default_profile contains profile parameters that are populated by
+## default on all builds.  Typically, this is where you would put information
+## specific to your operating system.
+
+default_profile:
+  package_dirs:
+    - pkgs
+    - base
+
+  hook_import_dirs:
+    - base
+
+  parameters:
+    platform: darwin
+    pyver: '2.7'  # as in used in lib/pythonX.Y/site-packages
+    python_site_packages_rel: 'lib/python2.7/site-packages'
+
+    BASH: /bin/bash
+    PATH: /usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin
+    PROLOGUE: |
+      export MACOSX_DEPLOYMENT_TARGET=$(sw_vers -productVersion | sed "s/\(10.[0-9]\).*/\1/")
+
+  default_use:
+    blas: host-osx-framework-accelerate
+    lapack: host-osx-framework-accelerate

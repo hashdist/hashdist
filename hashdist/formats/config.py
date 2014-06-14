@@ -4,8 +4,8 @@ Handles reading the Hashdist configuration file. By default this is
 """
 
 import os
+import sys
 from os.path import join as pjoin
-from ..deps import jsonschema
 from .marked_yaml import (load_yaml_from_file, validate_yaml, ValidationError)
 
 DEFAULT_STORE_DIR = os.path.expanduser('~/.hashdist')
@@ -83,4 +83,7 @@ def load_config_file(filename, logger):
     return doc
 
 def get_config_example_filename():
-    return pjoin(os.path.dirname(__file__), 'config.example.yaml')
+    config_path = pjoin(os.path.dirname(__file__), 'config.example.' + sys.platform + '.yaml')
+    if not os.path.isfile(config_path):
+        raise NotImplementedError('No default configuration exists for platform: %s' % sys.platform)
+    return config_path

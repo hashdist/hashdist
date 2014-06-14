@@ -37,6 +37,11 @@ def test_load_config(d):
         - url: http://server.com/source_cache
         cache: ./cache
         gc_roots: ./gcroots
+        default_profile:
+          parameters:
+            platform: darwin
+          default_use:
+            blas: host-osx-framework-accelerate
     """)
     with working_directory('/'):
         c = config.load_config_file(pjoin(d, 'config.yaml'), logger)
@@ -47,4 +52,6 @@ def test_load_config(d):
         'cache': pjoin(d, 'cache'),
         'gc_roots': pjoin(d, 'gcroots'),
         'source_caches': [{'dir': pjoin(d, 'src')},
-                          {'url': 'http://server.com/source_cache'}]}
+                          {'url': 'http://server.com/source_cache'}],
+        'default_profile': {'parameters': {'platform': 'darwin'},
+                            'default_use': {'blas': 'host-osx-framework-accelerate'}}}
