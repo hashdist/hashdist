@@ -98,7 +98,7 @@ def _parse_docstring(doc):
     description = description.replace('::\n', ':\n').replace('``', '"')
     return help, description
 
-def main(unparsed_argv, env, logger, default_config_filename=None):
+def command_line_entry_point(unparsed_argv, env, logger, default_config_filename=None):
     """The main ``hit`` command-line entry point
     """
     description = textwrap.dedent('''
@@ -245,4 +245,4 @@ register_subcommand(Help)
 
 
 if __name__ == '__main__':
-    sys.exit(main(sys.argv, os.environ))
+    sys.exit(command_line_entry_point(sys.argv, os.environ))

@@ -7,7 +7,7 @@ hashdist_dir = os.path.realpath(os.path.join(os.path.dirname(os.path.realpath(__
 sys.path.insert(0, hashdist_dir)
 
 from hashdist.hdist_logging import Logger
-from hashdist.cli.main import main, help_on_exceptions
+from hashdist.cli.main import command_line_entry_point, help_on_exceptions
 
 logger = Logger()
-sys.exit(help_on_exceptions(logger, main, sys.argv, os.environ, logger))
+sys.exit(help_on_exceptions(logger, command_line_entry_point, sys.argv, os.environ, logger))
