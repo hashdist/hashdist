@@ -33,10 +33,11 @@ happens.
 
 
 **action**:
-  One of "absolute_symlink", "relative_symlink", "copy", "exclude",
-  "launcher". Other types may be added later.
+  One of "symlink", "absolute_symlink", "relative_symlink", "copy",
+  "exclude", "launcher". Other types may be added later.
 
-  * *absolute_symlink* creates absolute symlinks
+  * *absolute_symlink* creates absolute symlinks. Just *symlink* is an
+    alias for absolute symlink.
   * *relative_symlink* creates relative symlinks
   * *copy* copies contents and mode (``shutil.copy``)
   * *exclude* makes sure matching files are not considered in rules below
@@ -68,8 +69,6 @@ happens.
 
 **overwrite**:
   If present and `True`, overwrite target.
-
-
 """
 
 import sys
