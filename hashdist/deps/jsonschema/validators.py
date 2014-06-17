@@ -465,10 +465,11 @@ def validate(instance, schema, cls=None, *args, **kwargs):
     """
     Validate an instance under the given schema.
 
-        >>> validate([2, 3, 4], {"maxItems" : 2})
+        >>> validate([2, 3, 4], {"maxItems" : 2})  # doctest: +ELLIPSIS
         Traceback (most recent call last):
-            ...
+        ...
         ValidationError: [2, 3, 4] is too long
+        ...
 
     :func:`validate` will first verify that the provided schema is itself
     valid, since not doing so can lead to less obvious error messages and fail
