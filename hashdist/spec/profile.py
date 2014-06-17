@@ -81,7 +81,8 @@ class Profile(object):
         return self.file_resolver.find_file([filename, pjoin(pkgname, filename)])
 
     def __repr__(self):
-        return '<Profile %s>' % self.filename
+        return 'Profile containing ' + ', '.join(
+            key[1] for key in self._yaml_cache.keys() if key[0] == 'package')
 
 
 class TemporarySourceCheckouts(object):
