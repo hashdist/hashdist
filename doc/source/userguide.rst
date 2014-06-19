@@ -4,7 +4,7 @@ User's guide to Hashdist v. 0.2
 Installing and making the `hit` tool available
 ----------------------------------------------
 
-Hashdist requires Python (2.6 or 2.7) and git.
+Hashdist requires Python 2.7 and git.
 
 To start using Hashdist, clone the repo that contains the core tool, and put
 the ``bin``-directory in your ``PATH``::
