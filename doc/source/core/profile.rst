@@ -1,2 +1,2 @@
-.. automodule:: hashdist.core.profile
+.. automodule:: hashdist.spec.profile
     :members:

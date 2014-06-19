@@ -99,8 +99,8 @@ def make_launcher(src, dst, launcher_program):
         and "$dst.link" is set up to point relatively to "$src".
 
     symlink:
-        Copy it verbatim. Thus, e.g., ``python -> python2.7'' will point to the
-        newly, "launched-ified" ``python2.7''.
+        Copy it verbatim. Thus, e.g., ``python -> python2.7`` will point to the
+        newly, "launched-ified" ``python2.7``.
 
     other (incl. scripts):
         Symlink relatively to it.

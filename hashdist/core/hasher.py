@@ -55,7 +55,7 @@ def hash_document(doctype, doc):
 def prune_nohash(doc):
     """
     Returns a copy of the document with every key/value-pair whose key
-    starts with 'nohash_' is removed.
+    starts with ``'nohash_'`` is removed.
     """
     if isinstance(doc, (int, bool, float, basestring)) or doc is None:
         r = doc
