@@ -3,6 +3,7 @@ from os.path import join as pjoin
 from textwrap import dedent
 from ...core.test.utils import *
 from .. import package
+from .. import package_loader
 from .. import hook_api
 from ...formats.marked_yaml import marked_yaml_load, yaml_dump
 from ..exceptions import ProfileError
@@ -14,8 +15,8 @@ def test_topological_stage_sort():
               dict(name='c', value='c'),
               dict(name='b', value='b'),
               dict(name='aa', value='aa', before='c', after='b')]
-    stages = package.normalize_stages(stages)
-    stages = package.topological_stage_sort(stages)
+    stages = package_loader.normalize_stages(stages)
+    stages = package_loader.topological_stage_sort(stages)
     assert stages == [{'value': 'a'}, {'value': 'b'}, {'value': 'aa'}, {'value': 'c'}, {'value': 'z'}]
 
 #
@@ -75,6 +76,11 @@ def test_create_build_spec():
 
 
 class MockProfile(object):
+
+    parameters = {}
+
+    packages = {}
+
     def __init__(self, files):
         self.files = dict((name, marked_yaml_load(body)) for name, body in files.items())
 
@@ -91,7 +97,7 @@ def test_prevent_diamond():
         'c.yaml': 'extends: [d]',
         'd.yaml': '{}'}
     with assert_raises(ProfileError):
-        package.load_and_inherit_package(MockProfile(files), 'a', {})
+        package.PackageSpec.load(MockProfile(files), 'a')
 
 def test_inheritance_collision():
     files = {
@@ -99,7 +105,7 @@ def test_inheritance_collision():
         'base1.yaml': 'build_stages: [{name: stage1}]',
         'base2.yaml': 'build_stages: [{name: stage1}]'}
     with assert_raises(ProfileError):
-        doc = package.load_and_inherit_package(MockProfile(files), 'child', {})
+        package.PackageSpec.load(MockProfile(files), 'child')
 
 
 def test_load_and_inherit_package():
@@ -175,8 +181,12 @@ def test_load_and_inherit_package():
 
     prof = MockProfile(files)
 
-    doc, hook_files = package.load_and_inherit_package(prof, 'mypackage', {})
-    assert hook_files == ['grandparent.py', 'base1.py', 'mypackage.py']
+    loader = package_loader.PackageLoader('mypackage', {},
+                                          load_yaml=prof.load_package_yaml,
+                                          find_file=prof.find_package_file)
+    assert set(p.name for p in loader.all_parents) == set(['base1', 'base2', 'grandparent'])
+    assert set(p.name for p in loader.direct_parents) == set(['base1', 'base2'])
+    assert loader.get_hook_files() == ['grandparent.py', 'base1.py', 'mypackage.py']
 
     # the below relies on an unstable ordering as the lists are not sorted, but
     # the parent traversal happens in an (unspecified) stable order
@@ -197,11 +207,13 @@ def test_load_and_inherit_package():
         when_build_dependency:
         - {name: start, set: FOO, value: foovalue}
     """)
-    assert expected == doc
+    print yaml_dump(loader.doc)
+    assert expected == loader.doc
 
 
 def test_order_stages():
-    doc = marked_yaml_load("""\
+    loader = package_loader.PackageLoader.__new__(package_loader.PackageLoader)
+    loader.doc = marked_yaml_load("""\
     build_stages:
     - {a: 1, after: stage1_override, before: stage3_override, name: stage_2_inserted}
     - {a: 1, name: stage4_replace}
@@ -218,12 +230,11 @@ def test_order_stages():
     profile_links: []
     when_build_dependency: []
     """)
-    result = package.order_package_stages(doc)
-    assert expected == result
+    assert expected == loader.stages_topo_ordered()
 
 
 def test_extend_list():
-    
+
     def _extend_list(to_insert, lst):
         """Removes items from `lst` that can be found in `to_insert`, and then
         returns a list with `to_insert` at the front and `lst` at the end.
@@ -240,23 +251,29 @@ def test_extend_list():
     yield eq_, ['a', 'a', 'a', 'a'], lst
 
 def test_name_anonymous_stages():
-    stages = [
+    loader = package_loader.PackageLoader.__new__(package_loader.PackageLoader)
+    loader.name = 'theloader'
+    stages_ok = [
         {'name': 'foo'},
         {'before': 'foo', 'one': 1},
-        {'before': 'bar', 'after': 'foo', 'one': 1}, # should get same name
+        {'before': 'bar', 'after': 'foo', 'two': 2},
         {}
         ]
-    result = package.name_anonymous_stages(stages)
+    stages_identical = [
+        {'before': 'foo', 'one': 1},
+        {'before': 'bar', 'after': 'foo', 'one': 1},
+        ]
+    loader.doc = dict(ok=stages_ok, bad=stages_identical)
+    result = loader.get_stages_with_names('ok')
     assert result == [{'name': 'foo'},
                       {'before': 'foo', 'name': '__vohxh6yicfhfiz6qerugjle42wfmlu2p', 'one': 1},
                       {'after': 'foo',
                        'before': 'bar',
-                       'name': '__vohxh6yicfhfiz6qerugjle42wfmlu2p',
-                       'one': 1},
+                       'name': '__tdurutje3wctzqnu24mzy5gqza5yxt6b',
+                       'two': 2},
                       {'name': '__qvk3jbqy6b3mvv5opou3ae55met2pt6s'}]
-    # Note: The fact that identical stages get the same name, which trips up things downstream,
-    # could be seen as a feature rather than a bug -- you normally never want this. At any
-    # rate, this is better for final ordering stability than having a random ordering.
+    with assert_raises(ProfileError):
+        loader.get_stages_with_names('bad')
 
 def test_when_dictionary():
     doc = marked_yaml_load("""\
@@ -266,13 +283,13 @@ def test_when_dictionary():
                 one: 1
             two: 2
     """)
-    r = package.process_conditionals(doc, {'platform': 'linux',
+    r = package_loader.recursive_process_conditionals(doc, {'platform': 'linux',
                                            'host': True})
     assert {'dictionary': {'one': 1, 'two': 2}} == r
-    r = package.process_conditionals(doc, {'platform': 'linux',
+    r = package_loader.recursive_process_conditionals(doc, {'platform': 'linux',
                                            'host': False})
     assert {'dictionary': {'two': 2}} == r
-    r = package.process_conditionals(doc, {'platform': 'windows',
+    r = package_loader.recursive_process_conditionals(doc, {'platform': 'windows',
                                            'host': False})
     assert {'dictionary': {}} == r
 
@@ -288,12 +305,12 @@ def test_when_list():
     - am-on: host
       when: host
     """)
-    r = package.process_conditionals(doc, {'platform': 'linux',
-                                           'host': True})
+    r = package_loader.recursive_process_conditionals(
+        doc, {'platform': 'linux', 'host': True})
     assert {'dictionary': [1, 2, 3, {'nested': 'dict'}, {'am-on': 'host'}]} == r
-    r = package.process_conditionals(doc, {'platform': 'linux',
-                                           'host': False})
+    r = package_loader.recursive_process_conditionals(
+        doc, {'platform': 'linux', 'host': False})
     assert {'dictionary': [2, 3, {'nested': 'dict'}]} == r
-    r = package.process_conditionals(doc, {'platform': 'windows',
-                                           'host': False})
+    r = package_loader.recursive_process_conditionals(
+        doc, {'platform': 'windows', 'host': False})
     assert {'dictionary': [3, {'nested': 'dict'}]} == r

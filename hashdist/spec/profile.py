@@ -24,6 +24,17 @@ from .utils import substitute_profile_parameters
 from .. import core
 from .exceptions import ProfileError
 
+
+GLOBALS_LST = [len]
+GLOBALS = dict((entry.__name__, entry) for entry in GLOBALS_LST)
+
+def eval_condition(expr, parameters):
+    try:
+        return bool(eval(expr, GLOBALS, parameters))
+    except NameError as e:
+        raise ProfileError(expr, "parameter not defined: %s" % e)
+
+
 class Profile(object):
     """
     Profiles acts as nodes in a tree, with `extends` containing the
@@ -51,8 +62,6 @@ class Profile(object):
         otherwise an exception is raised. A document without a when-clause
         is overridden by those with a when-clause.
         """
-        from .package import eval_condition
-
         docs = self._yaml_cache.get(('package', pkgname), None)
         if docs is None:
             result = self.file_resolver.glob_files([pkgname + '.yaml',
