@@ -7,33 +7,25 @@ loader is discarded immediately.
 """
 
 import re
-
+import os
+from os.path import join as pjoin
 from .profile import eval_condition
-from ..formats.marked_yaml import copy_dict_node, dict_like, list_node
+from ..formats.marked_yaml import yaml_dump, copy_dict_node, dict_like, list_node
 from .utils import topological_sort
 from .. import core
 from .exceptions import ProfileError
 
 
 
-class PackageLoader(object):
+class PackageLoaderBase(object):
     """
-    Ephemeral class to load and immediately postproces the package
-    yaml document(s)
+    Base class for :class:`PackageLoader`
 
-    The output is available in the following two attributes:
-
-    Attributes:
-    -----------
-
-    doc : dict
-        The loaded and post-processed yaml document.
-
-    direct_parents : list of :class:`PackageLoader`
-        Direct parents only
-
-    all_parents : list of :class:`PackageLoader`
-        All parents, direct and indirect
+    This base is used to traverse all parents. Any postprocessing that
+    you want to apply to all package sources (including parents) goes
+    here. Postprocessing that you only want to apply to the package
+    source that is being loaded directly goes into
+    :class:`PackageLoader`.
     """
 
     _STAGE_SECTIONS = ['build_stages', 'profile_links', 'when_build_dependency']
@@ -42,27 +34,6 @@ class PackageLoader(object):
     """
 
     def __init__(self, name, parameters, load_yaml, find_file):
-        """
-        Load package yaml and postprocess it.
-
-        Parameters:
-        -----------
-        name : str
-            The name of the package
-
-        parameters : dict
-            Parameters specified in the profile (merge of default
-            parameters and package-specific parameters in the
-            profile).
-
-        load_yaml : function
-            Callable to load the yaml, see
-            :meth:`hashdist.spec.profile.load_package_yaml`.
-
-        find_file : function
-            Callable to find auxiliary files, see
-            :meth:`hashdist.spec.profile.find_package_file`.
-        """
         self.name = name
         self.parameters = parameters
         self.load_yaml = load_yaml
@@ -72,7 +43,6 @@ class PackageLoader(object):
         self.load_parents()
         self.merge_stages()
         self.merge_dependencies()
-        self.override_requested_sources()
 
     def load_documents(self):
         """
@@ -84,7 +54,8 @@ class PackageLoader(object):
         Python hooks to load; max. one per package/proto-package involved
         """
         name = self.name
-        self.doc = dict(self.load_yaml(name, self.parameters))
+        self.package_file = self.load_yaml(name, self.parameters)
+        self.doc = dict(self.package_file.doc)
         if self.doc is None:
             raise ProfileError(name, 'Package specification not found: %s' % self.name)
 
@@ -115,7 +86,7 @@ class PackageLoader(object):
 
     def _load_parent(self, parent_name):
         """Helper for :meth:`load_parents` """
-        parent = PackageLoader(parent_name, self.parameters, self.load_yaml, self.find_file)
+        parent = PackageLoaderBase(parent_name, self.parameters, self.load_yaml, self.find_file)
 
         all_names = set(p.name for p in self.all_parents)
         new_names = set(p.name for p in parent.all_parents)
@@ -198,6 +169,53 @@ class PackageLoader(object):
             deps.update(lst)
             deps_section[key] = sorted(deps)
 
+
+class PackageLoader(PackageLoaderBase):
+    """
+    Ephemeral class to load and immediately postproces the package
+    yaml document(s)
+
+    The output is available in the following two attributes:
+
+    Attributes:
+    -----------
+
+    doc : dict
+        The loaded and post-processed yaml document.
+
+    direct_parents : list of :class:`PackageLoader`
+        Direct parents only
+
+    all_parents : list of :class:`PackageLoader`
+        All parents, direct and indirect
+    """
+
+    def __init__(self, name, parameters, load_yaml, find_file):
+        """
+        Load package yaml and postprocess it.
+
+        Parameters:
+        -----------
+        name : str
+            The name of the package
+
+        parameters : dict
+            Parameters specified in the profile (merge of default
+            parameters and package-specific parameters in the
+            profile).
+
+        load_yaml : function
+            Callable to load the yaml, see
+            :meth:`hashdist.spec.profile.load_package_yaml`.
+
+        find_file : function
+            Callable to find auxiliary files, see
+            :meth:`hashdist.spec.profile.find_package_file`.
+        """
+        super(PackageLoader, self).__init__(name, parameters, load_yaml, find_file)
+        self.override_requested_sources()
+        self.expand_globs_in_build_stages_files()
+
     def override_requested_sources(self):
         """
         Allow profile to override sources in the package
@@ -222,23 +240,31 @@ class PackageLoader(object):
             source['key'] = 'git:' + git_id
             self.doc['sources'] = [source]
 
-    def get_hook_files(self):
+    def expand_globs_in_build_stages_files(self):
         """
-        Hook source files referenced from the package and its parents.
-
-        Returns
-        -------
-
-        list of string
-            The names of the hook files referenced by the package and
-            its parents.
+        Expand globs in the ``files:`` section of build stages
         """
-        hook_files = []
-        for loader in self.all_parents + [self]:
-            hook = self.find_file(loader.name, loader.name + '.py')
-            if hook:
-                hook_files.append(hook)
-        return hook_files
+        import glob
+        for stage in self.doc.get('build_stages', []):
+            try:
+                files = stage['files']
+            except KeyError:
+                continue
+            if not self.package_file.in_directory:
+                raise ProfileError(self.name, 'Can only contain "files:" in a package directory')
+            pkg_root = self.package_file.dirname
+            def strip_pkg_root(path):
+                assert path.startswith(pkg_root)
+                return path[len(pkg_root) + 1:]
+            expanded = []
+            for f in files:
+                fqn = f if os.path.isabs(f) else pjoin(pkg_root, f)
+                if os.path.exists(fqn):
+                    expanded.append(f)
+                else:
+                    matches = glob.glob(fqn)
+                    expanded.extend(sorted(map(strip_pkg_root, matches)))
+            stage['files'] = expanded
 
     def stages_topo_ordered(self):
         """
@@ -266,6 +292,25 @@ class PackageLoader(object):
         for key in self._STAGE_SECTIONS:
             doc[key] = topological_stage_sort(doc.get(key, []))
         return doc
+
+    def get_hook_files(self):
+        """
+        Hook source files referenced from the package and its parents.
+
+        Returns
+        -------
+
+        list of string
+            The names of the hook files referenced by the package and
+            its parents.
+        """
+        hook_files = []
+        for loader in self.all_parents + [self]:
+            py_file = loader.name + '.py'
+            hook = self.find_file(loader.name, py_file)
+            if hook:
+                hook_files.append(hook)
+        return hook_files
 
 
 def normalize_stages(stages):

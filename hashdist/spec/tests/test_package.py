@@ -2,12 +2,16 @@ from pprint import pprint
 from os.path import join as pjoin
 from textwrap import dedent
 from ...core.test.utils import *
+from ...core.test.test_build_store import fixture as build_store_fixture
+from .. import profile
 from .. import package
 from .. import package_loader
 from .. import hook_api
+from ..profile import PackageYAML
 from ...formats.marked_yaml import marked_yaml_load, yaml_dump
 from ..exceptions import ProfileError
 from nose import SkipTest
+
 
 def test_topological_stage_sort():
     stages = [dict(name='z', value='z'),
@@ -75,6 +79,14 @@ def test_create_build_spec():
 
 
 
+class MockPackageYAML(PackageYAML):
+
+    def __init__(self, filename, doc):
+        self.doc = doc
+        self.filename = '/path/to/' + filename
+        self.in_directory = False
+
+
 class MockProfile(object):
 
     parameters = {}
@@ -85,10 +97,15 @@ class MockProfile(object):
         self.files = dict((name, marked_yaml_load(body)) for name, body in files.items())
 
     def load_package_yaml(self, name, parameters):
-        return self.files.get('%s.yaml' % name, None)
+        try:
+            filename = '%s.yaml' % name
+            return MockPackageYAML(filename, self.files[filename])
+        except AttributeError:
+            return None
 
     def find_package_file(self, name, filename):
         return filename if filename in self.files else None
+
 
 def test_prevent_diamond():
     files = {
@@ -186,6 +203,8 @@ def test_load_and_inherit_package():
                                           find_file=prof.find_package_file)
     assert set(p.name for p in loader.all_parents) == set(['base1', 'base2', 'grandparent'])
     assert set(p.name for p in loader.direct_parents) == set(['base1', 'base2'])
+    print loader.get_hook_files()
+
     assert loader.get_hook_files() == ['grandparent.py', 'base1.py', 'mypackage.py']
 
     # the below relies on an unstable ordering as the lists are not sorted, but
@@ -314,3 +333,46 @@ def test_when_list():
     r = package_loader.recursive_process_conditionals(
         doc, {'platform': 'windows', 'host': False})
     assert {'dictionary': [3, {'nested': 'dict'}]} == r
+
+
+@temp_working_dir_fixture
+def test_files_glob(d):
+    dump('pkgs/bar/bar.yaml', """
+        dependencies:
+          run: [dep]
+        profile_links:
+        - name: link_with_glob
+          link: '*/**/*'
+        - name: link_without_glob
+          link: bar
+        build_stages:
+        - name: build_without_glob
+          files: [bar.c]
+        - name: build_with_glob
+          files: [glob_*]
+    """)
+    dump('pkgs/bar/bar.c', '/*****/')
+    dump('pkgs/bar/glob_first', 'Frist!')
+    dump('pkgs/bar/glob_second', 'Second')
+    dump('profile.yaml', """
+        package_dirs:
+        - pkgs
+    """)
+    with profile.TemporarySourceCheckouts(None) as checkouts:
+        doc = profile.load_and_inherit_profile(checkouts, "profile.yaml")
+        prof = profile.Profile(doc, checkouts)
+        pkg = package.PackageSpec.load(prof, 'bar')
+    assert pkg.doc == marked_yaml_load("""
+        dependencies:
+          build: []
+          run: [dep]
+        profile_links:
+        - {link: '*/**/*'}
+        - {link: bar}
+        build_stages:
+        - files: [glob_first, glob_second]
+          handler: build_with_glob
+        - files: [bar.c]
+          handler: build_without_glob
+        when_build_dependency: []
+    """)
