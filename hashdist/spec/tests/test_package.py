@@ -223,12 +223,20 @@ def test_order_stages():
 
 
 def test_extend_list():
-    yield eq_, ['a', 'b'], package._extend_list(['a'], ['b'])
-    yield eq_, ['a', 'b'], package._extend_list(['a'], ['b', 'a'])
-    yield eq_, [], package._extend_list([], [])
+    
+    def _extend_list(to_insert, lst):
+        """Removes items from `lst` that can be found in `to_insert`, and then
+        returns a list with `to_insert` at the front and `lst` at the end.
+        """
+        lst = [x for x in lst if x not in to_insert]
+        return to_insert + lst
+
+    yield eq_, ['a', 'b'], _extend_list(['a'], ['b'])
+    yield eq_, ['a', 'b'], _extend_list(['a'], ['b', 'a'])
+    yield eq_, [], _extend_list([], [])
     # check that input is not mutated
     lst = ['a', 'a', 'a', 'a']
-    yield eq_, ['a'], package._extend_list(['a'], lst)
+    yield eq_, ['a'], _extend_list(['a'], lst)
     yield eq_, ['a', 'a', 'a', 'a'], lst
 
 def test_name_anonymous_stages():

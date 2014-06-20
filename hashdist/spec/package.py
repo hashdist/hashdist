@@ -132,15 +132,6 @@ class PackageSpec(object):
         return cmds
 
 
-
-def _extend_list(to_insert, lst):
-    """Removes items from `lst` that can be found in `to_insert`, and then
-    returns a list with `to_insert` at the front and `lst` at the end.
-    """
-    lst = [x for x in lst if x not in to_insert]
-    return to_insert + lst
-
-
 def name_anonymous_stages(stages):
     """
     Returns a copy of stages (a list of dicts), where every stage without a 'name'
