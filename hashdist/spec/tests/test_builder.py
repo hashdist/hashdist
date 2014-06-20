@@ -86,6 +86,9 @@ def test_basic_build(tmpdir, sc, bldr, config):
             bash: |
               echo hi
               /bin/cp README ${ARTIFACT}/README_IN_DEPENDENCY
+        when_build_dependency:
+          - prepend_path: PATH
+            value: '${ARTIFACT}/foo/bar'
     """ % dict(tar_file=mock_tarball, tar_hash=mock_tarball_hash))
 
     
