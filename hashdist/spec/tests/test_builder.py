@@ -11,7 +11,7 @@ from ...core.test.utils import *
 from ...core.test.test_build_store import fixture as build_store_fixture
 from .. import profile
 from .. import builder
-
+from hashdist.hdist_logging import null_logger
 
 def setup():
     global mock_tarball_tmpdir, mock_tarball,  mock_tarball_hash
@@ -42,7 +42,7 @@ def test_ready(d):
         def _compute_specs(self):
             pass
     
-    p = profile.load_profile(profile.TemporarySourceCheckouts(None), pjoin(d, "profile.yaml"))
+    p = profile.load_profile(null_logger, profile.TemporarySourceCheckouts(None), pjoin(d, "profile.yaml"))
     pb = ProfileBuilderSubclass(None, MockSourceCache(), None, p)
     assert ['d'] == pb.get_ready_list()
     pb._built.add('d')
@@ -92,7 +92,7 @@ def test_basic_build(tmpdir, sc, bldr, config):
     """ % dict(tar_file=mock_tarball, tar_hash=mock_tarball_hash))
 
     
-    p = profile.load_profile(profile.TemporarySourceCheckouts(None), pjoin(d, "profile.yaml"))
+    p = profile.load_profile(null_logger, profile.TemporarySourceCheckouts(None), pjoin(d, "profile.yaml"))
     pb = builder.ProfileBuilder(logger, sc, bldr, p)
     pb.build('the_dependency', config, 1, "never", False)
     pb.build('copy_readme', config, 1, "never", False)

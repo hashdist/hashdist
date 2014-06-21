@@ -22,7 +22,7 @@ import posixpath
 from ..formats.marked_yaml import load_yaml_from_file, is_null
 from .utils import substitute_profile_parameters
 from .. import core
-from .exceptions import ProfileError
+from .exceptions import ProfileError, PackageError
 
 
 GLOBALS_LST = [len]
@@ -55,6 +55,9 @@ class PackageYAML(object):
         self.doc = load_yaml_from_file(filename, parameters)
         self.in_directory = in_directory
 
+    def __repr__(self):
+        return self.filename
+
     @property
     def dirname(self):
         if self.in_directory:
@@ -68,7 +71,8 @@ class Profile(object):
     Profiles acts as nodes in a tree, with `extends` containing the
     parent profiles (which are child nodes in a DAG).
     """
-    def __init__(self, doc, checkouts_manager):
+    def __init__(self, logger, doc, checkouts_manager):
+        self.logger = logger
         self.doc = doc
         self.parameters = dict(doc.get('parameters', {}))
         self.file_resolver = FileResolver(checkouts_manager, doc.get('package_dirs', []))
@@ -83,12 +87,47 @@ class Profile(object):
 
     def load_package_yaml(self, pkgname, parameters):
         """
-        Loads mypkg.yaml from either $pkgs/mypkg.yaml or
-        $pkgs/mypkg/mypkg-*.yaml, and caches the result of loading all
-        of them. In case of many matches, any when'-clause is
-        evaluated on `parameters` and a single document should result,
-        otherwise an exception is raised. A document without a when-clause
-        is overridden by those with a when-clause.
+        Searches for the yaml source and loads it.
+
+        Loads the source for ``pkgname`` from either
+
+        * ``$pkgs/pkgname.yaml``,
+        * ``$pkgs/pkgname/pkgname.yaml``, or
+        * ``$pkgs/pkgname/pkgname-*.yaml``
+
+        by searching through the paths in the ``package_dirs:``
+        profile setting. The paths are searched order, and only the
+        first match per basename is used. That is,
+        ``$pkgs/foo/foo.yaml`` overrides ``$pkgs/foo.yaml``. And
+        ``$pkgs/foo/foo-bar.yaml`` is returned in addition.
+
+        In case of many matches, any when'-clause is evaluated on
+        `parameters` and a single document should result, otherwise an
+        exception is raised. A document without a when-clause is
+        overridden by those with a when-clause.
+
+        Arguments:
+        ----------
+
+        pkgname : string
+            Name of the package (excluding ``.yaml``).
+
+        parameters : dict
+            The profile parameters.
+
+        Returns:
+        --------
+
+        A :class:`PackageYAML` instance if successfull.
+
+        Raises:
+        -------
+
+        * class:`~hashdist.spec.exceptions.ProfileError`` is raised if
+          there is no such package.
+
+        * class:`~hashdist.spec.exceptions.PackageError`` is raised if
+          a package conflicts with a previous one.
         """
         yaml_files = self._yaml_cache.get(('package', pkgname), None)
         if yaml_files is None:
@@ -100,20 +139,27 @@ class Profile(object):
             self._yaml_cache['package', pkgname] = yaml_files = [
                 PackageYAML(filename, parameters, pattern != yaml_filename)
                 for match, (pattern, filename) in matches.items()]
+            self.logger.debug('Resolved package %s to %s', pkgname, 
+                              [filename for match, (pattern, filename) in matches.items()])
         no_when_file = None
         with_when_file = None
         for pkg in yaml_files:
             if 'when' not in pkg.doc:
                 if no_when_file is not None:
-                    raise ProfileError(pkg.doc, "Two specs found for package %s without a when-clause "
+                    raise PackageError(pkg.doc, "Two specs found for package %s without a when-clause "
                                        "to discriminate" % pkgname)
                 no_when_file = pkg
-            elif eval_condition(pkg.doc['when'], parameters):
+                continue
+            doc_when = pkg.doc['when']
+            if eval_condition(doc_when, parameters):
                 if with_when_file is not None:
-                    raise ProfileError(pkg.doc, "Selected parameters for package %s matches both '%s' and '%s'" %
-                                       (pkgname, pkg.doc['when'], with_when_file.doc['when']))
+                    raise PackageError(doc_when, "Selected parameters for package %s matches both '%s' and '%s'" %
+                                       (pkgname, doc_when, with_when_file))
                 with_when_file = pkg
-        return with_when_file if with_when_file is not None else no_when_file
+        result = with_when_file if with_when_file is not None else no_when_file
+        if result is None:
+            raise ProfileError(pkgname, 'No yaml file for package "{0}" found'.format(pkgname))
+        return result
 
     def find_package_file(self, pkgname, filename):
         """
@@ -374,6 +420,6 @@ def load_and_inherit_profile(checkouts, include_doc, cwd=None):
     doc['packages'] = packages
     return doc
 
-def load_profile(checkout_manager, profile_file):
+def load_profile(logger, checkout_manager, profile_file):
     doc = load_and_inherit_profile(checkout_manager, profile_file)
-    return Profile(doc, checkout_manager)
+    return Profile(logger, doc, checkout_manager)

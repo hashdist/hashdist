@@ -12,6 +12,7 @@ from ...core.test.utils import *
 from ...core.test.test_source_cache import temp_source_cache
 from .. import profile
 from ..exceptions import ProfileError
+from hashdist.hdist_logging import null_logger
 
 def gitify(dir):
     with working_directory(dir):
@@ -214,7 +215,7 @@ def test_resource_resolution(d):
 
     with profile.TemporarySourceCheckouts(None) as checkouts:
         doc = profile.load_and_inherit_profile(checkouts, pjoin(d, "level3", "profile.yaml"))
-        p = profile.Profile(doc, checkouts)
+        p = profile.Profile(null_logger, doc, checkouts)
         assert (pjoin(d, "level2", "pkgs", "foo", "foo.yaml") ==
                 os.path.realpath(p.find_package_file("foo", "foo.yaml")))
         assert (pjoin(d, "level1", "pkgs", "bar.yaml") ==

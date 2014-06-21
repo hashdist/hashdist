@@ -9,7 +9,8 @@ from .. import package_loader
 from .. import hook_api
 from ..profile import PackageYAML
 from ...formats.marked_yaml import marked_yaml_load, yaml_dump
-from ..exceptions import ProfileError
+from ..exceptions import ProfileError, PackageError
+from hashdist.hdist_logging import null_logger
 from nose import SkipTest
 
 
@@ -113,7 +114,7 @@ def test_prevent_diamond():
         'b.yaml': 'extends: [d]',
         'c.yaml': 'extends: [d]',
         'd.yaml': '{}'}
-    with assert_raises(ProfileError):
+    with assert_raises(PackageError):
         package.PackageSpec.load(MockProfile(files), 'a')
 
 def test_inheritance_collision():
@@ -121,7 +122,7 @@ def test_inheritance_collision():
         'child.yaml': 'extends: [base1, base2]',
         'base1.yaml': 'build_stages: [{name: stage1}]',
         'base2.yaml': 'build_stages: [{name: stage1}]'}
-    with assert_raises(ProfileError):
+    with assert_raises(PackageError):
         package.PackageSpec.load(MockProfile(files), 'child')
 
 
@@ -291,7 +292,7 @@ def test_name_anonymous_stages():
                        'name': '__tdurutje3wctzqnu24mzy5gqza5yxt6b',
                        'two': 2},
                       {'name': '__qvk3jbqy6b3mvv5opou3ae55met2pt6s'}]
-    with assert_raises(ProfileError):
+    with assert_raises(PackageError):
         loader.get_stages_with_names('bad')
 
 def test_when_dictionary():
@@ -360,7 +361,7 @@ def test_files_glob(d):
     """)
     with profile.TemporarySourceCheckouts(None) as checkouts:
         doc = profile.load_and_inherit_profile(checkouts, "profile.yaml")
-        prof = profile.Profile(doc, checkouts)
+        prof = profile.Profile(null_logger, doc, checkouts)
         pkg = package.PackageSpec.load(prof, 'bar')
     assert pkg.doc == marked_yaml_load("""
         dependencies:

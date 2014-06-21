@@ -13,7 +13,7 @@ from .profile import eval_condition
 from ..formats.marked_yaml import yaml_dump, copy_dict_node, dict_like, list_node
 from .utils import topological_sort
 from .. import core
-from .exceptions import ProfileError
+from .exceptions import ProfileError, PackageError
 
 
 
@@ -56,8 +56,6 @@ class PackageLoaderBase(object):
         name = self.name
         self.package_file = self.load_yaml(name, self.parameters)
         self.doc = dict(self.package_file.doc)
-        if self.doc is None:
-            raise ProfileError(name, 'Package specification not found: %s' % self.name)
 
     def process_conditionals(self):
         """
@@ -77,21 +75,23 @@ class PackageLoaderBase(object):
         Raises:
         -------
 
-        Diamond inheritance is not supported and raises a ``ProfileError``.
+        Diamond inheritance is not supported and raises a ``PackageError``.
         """
         self.all_parents = []
         self.direct_parents = []
-        for parent_name in sorted(self.doc.pop('extends', [])):
+        if 'extends' not in self.doc:
+            return
+        for parent_name in sorted(self.doc['extends']):
             self._load_parent(parent_name)
+        del self.doc['extends']
 
     def _load_parent(self, parent_name):
         """Helper for :meth:`load_parents` """
         parent = PackageLoaderBase(parent_name, self.parameters, self.load_yaml, self.find_file)
-
         all_names = set(p.name for p in self.all_parents)
         new_names = set(p.name for p in parent.all_parents)
         if all_names.intersection(new_names):
-            raise ProfileError(parent_name,
+            raise PackageError(parent_name,
                                'Diamond-pattern inheritance not yet supported, package "%s" shows up '
                                'twice when traversing parents' % parent_name)
         self.all_parents[0:0] = parent.all_parents + [parent]
@@ -151,7 +151,7 @@ class PackageLoaderBase(object):
                 name = '__' + core.hash_document('generated_stage_name', d)
                 stage['name'] = name
                 if name in anonymous_names:
-                    raise ProfileError(self.name, 'Stages must be distinct (use "name:" to disambiguate)')
+                    raise PackageError(stage, 'Stages must be distinct (use "name:" to disambiguate)')
                 anonymous_names.add(name)
             return stage
         return map(process, self.doc.get(key, []))
@@ -165,14 +165,14 @@ class PackageLoaderBase(object):
                 deps.update(parent.doc.get('dependencies', {}).get(key, []))
             lst = deps_section.get(key, [])
             if not isinstance(lst, list):
-                raise ProfileError(lst, 'Expected a list for "{0}:"'.format(key))
+                raise PackageError(lst, 'Expected a list for "{0}:"'.format(key))
             deps.update(lst)
             deps_section[key] = sorted(deps)
 
 
 class PackageLoader(PackageLoaderBase):
     """
-    Ephemeral class to load and immediately postproces the package
+    Ephemeral class to load and immediately postprocess the package
     yaml document(s)
 
     The output is available in the following two attributes:
@@ -232,9 +232,11 @@ class PackageLoader(PackageLoaderBase):
             split_url = urlsplit(target_url)
             git_id = posixpath.split(split_url.path)[1]
             git_repo = target_url.rsplit('/commit/')[0] + '.git'
-            sources = self.doc.get('sources', [])
+            sources = self.doc.get('sources', None)
+            if sources is None:
+                raise PackageError(self.doc, 'GitHub URL provided but no source to override')
             if len(sources) != 1:
-                raise ProfileError('GitHub URL provided but only one source can be overriden')
+                raise PackageError(sources, 'GitHub URL provided but only one source can be overriden')
             source = sources[0]
             source['url'] = git_repo
             source['key'] = 'git:' + git_id
@@ -251,7 +253,7 @@ class PackageLoader(PackageLoaderBase):
             except KeyError:
                 continue
             if not self.package_file.in_directory:
-                raise ProfileError(self.name, 'Can only contain "files:" in a package directory')
+                raise PackageErorr(files, 'Can only contain "files:" in a package directory')
             pkg_root = self.package_file.dirname
             def strip_pkg_root(path):
                 assert path.startswith(pkg_root)
@@ -283,10 +285,10 @@ class PackageLoader(PackageLoaderBase):
                 try:
                     name = d['name']
                 except KeyError:
-                    raise ProfileError(build_stages,
+                    raise PackageError(build_stages,
                             'For every build stage, either handler or name must be provided')
                 if name.startswith('__'):
-                    raise ProfileError(stage, 'Build stage lacks handler attribute')
+                    raise PackageError(stage, 'Build stage lacks handler attribute')
                 d['handler'] = name
 
         for key in self._STAGE_SECTIONS:
@@ -342,7 +344,7 @@ def topological_stage_sort(stages):
     stages = normalize_stages(stages)
     stage_by_name = dict((stage['name'], dict(stage)) for stage in stages)
     if len(stage_by_name) != len(stages):
-        raise ProfileError(stages, 'more than one stage with the same name '
+        raise PackageError(stages, 'more than one stage with the same name '
                            '(or anonymous stages with identical contents)')
     # convert 'before' to 'after'
     for stage in stages:
@@ -350,7 +352,8 @@ def topological_stage_sort(stages):
             try:
                 later_stage = stage_by_name[later_stage_name]
             except:
-                raise ValueError('stage "%s" referred to, but not available' % later_stage_name)
+                raise PackageErorr(later_stage_name, 'stage "%s" referred to, but '
+                                   'not available' % later_stage_name)
             later_stage['after'] = later_stage['after'] + [stage['name']]  # copy
 
     ordered_stage_names = topological_sort(
@@ -378,7 +381,7 @@ def inherit_stages(descendant_stages, ancestors):
         for stage in ancestor_stages:
             stage = dict(stage) # copy from ancestor
             if stage['name'] in stages:
-                raise ProfileError(stage['name'], '"%s" used as the name for a stage in two '
+                raise PackageError(stage['name'], '"%s" used as the name for a stage in two '
                                    'separate package ancestors' % stage['name'])
             stages[stage['name']] = stage
 
@@ -402,7 +405,7 @@ def inherit_stages(descendant_stages, ancestors):
             if name in stages:
                 del stages[name]
         else:
-            raise ProfileError(name, 'illegal mode: %s' % mode)
+            raise PackageError(name, 'illegal mode: %s' % mode)
     # We don't care about order, will be topologically sorted later...
     return stages.values()
 
@@ -422,11 +425,11 @@ def recursive_process_conditional_dict(doc, parameters):
         if m:
             if eval_condition(m.group(1), parameters):
                 if not isinstance(value, dict):
-                    raise ProfileError(value, "'when' dict entry must contain another dict")
+                    raise PackageError(value, "'when' dict entry must contain another dict")
                 to_merge = recursive_process_conditional_dict(value, parameters)
                 for k, v in to_merge.items():
                     if k in result:
-                        raise ProfileError(k, "key '%s' conflicts with another key of the same name "
+                        raise PackageError(k, "key '%s' conflicts with another key of the same name "
                                            "in another when-clause" % k)
                     result[k] = v
         else:
@@ -446,7 +449,7 @@ def recursive_process_conditional_list(lst, parameters):
             if m:
                 if eval_condition(m.group(1), parameters):
                     if not isinstance(value, list):
-                        raise ProfileError(value, "'when' clause within list must contain another list")
+                        raise PackageError(value, "'when' clause within list must contain another list")
                     to_extend = recursive_process_conditional_list(value, parameters)
                     result.extend(to_extend)
             else:
