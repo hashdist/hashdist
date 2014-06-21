@@ -352,7 +352,7 @@ def topological_stage_sort(stages):
             try:
                 later_stage = stage_by_name[later_stage_name]
             except:
-                raise PackageErorr(later_stage_name, 'stage "%s" referred to, but '
+                raise PackageError(later_stage_name, 'stage "%s" referred to, but '
                                    'not available' % later_stage_name)
             later_stage['after'] = later_stage['after'] + [stage['name']]  # copy
 
