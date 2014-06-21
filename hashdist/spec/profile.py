@@ -22,14 +22,57 @@ import posixpath
 from ..formats.marked_yaml import load_yaml_from_file, is_null
 from .utils import substitute_profile_parameters
 from .. import core
-from .exceptions import ProfileError
+from .exceptions import ProfileError, PackageError
+
+
+GLOBALS_LST = [len]
+GLOBALS = dict((entry.__name__, entry) for entry in GLOBALS_LST)
+
+def eval_condition(expr, parameters):
+    try:
+        return bool(eval(expr, GLOBALS, parameters))
+    except NameError as e:
+        raise ProfileError(expr, "parameter not defined: %s" % e)
+
+
+class PackageYAML(object):
+    """
+    Holds unmodified content of a package yaml file
+
+    Attributes:
+    -----------
+
+    doc : dict
+        The deserialized yaml source
+
+    in_directory : boolean
+        Whether the yaml file is in its private package directory that
+        may contain other files, or where it is a stand-alone file.
+    """
+
+    def __init__(self, filename, parameters, in_directory):
+        self.filename = filename
+        self.doc = load_yaml_from_file(filename, parameters)
+        self.in_directory = in_directory
+
+    def __repr__(self):
+        return self.filename
+
+    @property
+    def dirname(self):
+        if self.in_directory:
+            return os.path.dirname(self.filename)
+        else:
+            raise ValueError('stand-alone package yaml file')
+
 
 class Profile(object):
     """
     Profiles acts as nodes in a tree, with `extends` containing the
     parent profiles (which are child nodes in a DAG).
     """
-    def __init__(self, doc, checkouts_manager):
+    def __init__(self, logger, doc, checkouts_manager):
+        self.logger = logger
         self.doc = doc
         self.parameters = dict(doc.get('parameters', {}))
         self.file_resolver = FileResolver(checkouts_manager, doc.get('package_dirs', []))
@@ -44,37 +87,79 @@ class Profile(object):
 
     def load_package_yaml(self, pkgname, parameters):
         """
-        Loads mypkg.yaml from either $pkgs/mypkg.yaml or
-        $pkgs/mypkg/mypkg-*.yaml, and caches the result of loading all
-        of them. In case of many matches, any when'-clause is
-        evaluated on `parameters` and a single document should result,
-        otherwise an exception is raised. A document without a when-clause
-        is overridden by those with a when-clause.
-        """
-        from .package import eval_condition
+        Searches for the yaml source and loads it.
 
-        docs = self._yaml_cache.get(('package', pkgname), None)
-        if docs is None:
-            result = self.file_resolver.glob_files([pkgname + '.yaml',
-                                                    pjoin(pkgname, pkgname + '.yaml'),
-                                                    pjoin(pkgname, pkgname + '-*.yaml')],
-                                                   match_basename=True)
-            self._yaml_cache['package', pkgname] = docs = [
-                load_yaml_from_file(filename, parameters) for filename in result.values()]
-        no_when_doc = None
-        with_when_doc = None
-        for doc in docs:
-            if 'when' not in doc:
-                if no_when_doc is not None:
-                    raise ProfileError(doc, "Two specs found for package %s without a when-clause "
+        Loads the source for ``pkgname`` from either
+
+        * ``$pkgs/pkgname.yaml``,
+        * ``$pkgs/pkgname/pkgname.yaml``, or
+        * ``$pkgs/pkgname/pkgname-*.yaml``
+
+        by searching through the paths in the ``package_dirs:``
+        profile setting. The paths are searched order, and only the
+        first match per basename is used. That is,
+        ``$pkgs/foo/foo.yaml`` overrides ``$pkgs/foo.yaml``. And
+        ``$pkgs/foo/foo-bar.yaml`` is returned in addition.
+
+        In case of many matches, any when'-clause is evaluated on
+        `parameters` and a single document should result, otherwise an
+        exception is raised. A document without a when-clause is
+        overridden by those with a when-clause.
+
+        Arguments:
+        ----------
+
+        pkgname : string
+            Name of the package (excluding ``.yaml``).
+
+        parameters : dict
+            The profile parameters.
+
+        Returns:
+        --------
+
+        A :class:`PackageYAML` instance if successfull.
+
+        Raises:
+        -------
+
+        * class:`~hashdist.spec.exceptions.ProfileError`` is raised if
+          there is no such package.
+
+        * class:`~hashdist.spec.exceptions.PackageError`` is raised if
+          a package conflicts with a previous one.
+        """
+        yaml_files = self._yaml_cache.get(('package', pkgname), None)
+        if yaml_files is None:
+            yaml_filename = pkgname + '.yaml'
+            matches = self.file_resolver.glob_files([yaml_filename,
+                                                     pjoin(pkgname, yaml_filename),
+                                                     pjoin(pkgname, pkgname + '-*.yaml')],
+                                                    match_basename=True)
+            self._yaml_cache['package', pkgname] = yaml_files = [
+                PackageYAML(filename, parameters, pattern != yaml_filename)
+                for match, (pattern, filename) in matches.items()]
+            self.logger.debug('Resolved package %s to %s', pkgname, 
+                              [filename for match, (pattern, filename) in matches.items()])
+        no_when_file = None
+        with_when_file = None
+        for pkg in yaml_files:
+            if 'when' not in pkg.doc:
+                if no_when_file is not None:
+                    raise PackageError(pkg.doc, "Two specs found for package %s without a when-clause "
                                        "to discriminate" % pkgname)
-                no_when_doc = doc
-            elif eval_condition(doc['when'], parameters):
-                if with_when_doc is not None:
-                    raise ProfileError(doc, "Selected parameters for package %s matches both '%s' and '%s'" %
-                                       (pkgname, doc['when'], with_when_doc['when']))
-                with_when_doc = doc
-        return with_when_doc if with_when_doc is not None else no_when_doc
+                no_when_file = pkg
+                continue
+            doc_when = pkg.doc['when']
+            if eval_condition(doc_when, parameters):
+                if with_when_file is not None:
+                    raise PackageError(doc_when, "Selected parameters for package %s matches both '%s' and '%s'" %
+                                       (pkgname, doc_when, with_when_file))
+                with_when_file = pkg
+        result = with_when_file if with_when_file is not None else no_when_file
+        if result is None:
+            raise ProfileError(pkgname, 'No yaml file for package "{0}" found'.format(pkgname))
+        return result
 
     def find_package_file(self, pkgname, filename):
         """
@@ -155,14 +240,26 @@ class FileResolver(object):
         self.checkouts_manager = checkouts_manager
         self.search_dirs = search_dirs
 
-    def find_file(self, filenames, glob=False):
+    def find_file(self, filenames):
         """
-        Search for a file with the given filename/path relative to the root
-        of each of `self.search_dirs`. If `filenames` is a list, the entire
-        list will be searched before moving on to the next layer/overlay.
+        Search for a file.
 
-        Returns the found file (in the ``<repo_name>/some/path``-convention),
-        or None if no file was found.
+        Search for a file with the given filename/path relative to the
+        root of each of ``self.search_dirs``.
+
+        Arguments:
+        ----------
+
+        filenames : list of strings
+            Filenames to seach for. The entire list will be searched
+            before moving on to the next layer/overlay.
+
+        Returns:
+        --------
+
+        Returns the found file (in the
+        ``<repo_name>/some/path``-convention), or None if no file was
+        found.
         """
         if isinstance(filenames, basestring):
             filenames = [filenames]
@@ -175,12 +272,37 @@ class FileResolver(object):
 
     def glob_files(self, patterns, match_basename=False):
         """
+        Match file globs.
+
         Like ``find_file``, but uses a set of patterns and tries to match each
-        pattern against the filesystem using ``glob.glob``. The result is
-        a dict mapping the 'matched name' (path relative to root of overlay;
-        this is required to be unique) to the physical path. If `match_basename`
-        is set, only the basename of the file is compared (i.e., one file with
-        each basename will be returned).
+        pattern against the filesystem using ``glob.glob``.
+
+        Arguments:
+        ----------
+
+        patterns : list of strings
+            Glob patterns
+
+        match_basename : boolean
+            If ``match_basename`` is set, only the basename of the file
+            is compared (i.e., one file with each basename will be
+            returned).
+
+        Returns:
+        --------
+
+        The result is a dict mapping the "matched name" to a pair
+        (pattern, full qualified path).
+
+        * The matched name is a path relative to root of overlay
+          (required to be unique) or just the basename, depending on
+          ``match_basename``.
+
+        * The pattern returned is the pattern that whose match gave
+          rise to the "matched path" key.
+
+        * The full qualified name is the filename that was mattched by
+          the pattern.
         """
         if isinstance(patterns, basestring):
             patterns = [patterns]
@@ -195,7 +317,7 @@ class FileResolver(object):
                         match_relname = os.path.basename(match)
                     else:
                         match_relname = match[len(basedir) + 1:]
-                    result[match_relname] = match
+                    result[match_relname] = (p, match)
         return result
 
 
@@ -299,6 +421,6 @@ def load_and_inherit_profile(checkouts, include_doc, cwd=None):
     doc['packages'] = packages
     return doc
 
-def load_profile(checkout_manager, profile_file):
+def load_profile(logger, checkout_manager, profile_file):
     doc = load_and_inherit_profile(checkout_manager, profile_file)
-    return Profile(doc, checkout_manager)
+    return Profile(logger, doc, checkout_manager)

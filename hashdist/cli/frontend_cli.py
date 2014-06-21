@@ -32,7 +32,7 @@ class ProfileFrontendBase(object):
         self.source_cache = SourceCache.create_from_config(ctx.get_config(), ctx.logger)
         self.build_store = BuildStore.create_from_config(ctx.get_config(), ctx.logger)
         self.checkouts = TemporarySourceCheckouts(self.source_cache)
-        self.profile = load_profile(self.checkouts, args.profile)
+        self.profile = load_profile(self.ctx.logger, self.checkouts, args.profile)
         self.builder = ProfileBuilder(self.ctx.logger, self.source_cache, self.build_store, self.profile)
 
     @classmethod

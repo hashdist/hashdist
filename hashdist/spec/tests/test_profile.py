@@ -12,6 +12,7 @@ from ...core.test.utils import *
 from ...core.test.test_source_cache import temp_source_cache
 from .. import profile
 from ..exceptions import ProfileError
+from hashdist.hdist_logging import null_logger
 
 def gitify(dir):
     with working_directory(dir):
@@ -180,11 +181,11 @@ def test_file_resolver_glob(d):
     r = profile.FileResolver(MockCheckoutsManager(), [pjoin(d, 'level2'), pjoin(d, 'level1')])
     matches = r.glob_files(['foo/foo-*.yaml', 'foo/*0.yaml', 'bar.yaml'])
     eq_(matches, {
-        'bar.yaml': '%s/level2/bar.yaml' % d,
-        'foo/foo-0.yaml': '%s/level2/foo/foo-0.yaml' % d,
-        'foo/foo-1.yaml': '%s/level2/foo/foo-1.yaml' % d,
-        'foo/foo-2.yaml': '%s/level1/foo/foo-2.yaml' % d,
-        'foo/foo-3.yaml': '%s/level1/foo/foo-3.yaml' % d})
+        'bar.yaml': ('bar.yaml', '%s/level2/bar.yaml' % d),
+        'foo/foo-0.yaml': ('foo/*0.yaml', '%s/level2/foo/foo-0.yaml' % d),
+        'foo/foo-1.yaml': ('foo/foo-*.yaml', '%s/level2/foo/foo-1.yaml' % d),
+        'foo/foo-2.yaml': ('foo/foo-*.yaml', '%s/level1/foo/foo-2.yaml' % d),
+        'foo/foo-3.yaml': ('foo/foo-*.yaml', '%s/level1/foo/foo-3.yaml' % d)})
 
 
 @temp_working_dir_fixture
@@ -214,7 +215,7 @@ def test_resource_resolution(d):
 
     with profile.TemporarySourceCheckouts(None) as checkouts:
         doc = profile.load_and_inherit_profile(checkouts, pjoin(d, "level3", "profile.yaml"))
-        p = profile.Profile(doc, checkouts)
+        p = profile.Profile(null_logger, doc, checkouts)
         assert (pjoin(d, "level2", "pkgs", "foo", "foo.yaml") ==
                 os.path.realpath(p.find_package_file("foo", "foo.yaml")))
         assert (pjoin(d, "level1", "pkgs", "bar.yaml") ==
@@ -224,9 +225,9 @@ def test_resource_resolution(d):
         assert (pjoin(d, "level1", "base", "base1.txt") ==
                 os.path.realpath(p.find_package_file("whatever", "base1.txt")))
 
-        foo_doc = p.load_package_yaml('foo', {})
-        assert {'my': 'document'} == foo_doc
-        assert foo_doc is p.load_package_yaml('foo', {})  # caching
+        foo = p.load_package_yaml('foo', {})
+        assert {'my': 'document'} == foo.doc
+        assert foo is p.load_package_yaml('foo', {})  # caching
 
         os.unlink(pjoin(d, "level2", "pkgs", "foo", "foo.yaml"))
         assert pjoin(d, "level1", "pkgs", "foo.yaml") == p.find_package_file("foo", "foo.yaml")
