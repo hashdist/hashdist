@@ -90,11 +90,9 @@ class MockPackageYAML(PackageYAML):
 
 class MockProfile(object):
 
-    parameters = {}
-
-    packages = {}
-
     def __init__(self, files):
+        self.parameters = {}
+        self.packages = {}
         self.files = dict((name, marked_yaml_load(body)) for name, body in files.items())
 
     def load_package_yaml(self, name, parameters):
