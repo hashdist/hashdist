@@ -36,6 +36,6 @@ def test_hit_cli_artifact(tempdir, sc, bldr, config):
         }
     virtuals = {'virtual:hit': hit_id}
     artifact_id, path = bldr.ensure_present(spec, config, virtuals)
-    assert os.path.realpath(pjoin(path, 'bin', 'cp')) == '/bin/cp'
+    assert os.path.realpath(pjoin(path, 'bin', 'cp')) == os.path.realpath('/bin/cp')
 
 

@@ -33,10 +33,11 @@ happens.
 
 
 **action**:
-  One of "absolute_symlink", "relative_symlink", "copy", "exclude",
-  "launcher". Other types may be added later.
+  One of "symlink", "absolute_symlink", "relative_symlink", "copy",
+  "exclude", "launcher". Other types may be added later.
 
-  * *absolute_symlink* creates absolute symlinks
+  * *absolute_symlink* creates absolute symlinks. Just *symlink* is an
+    alias for absolute symlink.
   * *relative_symlink* creates relative symlinks
   * *copy* copies contents and mode (``shutil.copy``)
   * *exclude* makes sure matching files are not considered in rules below
@@ -68,8 +69,6 @@ happens.
 
 **overwrite**:
   If present and `True`, overwrite target.
-
-
 """
 
 import sys
@@ -100,8 +99,8 @@ def make_launcher(src, dst, launcher_program):
         and "$dst.link" is set up to point relatively to "$src".
 
     symlink:
-        Copy it verbatim. Thus, e.g., ``python -> python2.7'' will point to the
-        newly, "launched-ified" ``python2.7''.
+        Copy it verbatim. Thus, e.g., ``python -> python2.7`` will point to the
+        newly, "launched-ified" ``python2.7``.
 
     other (incl. scripts):
         Symlink relatively to it.

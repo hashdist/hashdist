@@ -645,9 +645,9 @@ class CommandTreeExecution(object):
                 sublogger_name, level = args[2:]
                 self.create_log_pipe(sublogger_name, level)
             else:
-                from ..cli import main as cli_main
+                from ..cli.main import command_line_entry_point
                 with working_directory(env['PWD']):
-                    retcode = cli_main(args, env, logger)
+                    retcode = command_line_entry_point(args, env, logger)
                 if retcode != 0:
                     raise RuntimeError("hit command failed with code: %d" % ret)
         except SystemExit as e:

@@ -1,4 +1,6 @@
 """
+:mod:`hashdist.spec.profile` --- Hashdist Profiles
+==================================================
 
 Not supported:
 
