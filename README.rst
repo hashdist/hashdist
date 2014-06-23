@@ -18,6 +18,7 @@ Hashdist
 
 **Authors:**
     Aron Ahmadia,
+    Volker Braun,
     Ondrej Certik,
     Chris Kees,
     Fernando Perez,
