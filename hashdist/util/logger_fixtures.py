@@ -66,7 +66,7 @@ class TestLoggerAdapter(logging.LoggerAdapter):
         """
         self._logger = logger
         self._handler = test_handler
-        super(TestLoggerAdapter, self).__init__(logger, {})
+        logging.LoggerAdapter.__init__(self, logger, {})
 
     def addFilter(self, filter):
         self._logger.addFilter(filter)

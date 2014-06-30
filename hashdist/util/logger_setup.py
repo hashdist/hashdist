@@ -61,7 +61,6 @@ For doctesting only, revert back to the nose logging handlers::
 """
 
 import logging
-import logging.config
 import os
 from ansi_color import want_color, color, monochrome
 
@@ -105,8 +104,13 @@ def set_log_level(level):
     level : string or int
         The desired log level as defined by the Python logging module
     """
+    level_string_to_value = dict(
+        CRITICAL=logging.CRITICAL, ERROR=logging.ERROR, WARNING=logging.WARNING, 
+        INFO=logging.INFO, DEBUG=logging.DEBUG)
     try:
-        level = level.upper()
+        level = level_string_to_value[level.upper()]
+    except KeyError:
+        raise ValueError('level must be integer or a valid log level string')
     except AttributeError:
         pass
     root = logging.getLogger()
@@ -164,8 +168,14 @@ def _configure_logging_from_yaml(filename):
         fmt = config_dict['formatters']
         for key, value in fmt.items():
             fmt[key]['format'] = monochrome(value['format'])
+    from hashdist.deps.py26_dictconfig import dictConfig
+    #try:
+    #    from logging.config import dictConfig
+    #except ImportError:
+    #    # Python 2.6
+    #    from hashdist.deps.py26_dictconfig import dictConfig
     try:
-        logging.config.dictConfig(config_dict)
+        dictConfig(config_dict)
     except Exception as err:
         # The CLI will intercept the exception and try to log it, but
         # if there is no logger there will be no output
@@ -196,7 +206,6 @@ class log_to_file(object):
         self.filename = filename
         self.logger = logging.getLogger(name)
         self.handler = h = logging.FileHandler(filename)
-        #h.setLevel(logging.DEBUG)
         h.setFormatter(self.get_formatter())
 
     def get_formatter(self):
