@@ -1,0 +1,68 @@
+version: 1
+
+formatters:
+
+  passthrough:
+    format: "%(message)s"
+
+  abbreviated:
+    format: "\x1b[30;01m[%(levelname)s]\x1b[39;49;00m %(message)s"
+
+  packagename:
+    format: "[\x1b[34;01m%(pkg)s\x1b[39;49;00m] %(message)s"
+
+  long:
+    # This is not used, but serves as an example for how to customize the output
+    format: "%(asctime)s - %(levelname)s: %(message)s"
+    datefmt: '%Y/%m/%d %H:%M:%S'
+
+
+handlers:
+
+  build_handler:
+    class: logging.StreamHandler
+    formatter: passthrough
+    stream: ext://sys.stdout
+
+  root_handler:
+    class: logging.StreamHandler
+    formatter: abbreviated
+    stream: ext://sys.stdout
+
+  package_handler:
+    class: logging.StreamHandler
+    formatter: packagename
+    stream: ext://sys.stdout
+
+  null_handler:
+     class: logging.NullHandler
+
+
+root:
+  # The root logger is used by default.
+  level: WARNING
+  handlers: [root_handler]
+
+
+loggers:
+
+  build:
+    # The build logger is for the output of the build stages only. A
+    # file handler will be attached dynamically since we do not know
+    # the log file name in advance.
+    level: DEBUG
+    handlers: [build_handler]
+    propagate: False
+
+  package:
+    # Package information; this is part of the UI and is not affected
+    # by the --log command line variable because we set "level"
+    level: INFO
+    handlers: [package_handler]
+    propagate: False
+
+  null_logger:
+    # The null logger for unit tests
+    level: NOTSET
+    handlers: [null_handler]
+    propagate: False

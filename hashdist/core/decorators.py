@@ -1,6 +1,6 @@
 from time import sleep
 from functools import wraps
-from hashdist.hdist_logging import Logger
+import logging
 
 # The retry function derives from a version by Jeff Laughlin Consulting
 # LLC, which is available from https://gist.github.com/n1ywb/2570004
@@ -28,7 +28,7 @@ from hashdist.hdist_logging import Logger
 def _default_retry(tries_remaining, exception, delay):
     msg = "Retrying in %s seconds, %d tries remaining" % \
           (delay, tries_remaining)
-    logger = Logger()
+    logger = logging.getLogger()
     logger.info(msg)
     logger.info("Press Control-C to give up")
 

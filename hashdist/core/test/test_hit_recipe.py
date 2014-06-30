@@ -7,6 +7,7 @@ from .test_build_store import fixture
 
 from ..hit_recipe import ensure_hit_cli_artifact
 
+
 @fixture()
 def test_hit_cli_artifact(tempdir, sc, bldr, config):
     hit_id, hit_path = ensure_hit_cli_artifact(bldr, config)

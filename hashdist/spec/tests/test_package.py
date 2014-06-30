@@ -1,3 +1,4 @@
+import logging
 from pprint import pprint
 from os.path import join as pjoin
 from textwrap import dedent
@@ -10,7 +11,6 @@ from .. import hook_api
 from ..profile import PackageYAML
 from ...formats.marked_yaml import marked_yaml_load, yaml_dump
 from ..exceptions import ProfileError, PackageError
-from hashdist.hdist_logging import null_logger
 from nose import SkipTest
 
 
@@ -370,6 +370,7 @@ def test_files_glob(d):
         package_dirs:
         - pkgs
     """)
+    null_logger = logging.getLogger('null_logger')
     with profile.TemporarySourceCheckouts(None) as checkouts:
         doc = profile.load_and_inherit_profile(checkouts, "profile.yaml")
         prof = profile.Profile(null_logger, doc, checkouts)

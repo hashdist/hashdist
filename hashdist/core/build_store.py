@@ -139,7 +139,7 @@ import sys
 import re
 import errno
 import json
-from logging import DEBUG, ERROR
+import logging
 import base64
 
 from .source_cache import SourceCache
@@ -151,6 +151,8 @@ from .common import (InvalidBuildSpecError, BuildFailedError,
 from .fileutils import silent_unlink, robust_rmtree, rmtree_up_to, silent_makedirs, gzip_compress, write_protect
 from .fileutils import rmtree_write_protected, atomic_symlink, realpath_to_symlink, allow_writes
 from . import run_job
+
+from hashdist.util.logger_setup import log_to_file
 
 
 class BuildSpec(object):
@@ -267,7 +269,7 @@ class BuildStore(object):
 
     def _log_artifact_collision(self, path, artifact_id):
         d = dict(path=path, artifact_id=artifact_id)
-        self.logger.log_lines(ERROR, """\
+        self.logger.error("""\
             The target directory already exists: %(path)s. This may be
             because of an earlier sudden crash, or because somebody else is
             currently performing the build on a shared
@@ -510,7 +512,8 @@ class BuildStore(object):
 class ArtifactBuilder(object):
     def __init__(self, build_store, build_spec, extra_env, virtuals, debug):
         self.build_store = build_store
-        self.logger = build_store.logger.get_sub_logger(build_spec.doc['name'])
+        self.logger = logging.LoggerAdapter(logging.getLogger('package'),
+                                            {'pkg':build_spec.doc['name']})
         self.build_spec = build_spec
         self.artifact_id = build_spec.artifact_id
         self.virtuals = virtuals
@@ -617,20 +620,18 @@ class ArtifactBuilder(object):
         os.mkdir(job_tmp_dir)
         job_spec = self.build_spec.doc['build']
 
-        logger = self.logger
         log_filename = pjoin(build_dir, 'build.log')
-        with file(log_filename, 'w') as log_file:
-            if logger.level > DEBUG:
-                logger.info('Building %s, follow log with:' % self.build_spec.short_artifact_id)
-                logger.info('  tail -f %s' % log_filename)
-            else:
-                logger.info('Building %s' % self.build_spec.short_artifact_id)
-            logger.push_stream(log_file, raw=True)
+        root_log = logging.getLogger()
+        build_log = logging.getLogger('build')
+        root_log.debug('Start log output to file %s', log_filename)
+        with log_to_file('build', log_filename):
+            self.logger.info('Building %s, follow log with:' % self.build_spec.short_artifact_id)
+            self.logger.info('  tail -f %s' % log_filename)
 
-            self.build_store.prepare_build_dir(config, logger, self.build_spec, build_dir)
+            self.build_store.prepare_build_dir(config, build_log, self.build_spec, build_dir)
 
             try:
-                run_job.run_job(logger, self.build_store, job_spec,
+                run_job.run_job(build_log, self.build_store, job_spec,
                                 env, artifact_dir, self.virtuals, cwd=build_dir, config=config,
                                 temp_dir=job_tmp_dir, debug=self.debug)
             except:
@@ -641,11 +642,10 @@ class ArtifactBuilder(object):
                 # the caller
                 raise BuildFailedError("%s: %s" % (exc_type.__name__, exc_value), build_dir,
                                        (exc_type, exc_value, exc_tb)), None, exc_tb
-            finally:
-                logger.pop_stream()
+        root_log.debug('Stop log output to file %s', log_filename)
         log_gz_filename = pjoin(artifact_dir, 'build.log.gz')
         with allow_writes(artifact_dir):
-            gzip_compress(pjoin(build_dir, 'build.log'), log_gz_filename)
+            gzip_compress(log_filename, log_gz_filename)
         write_protect(log_gz_filename)
 
 def unpack_sources(logger, source_cache, doc, target_dir):

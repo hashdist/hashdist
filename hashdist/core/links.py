@@ -76,11 +76,11 @@ import os
 from os.path import join as pjoin
 import shutil
 import errno
+import logging
 from string import Template
 
 from .fileutils import (silent_makedirs, silent_unlink, silent_relative_symlink,
                         silent_absolute_symlink, silent_copy)
-from ..hdist_logging import null_logger
 
 from .ant_glob import ant_iglob
 
@@ -231,7 +231,7 @@ def dry_run_links_dsl(rules, env={}):
     return actions
 
 
-def execute_links_dsl(rules, env={}, launcher_program=None, logger=null_logger):
+def execute_links_dsl(rules, env={}, launcher_program=None, logger=None):
     """Executes the links DSL for linking/copying files
 
     The input is a set of rules which will be applied in order. The
@@ -250,9 +250,11 @@ def execute_links_dsl(rules, env={}, launcher_program=None, logger=null_logger):
         If the 'launcher' action is used, the path to the launcher executable
         must be provided.
 
-    logger : Logger
+    logger : Logger or ``None`` (default)
 
     """
+    if logger is None:
+        logger = logging.getLogger('null_logger')
     actions = dry_run_links_dsl(rules, env)
     for action in actions:
         action_desc = "%s%r" % (action[0].__name__, action[1:])

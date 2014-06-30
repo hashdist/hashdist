@@ -1,5 +1,6 @@
 import sys
 import os
+import logging
 from os.path import join as pjoin
 from nose.tools import eq_
 from textwrap import dedent
@@ -10,13 +11,15 @@ from nose import SkipTest
 from .. import run_job
 from .test_build_store import fixture as build_store_fixture
 
-from .utils import which, MemoryLogger, logger as test_logger, assert_raises
+from .utils import which, logger as test_logger, assert_raises
+from hashdist.util.logger_fixtures import log_capture
+
 
 env_to_stderr = [sys.executable, '-c',
                  "import os, sys; sys.stderr.write("
                  "'ENV:%s=%s' % (sys.argv[1], repr(os.environ.get(sys.argv[1], None))))"]
 def filter_out(lines):
-    return [x[len('DEBUG:ENV:'):] for x in lines if x.startswith('DEBUG:ENV:')]
+    return [x[len('INFO:ENV:'):] for x in lines if x.startswith('INFO:ENV:')]
 
 @build_store_fixture()
 def test_run_job_environment(tempdir, sc, build_store, cfg):
@@ -41,10 +44,10 @@ def test_run_job_environment(tempdir, sc, build_store, cfg):
             {"cmd": env_to_stderr + ["BAR"]},
             {"cmd": env_to_stderr + ["HI"]},
         ]}
-    logger = MemoryLogger()
-    ret_env = run_job.run_job(logger, build_store, job_spec, {"BAZ": "BAZ"}, '<no-artifact>',
-                              {"virtual:bash": "bash/ljnq7g35h6h4qtb456h5r35ku3dq25nl"},
-                              tempdir, cfg)
+    with log_capture('build') as logger:
+        ret_env = run_job.run_job(logger, build_store, job_spec, {"BAZ": "BAZ"}, '<no-artifact>',
+                                  {"virtual:bash": "bash/ljnq7g35h6h4qtb456h5r35ku3dq25nl"},
+                                  tempdir, cfg)
     assert 'HDIST_CONFIG' in ret_env
     del ret_env['HDIST_CONFIG']
     del ret_env['PWD']
@@ -81,8 +84,9 @@ def test_env_control(tempdir, sc, build_store, cfg):
             {"cmd": env_to_stderr + ["CFLAGS"]},
             {"cmd": env_to_stderr + ["PATH"]},
         ]}
-    logger = MemoryLogger()
-    ret_env = run_job.run_job(logger, build_store, job_spec, {}, '<no-artifact>', {}, tempdir, cfg)
+    with log_capture('build') as logger:
+        ret_env = run_job.run_job(logger, build_store, job_spec, {},
+                                  '<no-artifact>', {}, tempdir, cfg)
     eq_(["FOO='bar'", "CFLAGS='-O1 -O2 -O3'", "PATH='/foo/bin:/bar/bin'"],
         filter_out(logger.lines))
 
@@ -112,8 +116,9 @@ def test_imports(tempdir, sc, build_store, cfg):
                 {"cmd": env_to_stderr + ["BARSOFT_ID"]},
                 ]
         }
-    logger = MemoryLogger()
-    ret_env = run_job.run_job(logger, build_store, doc, {}, '<no-artifact>', virtuals, tempdir, cfg)
+    with log_capture('build') as logger:
+        ret_env = run_job.run_job(logger, build_store, doc, {},
+                                  '<no-artifact>', virtuals, tempdir, cfg)
     eq_(["FOOSOFT_DIR=%r" % foo_path,
          "FOOSOFT_ID=%r" % foo_id,
          "BARSOFT_DIR=%r" % bar_path,
@@ -142,12 +147,12 @@ def test_inputs(tempdir, sc, build_store, cfg):
              },
             ]
         }
-    logger = MemoryLogger()
-    ret_env = run_job.run_job(logger, build_store, job_spec, {"BAZ": "BAZ"}, '<no-artifact>',
-                              {"virtual:bash": "bash/ljnq7g35h6h4qtb456h5r35ku3dq25nl"},
-                              tempdir, cfg)
-    assert 'DEBUG:Hello1' in logger.lines
-    assert 'DEBUG:Hello2' in logger.lines
+    with log_capture('build') as logger:
+        ret_env = run_job.run_job(logger, build_store, job_spec, {"BAZ": "BAZ"}, '<no-artifact>',
+                                  {"virtual:bash": "bash/ljnq7g35h6h4qtb456h5r35ku3dq25nl"},
+                                  tempdir, cfg)
+    logger.assertLogged('INFO:Hello1')
+    logger.assertLogged('INFO:Hello2')
 
 @build_store_fixture()
 def test_capture_stdout(tempdir, sc, build_store, cfg):
@@ -160,9 +165,9 @@ def test_capture_stdout(tempdir, sc, build_store, cfg):
         ]}
     # Test both with _TEST_LOG_PROCESS_SIMPLE and without
     def doit():
-        logger = MemoryLogger()
-        run_job.run_job(logger, build_store, job_spec, {"echo": "/bin/echo"}, '<no-artifact>',
-                        {}, tempdir, cfg)
+        with log_capture() as logger:
+            run_job.run_job(logger, build_store, job_spec, {"echo": "/bin/echo"},
+                            '<no-artifact>', {}, tempdir, cfg)
         eq_(["HI='a  b'"], filter_out(logger.lines))
 
     doit()
@@ -189,7 +194,7 @@ def test_script_redirect(tempdir, sc, build_store, cfg):
 def test_attach_log(tempdir, sc, build_store, cfg):
     if 'linux' not in sys.platform:
         raise SkipTest('Linux only')
-    
+
     with file(pjoin(tempdir, 'hello'), 'w') as f:
         f.write('hello from pipe')
     job_spec = {
@@ -197,9 +202,10 @@ def test_attach_log(tempdir, sc, build_store, cfg):
             {"hit": ["logpipe", "mylog", "WARNING"], "to_var": "LOG"},
             {"cmd": ["/bin/dd", "if=hello", "of=$LOG"]},
         ]}
-    logger = MemoryLogger()
-    run_job.run_job(logger, build_store, job_spec, {}, '<no-artifact>', {}, tempdir, cfg)
-    assert 'WARNING:mylog:hello from pipe' in logger.lines
+    with log_capture('build') as logger:
+        run_job.run_job(logger, build_store, job_spec, {},
+                        '<no-artifact>', {}, tempdir, cfg)
+    logger.assertLogged('^WARNING:mylog:hello from pipe$')
 
 @build_store_fixture()
 def test_error_exit(tempdir, sc, build_store, cfg):
@@ -207,9 +213,8 @@ def test_error_exit(tempdir, sc, build_store, cfg):
         "commands": [
             {"cmd": [which("false")]},
         ]}
-    logger = MemoryLogger()
     with assert_raises(CalledProcessError):
-        run_job.run_job(logger, build_store, job_spec, {}, '<no-artifact>', {}, tempdir, cfg)
+        run_job.run_job(test_logger, build_store, job_spec, {}, '<no-artifact>', {}, tempdir, cfg)
 
 @build_store_fixture()
 def test_log_pipe_stress(tempdir, sc, build_store, cfg):
@@ -220,11 +225,11 @@ def test_log_pipe_stress(tempdir, sc, build_store, cfg):
     # pipes and poll() is a bit tricky to get right.
 
     # We want to launch many clients who each concurrently send many messages,
-    # then check that they all get through to the MemoryLogger(). We do this by
+    # then check that they all get through to log_capture. We do this by
     # writing out two Python scripts and executing them...
     NJOBS = 5
     NMSGS = 300 # must divide 2
-    
+
     with open(pjoin(tempdir, 'client.py'), 'w') as f:
         f.write(dedent('''\
         import os, sys
@@ -254,13 +259,14 @@ def test_log_pipe_stress(tempdir, sc, build_store, cfg):
         "commands": [
             {"hit": ["logpipe", "mylog", "WARNING"], "to_var": "LOG"},
             {"set": "LD_LIBRARY_PATH", "value": os.environ.get("LD_LIBRARY_PATH", "")},
-            {"cmd": [sys.executable, pjoin(tempdir, 'launcher.py'), pjoin(tempdir, 'client.py'), str(NJOBS), str(NMSGS)]},
+            {"cmd": [sys.executable, pjoin(tempdir, 'launcher.py'),
+                     pjoin(tempdir, 'client.py'), str(NJOBS), str(NMSGS)]},
         ]}
-    logger = MemoryLogger()
     old = run_job.LOG_PIPE_BUFSIZE
     try:
         run_job.LOG_PIPE_BUFSIZE = 50
-        run_job.run_job(logger, build_store, job_spec, {}, '<no-artifact>', {}, tempdir, cfg)
+        with log_capture('build') as logger:
+            run_job.run_job(logger, build_store, job_spec, {}, '<no-artifact>', {}, tempdir, cfg)
     finally:
         run_job.LOG_PIPE_BUFSIZE = old
 
@@ -278,15 +284,15 @@ def test_log_pipe_stress(tempdir, sc, build_store, cfg):
             idx = int(msg[:4])
             log_bins[idx] += 1
         elif log == 'stdout':
-            assert level == 'DEBUG'
+            assert level == 'INFO'
             stdout_bins[int(msg)] += 1
         elif log == 'stderr':
-            assert level == 'DEBUG'
+            assert level == 'INFO'
             stderr_bins[int(msg)] += 1
     assert all(x == NMSGS for x in log_bins)
     assert all(x == NMSGS for x in stdout_bins)
     assert all(x == NMSGS for x in stderr_bins)
-    
+
 @build_store_fixture()
 def test_notimplemented_redirection(tempdir, sc, build_store, cfg):
     job_spec = {
@@ -295,8 +301,7 @@ def test_notimplemented_redirection(tempdir, sc, build_store, cfg):
             {"cmd": ["/bin/echo", "my warning"], "append_to_file": "$log"}
         ]}
     with assert_raises(NotImplementedError):
-        logger = MemoryLogger()
-        run_job.run_job(logger, build_store, job_spec, {}, '<no-artifact>', {}, tempdir, cfg)
+        run_job.run_job(test_logger, build_store, job_spec, {}, '<no-artifact>', {}, tempdir, cfg)
 
 @build_store_fixture()
 def test_script_cwd(tempdir, sc, build_store, cfg):
@@ -312,8 +317,7 @@ def test_script_cwd(tempdir, sc, build_store, cfg):
                         {"chdir": ".."},
                         {"cmd": ["/bin/pwd"], "append_to_file": "out"}
                         ]}]}]}]}
-    logger = MemoryLogger()
-    run_job.run_job(logger, build_store, job_spec, {}, '<no-artifact>', {}, tempdir, cfg)
+    run_job.run_job(test_logger, build_store, job_spec, {}, '<no-artifact>', {}, tempdir, cfg)
     assert os.path.exists(pjoin(tempdir, 'a', 'b', 'out'))
     with open(pjoin(tempdir, 'a', 'b', 'out')) as f:
         assert f.read().strip() == pjoin(tempdir, 'a', 'b')
