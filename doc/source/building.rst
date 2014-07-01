@@ -8,7 +8,7 @@ available for post-processing.
 Principles
 ----------
 
- * Build artifacts should be *fully relocateable*, simply because we
+ * Build artifacts should be *fully relocatable*, simply because we
    can, and it is convenient. In particular it means we can avoid
    adding complexity (an extra post-processing phase) for binary
    artifacts.
@@ -19,10 +19,10 @@ Principles
    variables at all, and a typical setup would only modify ``$PATH``.
 
 
-Relocateable artifacts
+Relocatable artifacts
 ----------------------
 
-Relocateability is something that must be dealt with on a case-by-case
+Relocatability is something that must be dealt with on a case-by-case
 basis.
 
 Artifact relative references
@@ -52,7 +52,7 @@ as ``../../../python/34ssdf32/lib/..`` remain valid.
     could be naturally implemented as whenever a cached build artifact
     is found on a locally available filesystem, symlink to it.
 
-    Of course, now ``/site/hit`` is *not* relocateable, but mere
+    Of course, now ``/site/hit`` is *not* relocatable, but mere
     rewriting of those symlinks, always at the same level in the
     filesystem, is a lot more transparent than full post-processing of
     artifacts.
@@ -62,7 +62,7 @@ Unix: Scripts
 
 The shebang lines ``#!/usr/bin/env interpreter`` or
 ``#!/full/path/to/interpreter`` are limited and preclude
-relocateability by themselves. We deal with this by using `multi-line
+relocatability by themselves. We deal with this by using `multi-line
 shebangs <http://rosettacode.org/wiki/Multiline_shebang>`_.
 
 We want to search for interpreters for scripts as follows:

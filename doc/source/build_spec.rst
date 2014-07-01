@@ -90,7 +90,7 @@ Build artifacts
 A build artifact contains the result of a build; usually as a
 prefix-style directory containing one library/program only, i.e.,
 typical subdirectories are ``bin``, ``include``, ``lib`` and so on.
-The build artifact should ideally be in a relocateable form that can
+The build artifact should ideally be in a relocatable form that can
 be moved around or packed and distributed to another computer (see
 :doc:`building`), although Hashdist does not enforce this.
 

@@ -245,7 +245,7 @@ class BuildPostprocess(object):
 
     --check-ignore=REGEX
 
-        Ignore filenames matching REGEX for the relocateability check
+        Ignore filenames matching REGEX for the relocatability check
 
 
     """
