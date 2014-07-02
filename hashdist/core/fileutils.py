@@ -1,16 +1,35 @@
 import os
 import errno
+import filecmp
 import shutil
 import time
 import gzip
 from os.path import join as pjoin
-from contextlib import closing
+from contextlib import closing, contextmanager
+
+
+@contextmanager
+def allow_writes(path):
+    modified = False
+    if not os.path.islink(path):
+        old_mode = os.stat(path).st_mode
+        os.chmod(path, old_mode | 0o222)
+        modified = True
+    yield
+    if modified:
+        os.chmod(path, old_mode)
 
 def silent_copy(src, dst):
     try:
-        shutil.copy(src, dst)
+        if os.path.isdir(src):
+            shutil.copytree(src, dst)
+        else:
+            shutil.copy(src, dst)
     except OSError, e:
         if e.errno != errno.EEXIST:
+            raise
+    except IOError, e:
+        if not filecmp.cmp(src, dst):
             raise
 
 def silent_relative_symlink(src, dst):
@@ -132,10 +151,16 @@ def atomic_symlink(source, dest):
         os.unlink(templink)
         raise
 
-def write_protect(filename):
-    if not os.path.islink(filename):
-        mode = os.stat(filename).st_mode
-        os.chmod(filename, mode & ~0o222)
+def write_protect(path):
+    if not os.path.islink(path):
+        mode = os.stat(path).st_mode
+        os.chmod(path, mode & ~0o222)
+
+def write_allow(path):
+    if not os.path.islink(path):
+        mode = os.stat(path).st_mode
+        os.chmod(path, mode | 0o222)
+
 
 def rmtree_write_protected(rootpath):
     """

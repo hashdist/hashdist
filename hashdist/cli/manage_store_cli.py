@@ -4,7 +4,13 @@ import shutil
 from os.path import join as pjoin, exists as pexists
 from textwrap import dedent
 
-from ..formats.config import DEFAULT_CONFIG_FILENAME_REPR, DEFAULT_CONFIG_FILENAME, get_config_example_filename
+from ..formats.config import (
+    DEFAULT_STORE_DIR,
+    DEFAULT_CONFIG_DIRS,
+    DEFAULT_CONFIG_FILENAME_REPR,
+    DEFAULT_CONFIG_FILENAME,
+    get_config_example_filename
+)
 from .main import register_subcommand
 
 @register_subcommand
@@ -22,17 +28,34 @@ class InitHome(object):
 
     @staticmethod
     def run(ctx, args):
-        store_dir = os.path.expanduser('~/.hashdist')
-        for x in [DEFAULT_CONFIG_FILENAME, store_dir]:
-            if pexists(x):
-                ctx.logger.error('%s already exists, aborting\n' % x)
+        for path in [DEFAULT_STORE_DIR, DEFAULT_CONFIG_FILENAME]:
+            if pexists(path):
+                ctx.logger.error('%s already exists, aborting\n' % path)
                 return 2
 
-        for x in ['ba', 'bld', 'src', 'db', 'cache', 'gcroots']:
-            os.makedirs(pjoin(store_dir, x))
-        sys.stdout.write('Directory %s created.\n' % store_dir)
+        for path in DEFAULT_CONFIG_DIRS:
+            os.makedirs(pjoin(DEFAULT_STORE_DIR, path))
+            sys.stdout.write('Directory %s created.\n' % path)
         shutil.copyfile(get_config_example_filename(), DEFAULT_CONFIG_FILENAME)
         sys.stdout.write('Default configuration file %s written.\n' % DEFAULT_CONFIG_FILENAME)
+
+@register_subcommand
+class SelfCheck(object):
+    """
+    Verifies the consistency of a HashDist configuration file.
+    """
+    command = 'self-check'
+
+    @staticmethod
+    def setup(ap):
+        pass
+
+    @staticmethod
+    def run(ctx, args):
+        # This is done implicitly when the context is loaded.
+        ctx.get_config()
+        ctx.logger.info('The configuration now appears to be consistent.')
+
 
 @register_subcommand
 class ClearSources(object):

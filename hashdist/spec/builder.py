@@ -6,7 +6,7 @@ from . import hook_api
 from ..formats.marked_yaml import load_yaml_from_file
 from ..core import BuildSpec, ArtifactBuilder
 from .utils import to_env_var
-from .exceptions import ProfileError
+from .exceptions import PackageError, ProfileError
 
 
 class ProfileBuilder(object):

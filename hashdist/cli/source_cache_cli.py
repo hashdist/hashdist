@@ -79,7 +79,9 @@ class Fetch(object):
         args.url = as_url(args.url)
         key = store.fetch_archive(args.url, args.type)
         sys.stderr.write('\n')
-        sys.stdout.write('%s\n' % key)
+        sys.stdout.write('sources:\n')
+        sys.stdout.write('- key: %s\n' % key)
+        sys.stdout.write('  url: %s\n' % args.url)
         if args.key and key != args.key:
             sys.stderr.write('Keys did not match\n')
             return 2

@@ -2,20 +2,26 @@ from pprint import pprint
 from os.path import join as pjoin
 from textwrap import dedent
 from ...core.test.utils import *
+from ...core.test.test_build_store import fixture as build_store_fixture
+from .. import profile
 from .. import package
+from .. import package_loader
 from .. import hook_api
+from ..profile import PackageYAML
 from ...formats.marked_yaml import marked_yaml_load, yaml_dump
-from ..exceptions import ProfileError
+from ..exceptions import ProfileError, PackageError
+from hashdist.hdist_logging import null_logger
 from nose import SkipTest
+
 
 def test_topological_stage_sort():
     stages = [dict(name='z', value='z'),
-              dict(name='a', value='a', before=['c', 'b', 'nonexisting']),
+              dict(name='a', value='a', before=['c', 'b']),
               dict(name='c', value='c'),
               dict(name='b', value='b'),
-              dict(name='aa', value='aa', before='c', after=['b', 'nonexisting'])]
-    stages = package.normalize_stages(stages)
-    stages = package.topological_stage_sort(stages)
+              dict(name='aa', value='aa', before='c', after='b')]
+    stages = package_loader.normalize_stages(stages)
+    stages = package_loader.topological_stage_sort(stages)
     assert stages == [{'value': 'a'}, {'value': 'b'}, {'value': 'aa'}, {'value': 'c'}, {'value': 'z'}]
 
 #
@@ -76,15 +82,31 @@ def test_create_build_spec():
 
 
 
+class MockPackageYAML(PackageYAML):
+
+    def __init__(self, filename, doc):
+        self.doc = doc
+        self.filename = '/path/to/' + filename
+        self.in_directory = False
+
+
 class MockProfile(object):
+
     def __init__(self, files):
+        self.parameters = {}
+        self.packages = {}
         self.files = dict((name, marked_yaml_load(body)) for name, body in files.items())
 
     def load_package_yaml(self, name, parameters):
-        return self.files.get('%s.yaml' % name, None)
+        try:
+            filename = '%s.yaml' % name
+            return MockPackageYAML(filename, self.files[filename])
+        except AttributeError:
+            return None
 
     def find_package_file(self, name, filename):
         return filename if filename in self.files else None
+
 
 def test_prevent_diamond():
     files = {
@@ -92,16 +114,16 @@ def test_prevent_diamond():
         'b.yaml': 'extends: [d]',
         'c.yaml': 'extends: [d]',
         'd.yaml': '{}'}
-    with assert_raises(ProfileError):
-        package.load_and_inherit_package(MockProfile(files), 'a', {})
+    with assert_raises(PackageError):
+        package.PackageSpec.load(MockProfile(files), 'a')
 
 def test_inheritance_collision():
     files = {
         'child.yaml': 'extends: [base1, base2]',
         'base1.yaml': 'build_stages: [{name: stage1}]',
         'base2.yaml': 'build_stages: [{name: stage1}]'}
-    with assert_raises(ProfileError):
-        package.load_and_inherit_package(MockProfile(files), 'child', {})
+    with assert_raises(PackageError):
+        package.PackageSpec.load(MockProfile(files), 'child')
 
 
 def test_load_and_inherit_package():
@@ -177,8 +199,12 @@ def test_load_and_inherit_package():
 
     prof = MockProfile(files)
 
-    doc, hook_files, parameters = package.load_and_inherit_package(prof, 'mypackage', {})
-    assert hook_files == ['grandparent.py', 'base1.py', 'mypackage.py']
+    loader = package_loader.PackageLoader('mypackage', {},
+                                          load_yaml=prof.load_package_yaml,
+                                          find_file=prof.find_package_file)
+    assert set(p.name for p in loader.all_parents) == set(['base1', 'base2', 'grandparent'])
+    assert set(p.name for p in loader.direct_parents) == set(['base1', 'base2'])
+    assert loader.get_hook_files() == ['grandparent.py', 'base1.py', 'mypackage.py']
 
     # the below relies on an unstable ordering as the lists are not sorted, but
     # the parent traversal happens in an (unspecified) stable order
@@ -199,11 +225,13 @@ def test_load_and_inherit_package():
         when_build_dependency:
         - {name: start, set: FOO, value: foovalue}
     """)
-    assert expected == doc
+    print yaml_dump(loader.doc)
+    assert expected == loader.doc
 
 
 def test_order_stages():
-    doc = marked_yaml_load("""\
+    loader = package_loader.PackageLoader.__new__(package_loader.PackageLoader)
+    loader.doc = marked_yaml_load("""\
     build_stages:
     - {a: 1, after: stage1_override, before: stage3_override, name: stage_2_inserted}
     - {a: 1, name: stage4_replace}
@@ -220,37 +248,50 @@ def test_order_stages():
     profile_links: []
     when_build_dependency: []
     """)
-    result = package.order_package_stages(doc)
-    assert expected == result
+    assert expected == loader.stages_topo_ordered()
 
 
 def test_extend_list():
-    yield eq_, ['a', 'b'], package._extend_list(['a'], ['b'])
-    yield eq_, ['a', 'b'], package._extend_list(['a'], ['b', 'a'])
-    yield eq_, [], package._extend_list([], [])
+
+    def _extend_list(to_insert, lst):
+        """Removes items from `lst` that can be found in `to_insert`, and then
+        returns a list with `to_insert` at the front and `lst` at the end.
+        """
+        lst = [x for x in lst if x not in to_insert]
+        return to_insert + lst
+
+    yield eq_, ['a', 'b'], _extend_list(['a'], ['b'])
+    yield eq_, ['a', 'b'], _extend_list(['a'], ['b', 'a'])
+    yield eq_, [], _extend_list([], [])
     # check that input is not mutated
     lst = ['a', 'a', 'a', 'a']
-    yield eq_, ['a'], package._extend_list(['a'], lst)
+    yield eq_, ['a'], _extend_list(['a'], lst)
     yield eq_, ['a', 'a', 'a', 'a'], lst
 
 def test_name_anonymous_stages():
-    stages = [
+    loader = package_loader.PackageLoader.__new__(package_loader.PackageLoader)
+    loader.name = 'theloader'
+    stages_ok = [
         {'name': 'foo'},
         {'before': 'foo', 'one': 1},
-        {'before': 'bar', 'after': 'foo', 'one': 1}, # should get same name
+        {'before': 'bar', 'after': 'foo', 'two': 2},
         {}
         ]
-    result = package.name_anonymous_stages(stages)
+    stages_identical = [
+        {'before': 'foo', 'one': 1},
+        {'before': 'bar', 'after': 'foo', 'one': 1},
+        ]
+    loader.doc = dict(ok=stages_ok, bad=stages_identical)
+    result = loader.get_stages_with_names('ok')
     assert result == [{'name': 'foo'},
                       {'before': 'foo', 'name': '__vohxh6yicfhfiz6qerugjle42wfmlu2p', 'one': 1},
                       {'after': 'foo',
                        'before': 'bar',
-                       'name': '__vohxh6yicfhfiz6qerugjle42wfmlu2p',
-                       'one': 1},
+                       'name': '__tdurutje3wctzqnu24mzy5gqza5yxt6b',
+                       'two': 2},
                       {'name': '__qvk3jbqy6b3mvv5opou3ae55met2pt6s'}]
-    # Note: The fact that identical stages get the same name, which trips up things downstream,
-    # could be seen as a feature rather than a bug -- you normally never want this. At any
-    # rate, this is better for final ordering stability than having a random ordering.
+    with assert_raises(PackageError):
+        loader.get_stages_with_names('bad')
 
 def test_when_dictionary():
     doc = marked_yaml_load("""\
@@ -260,13 +301,13 @@ def test_when_dictionary():
                 one: 1
             two: 2
     """)
-    r = package.process_conditionals(doc, {'platform': 'linux',
+    r = package_loader.recursive_process_conditionals(doc, {'platform': 'linux',
                                            'host': True})
     assert {'dictionary': {'one': 1, 'two': 2}} == r
-    r = package.process_conditionals(doc, {'platform': 'linux',
+    r = package_loader.recursive_process_conditionals(doc, {'platform': 'linux',
                                            'host': False})
     assert {'dictionary': {'two': 2}} == r
-    r = package.process_conditionals(doc, {'platform': 'windows',
+    r = package_loader.recursive_process_conditionals(doc, {'platform': 'windows',
                                            'host': False})
     assert {'dictionary': {}} == r
 
@@ -282,12 +323,55 @@ def test_when_list():
     - am-on: host
       when: host
     """)
-    r = package.process_conditionals(doc, {'platform': 'linux',
-                                           'host': True})
+    r = package_loader.recursive_process_conditionals(
+        doc, {'platform': 'linux', 'host': True})
     assert {'dictionary': [1, 2, 3, {'nested': 'dict'}, {'am-on': 'host'}]} == r
-    r = package.process_conditionals(doc, {'platform': 'linux',
-                                           'host': False})
+    r = package_loader.recursive_process_conditionals(
+        doc, {'platform': 'linux', 'host': False})
     assert {'dictionary': [2, 3, {'nested': 'dict'}]} == r
-    r = package.process_conditionals(doc, {'platform': 'windows',
-                                           'host': False})
+    r = package_loader.recursive_process_conditionals(
+        doc, {'platform': 'windows', 'host': False})
     assert {'dictionary': [3, {'nested': 'dict'}]} == r
+
+
+@temp_working_dir_fixture
+def test_files_glob(d):
+    dump('pkgs/bar/bar.yaml', """
+        dependencies:
+          run: [dep]
+        profile_links:
+        - name: link_with_glob
+          link: '*/**/*'
+        - name: link_without_glob
+          link: bar
+        build_stages:
+        - name: build_without_glob
+          files: [bar.c]
+        - name: build_with_glob
+          files: [glob_*]
+    """)
+    dump('pkgs/bar/bar.c', '/*****/')
+    dump('pkgs/bar/glob_first', 'Frist!')
+    dump('pkgs/bar/glob_second', 'Second')
+    dump('profile.yaml', """
+        package_dirs:
+        - pkgs
+    """)
+    with profile.TemporarySourceCheckouts(None) as checkouts:
+        doc = profile.load_and_inherit_profile(checkouts, "profile.yaml")
+        prof = profile.Profile(null_logger, doc, checkouts)
+        pkg = package.PackageSpec.load(prof, 'bar')
+    assert pkg.doc == marked_yaml_load("""
+        dependencies:
+          build: []
+          run: [dep]
+        profile_links:
+        - {link: '*/**/*'}
+        - {link: bar}
+        build_stages:
+        - files: [glob_first, glob_second]
+          handler: build_with_glob
+        - files: [bar.c]
+          handler: build_without_glob
+        when_build_dependency: []
+    """)

@@ -143,10 +143,10 @@ class Logger(object):
         heading = colorize(heading, get_log_color(level))
         for stream, is_raw in self.streams:
             if is_raw:
-                stream.write(msg + "\n")
+                stream.write(('%s\n' % (msg)).encode('ascii', 'ignore'))
                 stream.flush()
             elif level >= self.level:
-                stream.write('%s%s\n' % (heading, msg))
+                stream.write(u'%s%s\n' % (heading, msg))
         if level >= ERROR:
             self.set_error_occurred(True)
 

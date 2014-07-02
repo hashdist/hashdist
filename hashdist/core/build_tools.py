@@ -151,23 +151,13 @@ def postprocess_multiline_shebang(build_store, filename):
             with open(filename, 'w') as f:
                 f.write(''.join(mod_scriptlines))
 
-
-def postprocess_write_protect(filename):
-    """
-    Write protect files. Leave directories alone because the inability
-    to rm -rf is very annoying.
-    """
-    if not os.path.isfile(filename) or os.path.islink(filename):
-        return
-    write_protect(filename)
-
 #
-# Relocateability
+# Relocatability
 #
 def postprocess_relative_symlinks(logger, artifact_dir, filename):
     """
     Turns absolute symlinks that points inside the artifact_dir into relative
-    symlinks, and gives an error on symlinks that points out of the artifact
+    symlinks, and gives an error on symlinks that point out of the artifact
     """
     if os.path.islink(filename):
         target = os.readlink(filename)

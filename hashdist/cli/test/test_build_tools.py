@@ -41,8 +41,8 @@ def test_symlinks():
         env = dict(os.environ)
         env['FOO'] = 'foo'
         hit('create-links', '--key=section1/section2', 'build.json', env=env)
-        assert os.path.realpath('foo') == '/bin/ls'
-        assert os.path.realpath('bar/bin/ls') == '/bin/ls'
+        assert os.path.realpath('foo') == os.path.realpath('/bin/ls')
+        assert os.path.realpath('bar/bin/ls') == os.path.realpath('/bin/ls')
 
 @temp_working_dir_fixture
 def test_postprocess_check_relocatable_ok(d):

@@ -149,7 +149,7 @@ from .common import (InvalidBuildSpecError, BuildFailedError,
                      json_formatting_options, SHORT_ARTIFACT_ID_LEN,
                      working_directory)
 from .fileutils import silent_unlink, robust_rmtree, rmtree_up_to, silent_makedirs, gzip_compress, write_protect
-from .fileutils import rmtree_write_protected, atomic_symlink, realpath_to_symlink
+from .fileutils import rmtree_write_protected, atomic_symlink, realpath_to_symlink, allow_writes
 from . import run_job
 
 
@@ -432,9 +432,10 @@ class BuildStore(object):
 
     def serialize_build_spec(self, build_spec, target_dir):
         fname = pjoin(target_dir, 'build.json')
-        with file(fname, 'w') as f:
-            json.dump(build_spec.doc, f, **json_formatting_options)
-            f.write('\n')
+        with allow_writes(target_dir):
+            with file(fname, 'w') as f:
+                json.dump(build_spec.doc, f, **json_formatting_options)
+                f.write('\n')
         write_protect(fname)
 
     def _encode_symlink(self, symlink):
@@ -551,7 +552,7 @@ class ArtifactBuilder(object):
             self.make_artifact_json(artifact_dir)
             self.build_to(artifact_dir, config, keep_build)
         except:
-            shutil.rmtree(artifact_dir)
+            rmtree_write_protected(artifact_dir)
             raise
         return artifact_dir
 
@@ -572,9 +573,10 @@ class ArtifactBuilder(object):
                 self.build_store.serialize_build_spec(self.build_spec, artifact_dir)
 
                 # Create 'id' marker for finished build by writing to _id and then mv to id
-                with open(pjoin(artifact_dir, '_id'), 'w') as f:
-                    f.write('%s\n' % self.build_spec.artifact_id)
-                os.rename(pjoin(artifact_dir, '_id'), pjoin(artifact_dir, 'id'))
+                with allow_writes(artifact_dir):
+                    with open(pjoin(artifact_dir, '_id'), 'w') as f:
+                        f.write('%s\n' % self.build_spec.artifact_id)
+                    os.rename(pjoin(artifact_dir, '_id'), pjoin(artifact_dir, 'id'))
             except:
                 should_keep = (keep_build in ('always', 'error'))
                 raise
@@ -642,9 +644,9 @@ class ArtifactBuilder(object):
             finally:
                 logger.pop_stream()
         log_gz_filename = pjoin(artifact_dir, 'build.log.gz')
-        gzip_compress(pjoin(build_dir, 'build.log'), log_gz_filename)
+        with allow_writes(artifact_dir):
+            gzip_compress(pjoin(build_dir, 'build.log'), log_gz_filename)
         write_protect(log_gz_filename)
-
 
 def unpack_sources(logger, source_cache, doc, target_dir):
     """

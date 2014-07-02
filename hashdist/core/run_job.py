@@ -645,9 +645,9 @@ class CommandTreeExecution(object):
                 sublogger_name, level = args[2:]
                 self.create_log_pipe(sublogger_name, level)
             else:
-                from ..cli import main as cli_main
+                from ..cli.main import command_line_entry_point
                 with working_directory(env['PWD']):
-                    retcode = cli_main(args, env, logger)
+                    retcode = command_line_entry_point(args, env, logger)
                 if retcode != 0:
                     raise RuntimeError("hit command failed with code: %d" % ret)
         except SystemExit as e:
@@ -728,6 +728,7 @@ class CommandTreeExecution(object):
         logger = self.logger
         stdout_fd, stderr_fd = proc.stdout.fileno(), proc.stderr.fileno()
         fds = [stdout_fd, stderr_fd]
+        encoding = sys.stderr.encoding
         for fd in fds: # set O_NONBLOCK
             fcntl.fcntl(fd, fcntl.F_SETFL, fcntl.fcntl(fd, fcntl.F_GETFL) | os.O_NONBLOCK)
 
@@ -760,8 +761,10 @@ class CommandTreeExecution(object):
                         for line in lines:
                             if line[-1] == '\n':
                                 line = line[:-1]
-                            logger.debug(line)
-                    
+                            if encoding:
+                                logger.debug(line.decode(encoding))
+                            else:
+                                logger.debug(line)
             if proc.poll() is not None:
                 break
         for buf in buffers.values():
