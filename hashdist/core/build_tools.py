@@ -193,15 +193,15 @@ def _check_call(logger, cmd):
     return out
 
 def postprocess_rpath_linux(logger, env, filename):
-    if 'PATCHELF' not in env:
-        raise Exception('PATCHELF environment variable must be set on Linux')
-    patchelf = env['PATCHELF']
-
     # Read first 4 bytes to check for ELF magic
     with open(filename) as f:
         if f.read(4) != '\x7fELF':
             # Not an ELF file
             return
+
+    if 'PATCHELF' not in env:
+        raise Exception('PATCHELF not set (Linux relocatable packages depend on patchelf)')
+    patchelf = env['PATCHELF']
 
     # OK, we have an ELF, patch it. We first shrink the RPATH to what is actually used.
     _check_call(logger, [patchelf, '--shrink-rpath', filename])
