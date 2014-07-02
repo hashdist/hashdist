@@ -30,21 +30,21 @@ def test_topological_stage_sort():
 def test_assemble_stages():
     doc = marked_yaml_load("""\
         build_stages:
-        - {handler: bash, bash: './configure --with-foo={{foo}}'}
+        - {handler: bash, bash: './configure --with-foo={{foo}} --with-bar={{bar}}'}
         - {handler: bash, bash: make}
         - {handler: bash, bash: make install}
     """)
-    ctx = hook_api.PackageBuildContext(None, {}, {})
+    p = package.PackageSpec("mypackage", doc, [], {'bar':'othervalue'})
+    ctx = hook_api.PackageBuildContext(p.name, {}, p.parameters)
     ctx.parameters['foo'] = 'somevalue'
-    p = package.PackageSpec("mypackage", doc, [], {})
     script = p.assemble_build_script(ctx)
-    assert script == dedent("""\
-    set -e
-    export HDIST_IN_BUILD=yes
-    ./configure --with-foo=somevalue
-    make
-    make install
-    """)
+    eq_(script, dedent("""\
+        set -e
+        export HDIST_IN_BUILD=yes
+        ./configure --with-foo=somevalue --with-bar=othervalue
+        make
+        make install
+    """))
 
 def test_create_build_spec():
     package_spec = marked_yaml_load(dedent("""\
@@ -57,13 +57,16 @@ def test_create_build_spec():
           run: [foolib] # should be ignored
         build_stages:
           - {name: make, handler: bash, bash: make}
+        post_process:
+          - hit: [shebang=multiline, write-protect, remove-pkgconfig]
         when_build_dependency:  # ignored below, only used in build spec of dependency
           - prepend_path: FOO
             value: value-of-FOO
     """))
     parameters = {"X": "x", "BASH": "/bin/bash"}
-    build_spec = package.create_build_spec("mylib", package_spec,
-                                           parameters, {"otherlib": "otherlib/abcdefg"}, {})
+    p = package.PackageSpec("mylib", package_spec, [], parameters)
+    imports = [{"ref": "OTHERLIB", "id": "otherlib/abcdefg"}]
+    build_spec = p._create_build_spec(imports, [], p._postprocess_commands(), {})
     expected = {
         "name": "mylib",
         "build": {
@@ -71,14 +74,12 @@ def test_create_build_spec():
             "commands": [
                 {"set": "BASH", "nohash_value": "/bin/bash"},
                 {"cmd": ["$BASH", "_hashdist/build.sh"]},
-                {'hit': ['build-postprocess', '--shebang=multiline', '--write-protect', '--remove-pkgconfig',
-                         '--relative-rpath', '--relative-symlinks', '--check-relocatable',
-                         "--check-ignore=.*\\.pyc\\$",
-                         "--check-ignore=.*\\.pyo\\$"]}]},
+                {'hit': ['build-postprocess', '--shebang=multiline', '--write-protect',
+                         '--remove-pkgconfig']}]},
         "sources": [
             {"key": "git:a3c39a03e7b8e9a3321d69ff877338f99ebb4aa2", "target": "."}
             ]}
-    assert expected == build_spec.doc
+    eq_(expected, build_spec.doc)
 
 
 
@@ -129,6 +130,8 @@ def test_inheritance_collision():
 def test_load_and_inherit_package():
     files = {}
     files['mypackage.yaml'] = """\
+        defaults:
+          param2: from package defaults
         extends: [base1, base2]
         dependencies:
           build: [dep1]
@@ -165,10 +168,15 @@ def test_load_and_inherit_package():
     """
 
     files['base1.yaml'] = """\
+        defaults:
+          param3: not inherited
         extends: [grandparent]
         build_stages:
         - random: anonymous
           handler: foo
+        post_process:
+        - name: post1
+          hit: relative-rpath
     """
 
     files['base2.yaml'] = """\
@@ -199,12 +207,15 @@ def test_load_and_inherit_package():
 
     prof = MockProfile(files)
 
-    loader = package_loader.PackageLoader('mypackage', {},
+    loader = package_loader.PackageLoader('mypackage', {'param1':'from profile'},
                                           load_yaml=prof.load_package_yaml,
                                           find_file=prof.find_package_file)
     assert set(p.name for p in loader.all_parents) == set(['base1', 'base2', 'grandparent'])
     assert set(p.name for p in loader.direct_parents) == set(['base1', 'base2'])
     assert loader.get_hook_files() == ['grandparent.py', 'base1.py', 'mypackage.py']
+
+    eq_(sorted(loader.parameters.items()),
+        [('param1', 'from profile'), ('param2', 'from package defaults')])
 
     # the below relies on an unstable ordering as the lists are not sorted, but
     # the parent traversal happens in an (unspecified) stable order
@@ -218,6 +229,8 @@ def test_load_and_inherit_package():
         dependencies:
           build: [dep1, dep_gp_1]
           run: [dep1, dep_base2_1]
+        post_process:
+        - {hit: relative-rpath, name: post1}
         profile_links:
         - {link: '*/**/*', name: start}
         - {link: foo, name: __ypp7s5jlosieet6v4iyhvbg52ymlcwgk}
@@ -225,8 +238,7 @@ def test_load_and_inherit_package():
         when_build_dependency:
         - {name: start, set: FOO, value: foovalue}
     """)
-    print yaml_dump(loader.doc)
-    assert expected == loader.doc
+    eq_(expected, loader.doc)
 
 
 def test_order_stages():
@@ -245,10 +257,11 @@ def test_order_stages():
     - {a: 1, handler: stage_2_inserted}
     - {a: 1, b: 3, handler: stage3_override}
     - {a: 1, handler: stage4_replace}
+    post_process: []
     profile_links: []
     when_build_dependency: []
     """)
-    assert expected == loader.stages_topo_ordered()
+    eq_(expected, loader.stages_topo_ordered())
 
 
 def test_extend_list():
@@ -361,10 +374,11 @@ def test_files_glob(d):
         doc = profile.load_and_inherit_profile(checkouts, "profile.yaml")
         prof = profile.Profile(null_logger, doc, checkouts)
         pkg = package.PackageSpec.load(prof, 'bar')
-    assert pkg.doc == marked_yaml_load("""
+    eq_(pkg.doc, marked_yaml_load("""
         dependencies:
           build: []
           run: [dep]
+        post_process: []
         profile_links:
         - {link: '*/**/*'}
         - {link: bar}
@@ -374,4 +388,4 @@ def test_files_glob(d):
         - files: [bar.c]
           handler: build_without_glob
         when_build_dependency: []
-    """)
+    """))

@@ -121,15 +121,15 @@ class ProfileBuilder(object):
 
         imports = []
         for pkgname in sorted_packages:
-            imports.append({'ref': '%s' % to_env_var(pkgname), 'id': self._build_specs[pkgname].artifact_id})
+            imports.append({'ref': '%s' % to_env_var(pkgname),
+                            'id': self._build_specs[pkgname].artifact_id})
 
         commands = []
         install_link_rules = []
         for pkgname in sorted_packages:
             pkg = self._package_specs[pkgname]
-            ref = to_env_var(pkgname)
-            commands += pkg.assemble_build_import_commands(self.profile.parameters, ref)
-            install_link_rules += pkg.assemble_link_dsl(self.profile.parameters, ref, '${ARTIFACT}', link_type)
+            commands += pkg.assemble_build_import_commands()
+            install_link_rules += pkg.assemble_link_dsl('${ARTIFACT}', link_type)
         commands.extend([{"hit": ["create-links", "$in0"],
                           "inputs": [{"json": install_link_rules}]}])
         if write_protect:
@@ -170,5 +170,4 @@ class ProfileBuilder(object):
         dep_vars = [to_env_var(x) for x in self._package_specs[pkgname].build_deps]
         ctx = hook_api.PackageBuildContext(pkgname, dep_vars, pkgspec.parameters)
         hook.load_hooks(ctx, hook_files)
-        ctx.parameters.update(self.profile.parameters)
         return ctx

@@ -29,7 +29,7 @@ class PackageLoaderBase(object):
     :class:`PackageLoader`.
     """
 
-    _STAGE_SECTIONS = ['build_stages', 'profile_links', 'when_build_dependency']
+    _STAGE_SECTIONS = ['build_stages', 'profile_links', 'when_build_dependency', 'post_process']
     """
     The sections to merge, see :meth:`merge_stages` and meth:`topo_order`
     """
@@ -66,8 +66,10 @@ class PackageLoaderBase(object):
         The package may contain a `defaults:` key. Its value is a
         dictionary of default values for the parameters (the
         ``parameters`` attribute).
+
+        The ``'defaults'`` section then removed.
         """
-        defaults = self.doc.get('defaults', {})
+        defaults = self.doc.pop('defaults', {})
         all_parameters = collections.defaultdict(str, defaults)
         all_parameters.update(self.parameters)
         self.parameters = all_parameters

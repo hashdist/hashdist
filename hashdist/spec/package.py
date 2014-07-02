@@ -40,7 +40,7 @@ class PackageSpec(object):
         loader = PackageLoader(name, package_parameters,
                                load_yaml=profile.load_package_yaml,
                                find_file=profile.find_package_file)
-        return PackageSpec(name, loader.stages_topo_ordered(), 
+        return PackageSpec(name, loader.stages_topo_ordered(),
                            loader.get_hook_files(), loader.parameters)
 
     def fetch_sources(self, source_cache):
@@ -49,7 +49,15 @@ class PackageSpec(object):
 
     def assemble_build_script(self, ctx):
         """
-        Return build script (Bash script) that should be run to build package.
+        Return the build script.
+
+        As a side effect, all referenced files are stored in the build
+        context.
+
+        Returns:
+        --------
+
+        String. A bash script that should be run to build the package.
         """
         lines = ['set -e', 'export HDIST_IN_BUILD=yes']
         for stage in self.doc['build_stages']:
@@ -58,15 +66,69 @@ class PackageSpec(object):
 
     def assemble_build_spec(self, source_cache, ctx, dependency_id_map, dependency_packages, profile):
         """
-        Returns the build.json for building the package. Also, the build script (Bash script)
-        that should be run to build the package is uploaded to the given source cache.
+        Return the ``build.json`` buildspec.
+
+        As a side effect, the build script (see
+        :meth:`assemble_build_script`) that should be run to build the
+        package is uploaded to the given source cache.
+
+        Arguments:
+        ----------
+
+        source_cache : :class:`hashdist.core.source_cache.SourceCache`
+            The source cache where the build script is to be stored.
+
+        ctx : :class:`hashdist.spec.hook_api.PackageBuildContext`
+            Part of the hook api
+
+        Returns:
+        --------
+
+        The ``build.json`` for building the package.
         """
-        commands = []
+        assert ctx.parameters == self.parameters  # TODO: why duplicate the parameters?
+
+        if isinstance(dependency_id_map, dict):
+            dependency_id_map = dependency_id_map.__getitem__
+        imports = []
+        build_deps = self.doc.get('dependencies', {}).get('build', [])
+        for dep_name in build_deps:
+            imports.append({'ref': '%s' % to_env_var(dep_name), 'id': dependency_id_map(dep_name)})
+
+        dependency_commands = []
         for dep_name in self.build_deps:
             dep_pkg = dependency_packages[dep_name]
-            commands += dep_pkg.assemble_build_import_commands(ctx.parameters, ref=to_env_var(dep_name))
-        build_script = self.assemble_build_script(ctx)
+            dependency_commands += dep_pkg.assemble_build_import_commands()
 
+        build_script_key = self._store_files(source_cache, ctx, profile)
+        build_spec = self._create_build_spec(imports,
+            dependency_commands, self._postprocess_commands(),
+            [{'target': '.', 'key': build_script_key}])
+        return build_spec
+
+    def _store_files(self, source_cache, ctx, profile):
+        """
+        Store all referenced files in the source cache
+
+         Arguments:
+        ----------
+
+        source_cache : :class:`hashdist.core.source_cache.SourceCache`
+            The source cache where the build script and files are stored.
+
+        ctx : :class:`hashdist.spec.hook_api.PackageBuildContext`
+            Part of the hook api
+
+        profile : :class:`hashdist.spec.profile.Profile`
+            The profile, which knows how to find files that are
+            referenced in the package.
+
+        Returns:
+        --------
+
+        The key associated to the files in the source cache.
+        """
+        build_script = self.assemble_build_script(ctx)
         files = {}
         for to_name, from_name in ctx._bundled_files.iteritems():
             p = profile.find_package_file(self.name, from_name)
@@ -75,25 +137,22 @@ class PackageSpec(object):
             with open(profile.resolve(p)) as f:
                 files['_hashdist/' + to_name] = f.read()
         files['_hashdist/build.sh'] = build_script
-        build_script_key = source_cache.put(files)
-        build_spec = create_build_spec(self.name, self.doc, ctx.parameters, dependency_id_map,
-                                       commands, [{'target': '.', 'key': build_script_key}])
-        return build_spec
+        return source_cache.put(files)
 
-    def assemble_link_dsl(self, parameters, ref, target, link_type='relative'):
+    def assemble_link_dsl(self, target, link_type='relative'):
         """
         Creates the input document to ``hit create-links`` from the information in a package
         description.
         """
-
         link_action_map = {'relative':'relative_symlink',
                            'absolute':'absolute_symlink',
                            'copy':'copy'}
 
+        ref = to_env_var(self.name)
         rules = []
         for in_stage in self.doc['profile_links']:
             if 'link' in in_stage:
-                select = substitute_profile_parameters(in_stage["link"], parameters)
+                select = substitute_profile_parameters(in_stage["link"], self.parameters)
                 rules.append({
                     "action": link_action_map[link_type],
                     "select": "${%s_DIR}/%s" % (ref, select),
@@ -101,92 +160,87 @@ class PackageSpec(object):
                     "target": target,
                     "dirs": in_stage.get("dirs", False)})
             elif 'exclude' in in_stage:
-                select = substitute_profile_parameters(in_stage["exclude"], parameters)
+                select = substitute_profile_parameters(in_stage["exclude"], self.parameters)
                 rules.append({"action": "exclude",
                               "select": select})
             elif 'launcher' in in_stage:
-                select = substitute_profile_parameters(in_stage["launcher"], parameters)
+                select = substitute_profile_parameters(in_stage["launcher"], self.parameters)
                 if link_type != 'copy':
                     rules.append({"action": "launcher",
                                   "select": "${%s_DIR}/%s" % (ref, select),
                                   "prefix": "${%s_DIR}" % ref,
                                   "target": target})
             elif 'copy' in in_stage:
-                select = substitute_profile_parameters(in_stage["copy"], parameters)
+                select = substitute_profile_parameters(in_stage["copy"], self.parameters)
                 rules.append({"action": "copy",
                     "select": "${%s_DIR}/%s" % (ref, select),
                     "prefix": "${%s_DIR}" % ref,
                     "target": target,
                     "dirs": in_stage.get("dirs", False)})
-
             else:
-                raise ValueError('Need either "copy", "link", "launcher" or "exclude" key in profile_links entries')
+                raise ValueError('Need either "copy", "link", "launcher" or "exclude" '
+                                 'key in profile_links entries')
         return rules
 
-    def assemble_build_import_commands(self, parameters, ref):
-        cmds = [_process_when_build_dependency(env_action, parameters, ref)
+    def assemble_build_import_commands(self):
+        """
+        Return the ``when_build_dependency`` commands from dependencies.
+        """
+        cmds = [self._process_when_build_dependency(env_action)
                 for env_action in self.doc.get('when_build_dependency', [])]
         return cmds
 
+    def _process_when_build_dependency(self, action):
+        action = dict(action)
+        if not ('prepend_path' in action or 'append_path' in action or 'set' in action):
+            raise ValueError('when_build_dependency action must be one of '
+                             'prepend_path, append_path, set')
+        value = substitute_profile_parameters(action['value'], self.parameters)
+        value = value.replace('${ARTIFACT}', '${%s_DIR}' % to_env_var(self.name))
+        if '$' in value.replace('${', ''):
+            # a bit crude, but works for now -- should properly disallow non-${}-variables,
+            # in order to prevent $ARTIFACT from cropping up
+            raise ProfileError(action['value'].start_mark, 'Please use "${VAR}", not $VAR')
+        action['value'] = value
+        return action
 
-def create_build_spec(pkg_name, pkg_doc, parameters, dependency_id_map,
-                      dependency_commands, extra_sources=()):
-    if isinstance(dependency_id_map, dict):
-        dependency_id_map = dependency_id_map.__getitem__
+    def _create_build_spec(self, imports,
+                          dependency_commands, postprocess_commands,
+                           extra_sources=()):
+        parameters = self.parameters
+        if 'BASH' not in parameters:
+            raise ProfileError(self.doc, 'BASH must be provided in profile parameters')
 
-    if 'BASH' not in parameters:
-        raise ValueError('BASH must be provided in profile parameters')
+        # sources
+        sources = list(extra_sources)
+        for source_clause in self.doc.get("sources", []):
+            target = source_clause.get("target", ".")
+            sources.append({"target": target, "key": source_clause["key"]})
 
-    # dependencies
-    imports = []
-    build_deps = pkg_doc.get('dependencies', {}).get('build', [])
-    for dep_name in build_deps:
-        imports.append({'ref': '%s' % to_env_var(dep_name), 'id': dependency_id_map(dep_name)})
+        # build commands
+        commands = list(dependency_commands)
+        commands.append({"set": "BASH", "nohash_value": parameters['BASH']})
+        if 'PATH' in parameters:
+            commands.insert(0, {"set": "PATH", "nohash_value": parameters['PATH']})
+        commands.append({"cmd": ["$BASH", "_hashdist/build.sh"]})
+        commands.extend(postprocess_commands)
 
-    # sources
-    sources = list(extra_sources)
-    for source_clause in pkg_doc.get("sources", []):
-        target = source_clause.get("target", ".")
-        sources.append({"target": target, "key": source_clause["key"]})
+        # assemble
+        build_spec = {
+            "name": self.name,
+            "build": {
+                "import": imports,
+                "commands": commands,
+                },
+            "sources": sources,
+            }
+        return core.BuildSpec(build_spec)
 
-    # build commands
-    commands = list(dependency_commands)
-    commands.append({"set": "BASH", "nohash_value": parameters['BASH']})
-    if 'PATH' in parameters:
-        commands.insert(0, {"set": "PATH", "nohash_value": parameters['PATH']})
-    commands.append({"cmd": ["$BASH", "_hashdist/build.sh"]})
-
-    post_proc = ["--shebang=multiline", "--write-protect", "--remove-pkgconfig"]
-    if parameters.get('relative_rpath', True):
-        post_proc.append("--relative-rpath")
-    if parameters.get('relocatable', 'linux' in sys.platform):
-        post_proc.extend(["--relative-symlinks",
-                          "--check-relocatable",
-                          # \$ -> $ by the build spec runner in run_job.py
-                          "--check-ignore=.*\\.pyc\\$",
-                          "--check-ignore=.*\\.pyo\\$"])
-    commands.append({"hit": ["build-postprocess"] + post_proc})
-    # assemble
-    build_spec = {
-        "name": pkg_name,
-        "build": {
-            "import": imports,
-            "commands": commands,
-            },
-        "sources": sources,
-        }
-    return core.BuildSpec(build_spec)
-
-
-def _process_when_build_dependency(action, parameters, ref):
-    action = dict(action)
-    if not ('prepend_path' in action or 'append_path' in action or 'set' in action):
-        raise ValueError('when_build_dependency action must be one of prepend_path, append_path, set')
-    value = substitute_profile_parameters(action['value'], parameters)
-    value = value.replace('${ARTIFACT}', '${%s_DIR}' % ref)
-    if '$' in value.replace('${', ''):
-        # a bit crude, but works for now -- should properly disallow non-${}-variables,
-        # in order to prevent $ARTIFACT from cropping up
-        raise ProfileError(action['value'].start_mark, 'Please use "${VAR}", not $VAR')
-    action['value'] = value
-    return action
+    def _postprocess_commands(self):
+        hit_args = []
+        for stage in self.doc.get('post_process', []):
+            for arg in stage.get('hit', []):
+                hit_args.append('--' + arg)
+        if len(hit_args) == 0:
+            return []
+        return [{'hit': ['build-postprocess'] + hit_args}]
