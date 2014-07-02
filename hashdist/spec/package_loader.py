@@ -54,7 +54,7 @@ class PackageLoaderBase(object):
         Python hooks to load; max. one per package/proto-package involved
         """
         name = self.name
-        # Note: the 'defaults' section can not take effect for the when clause 
+        # Note: the 'defaults' section can not take effect for the when clause
         # selecting a YAML file to load
         self.package_file = self.load_yaml(name, self.parameters)
         self.doc = dict(self.package_file.doc)
@@ -365,20 +365,25 @@ def topological_stage_sort(stages):
     if len(stage_by_name) != len(stages):
         raise PackageError(stages, 'more than one stage with the same name '
                            '(or anonymous stages with identical contents)')
+
+    def get_stage_by_name(name):
+        try:
+            return stage_by_name[name]
+        except KeyError:
+            raise PackageError(name, 'stage "{0}" referred to, but '
+                               'nowhere defined'.format(name))
+
     # convert 'before' to 'after'
     for stage in stages:
         for later_stage_name in stage['before']:
-            try:
-                later_stage = stage_by_name[later_stage_name]
-            except:
-                raise PackageError(later_stage_name, 'stage "%s" referred to, but '
-                                   'not available' % later_stage_name)
+            later_stage = get_stage_by_name(later_stage_name)
             later_stage['after'] = later_stage['after'] + [stage['name']]  # copy
 
+    # sort only using "after"
     ordered_stage_names = topological_sort(
         sorted(stage_by_name.keys()),
-        lambda stage_name: sorted(stage_by_name[stage_name]['after']))
-    ordered_stages = [stage_by_name[stage_name] for stage_name in ordered_stage_names]
+        lambda stage_name: sorted(get_stage_by_name(stage_name)['after']))
+    ordered_stages = [get_stage_by_name(name) for name in ordered_stage_names]
     for stage in ordered_stages:
         del stage['after']
         del stage['before']
