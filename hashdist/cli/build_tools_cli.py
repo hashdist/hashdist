@@ -323,14 +323,18 @@ class BuildPostprocess(object):
                 ctx.logger.error('path not given and ARTIFACT environment variable not set')
                 raise
 
+        def apply_handlers(path):
+            for handler in handlers:
+                handler(path)
+                if not os.path.exists(path):
+                    return   # handler deleted file
+
         # we traverse post-order so that write-protection of
         # directories happens very last
         if os.path.isfile(args.path):
-            for handler in handlers:
-                handler(args.path)
+            apply_handlers(args.path)
         else:
             for dirpath, dirnames, filenames in os.walk(args.path, topdown=False):
-                for handler in handlers:
-                    for filename in filenames:
-                        handler(pjoin(dirpath, filename))
-                    handler(dirpath)
+                for filename in filenames:
+                    apply_handlers(pjoin(dirpath, filename))
+                apply_handlers(dirpath)
