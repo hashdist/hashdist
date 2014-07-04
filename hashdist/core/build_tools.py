@@ -172,13 +172,13 @@ def postprocess_relative_symlinks(logger, artifact_dir, filename):
                 os.unlink(filename)
                 os.symlink(new_target, filename)
 
-def postprocess_rpath(logger, env, filename):
+def postprocess_rpath(logger, artifact_root_dir, env, filename):
     if os.path.islink(filename) or not os.path.isfile(filename) or not is_executable(filename):
         return
     if 'linux' in sys.platform:
         postprocess_rpath_linux(logger, env, filename)
-    # Noop for Darwin etc. for now
-
+    if 'darwin' in sys.platform:
+        postprocess_rpath_darwin(logger, artifact_root_dir, env, filename)
 
 def _check_call(logger, cmd):
     """
@@ -191,6 +191,44 @@ def _check_call(logger, cmd):
         raise subprocess.CalledProcessError(
             'Command %r failed with code %d and stderr:\n%s' % (cmd, p.wait(), err))
     return out
+
+def postprocess_rpath_darwin(logger, artifact_root_dir, env, filename):
+    """
+    Convert absolute Mach-O dyld links to libraries in the build store to relative links
+    """
+
+    print filename
+    print artifact_root_dir
+
+    out = _check_call(logger, ['otool', '-l', filename])
+
+    def emit_load_cmds(cmd_list):
+        """
+        Given a list of Mach-O load commands, emit all dynamic libraries to be loaded
+        """
+        for i, line in enumerate(cmd_list):
+            if 'cmd LC_LOAD_DYLIB' in line:
+                yield cmd_list[i+2]
+
+    def emit_absolute_libs(otool_l_output):
+        """
+        Given the raw output of otool -l, emit the names of any dynamic libraries that
+        are referred to the absolute location of the artifact_root_dir
+        """
+        cmd_list = out.splitlines()[1:]
+        for load_cmd in emit_load_cmds(cmd_list):
+            lib_path = load_cmd.split()[1]
+            if artifact_root_dir in lib_path:
+                yield lib_path
+
+    if out:
+        # check for the presence of absolute references to the artifact_root_dir
+        d = os.path.dirname(os.path.realpath(filename))
+        for abs_lib_path in emit_absolute_libs(out):
+            rel_lib_path = '@loader_path/' + os.path.relpath(abs_lib_path, d)
+            logger.debug('Rewriting absolute library path on "%s" from "%s" to "%s"' %
+                         (filename, abs_lib_path, rel_lib_path))
+            _check_call(logger, ['install_name_tool', '-change', abs_lib_path, rel_lib_path, filename])
 
 def postprocess_rpath_linux(logger, env, filename):
     # Read first 4 bytes to check for ELF magic

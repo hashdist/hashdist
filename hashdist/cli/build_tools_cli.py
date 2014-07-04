@@ -293,7 +293,9 @@ class BuildPostprocess(object):
             artifact_dir = ctx.env['ARTIFACT']
 
         if args.relative_rpath:
-            handlers.append(lambda filename: build_tools.postprocess_rpath(ctx.logger, ctx.env, filename))
+            build_store = BuildStore.create_from_config(ctx.get_config(), ctx.logger)
+            handlers.append(lambda filename: build_tools.postprocess_rpath(ctx.logger, build_store.artifact_root,
+                                                                           ctx.env, filename))
 
         if args.relative_sh_script:
             handlers.append(lambda filename: build_tools.postprocess_sh_script(ctx.logger,
