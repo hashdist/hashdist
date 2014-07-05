@@ -8,7 +8,7 @@ Not supported:
 
 """
 
-from pprint import pprint
+import collections
 import tempfile
 import os
 import shutil
@@ -19,7 +19,7 @@ from urlparse import urlsplit
 from urllib import urlretrieve
 import posixpath
 
-from ..formats.marked_yaml import load_yaml_from_file, is_null
+from ..formats.marked_yaml import load_yaml_from_file, is_null, marked_yaml_load
 from .utils import substitute_profile_parameters
 from .. import core
 from .exceptions import ProfileError, PackageError
@@ -37,7 +37,9 @@ def eval_condition(expr, parameters):
 
 class PackageYAML(object):
     """
-    Holds unmodified content of a package yaml file
+    Holds content of a package yaml file
+    
+    The content is unmodified except for `{{VAR}}` variable expansion.
 
     Attributes:
     -----------
@@ -48,12 +50,43 @@ class PackageYAML(object):
     in_directory : boolean
         Whether the yaml file is in its private package directory that
         may contain other files, or where it is a stand-alone file.
+
+    parameters : dict of str
+        Parameters with the defaults from the package yaml file applied
     """
 
     def __init__(self, filename, parameters, in_directory):
+        """
+        Constructor
+
+        Arguments:
+        ----------
+
+        filename : str
+            Name of the package yaml file
+
+        parameters : dict
+            The parameters to use for `{{VAR}}` variable
+            expansion. Will be supplemented by the ``defaults:`
+            section in the package yaml.
+
+        in_directory : boolean
+            Whether the package yaml file is in its own directory.
+        """
         self.filename = filename
-        self.doc = load_yaml_from_file(filename, parameters)
+        self._init_load(filename, parameters)
         self.in_directory = in_directory
+
+    def _init_load(self, filename, parameters):
+        # To support the defaults section we first load the file, read defaults,
+        # then load file again (since parameter expansion is currently done on
+        # stream level not AST level).
+        doc = load_yaml_from_file(filename, collections.defaultdict(str))
+        defaults = doc.get('defaults', {})
+        all_parameters = collections.defaultdict(str, defaults)
+        all_parameters.update(parameters)
+        self.parameters = all_parameters
+        self.doc = load_yaml_from_file(filename, all_parameters)
 
     def __repr__(self):
         return self.filename
@@ -146,8 +179,8 @@ class Profile(object):
         for pkg in yaml_files:
             if 'when' not in pkg.doc:
                 if no_when_file is not None:
-                    raise PackageError(pkg.doc, "Two specs found for package %s without a when-clause "
-                                       "to discriminate" % pkgname)
+                    raise PackageError(pkg.doc, "Two specs found for package %s without"
+                                       " a when-clause to discriminate" % pkgname)
                 no_when_file = pkg
                 continue
             doc_when = pkg.doc['when']

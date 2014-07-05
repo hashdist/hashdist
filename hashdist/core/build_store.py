@@ -265,16 +265,17 @@ class BuildStore(object):
             for d in [self.temp_build_dir, self.artifact_root]:
                 silent_makedirs(d)
 
-    def _log_artifact_collision(self, path):
+    def _log_artifact_collision(self, path, artifact_id):
+        d = dict(path=path, artifact_id=artifact_id)
         self.logger.log_lines(ERROR, """\
             The target directory already exists: %(path)s. This may be
             because of an earlier sudden crash, or because somebody else is
             currently performing the build on a shared
             filesystem. If you are sure the latter is not the case,
-            you may run the following to fix the situation:
-
-                hit purge %(path)s
-            """ % dict(path=path))
+            you may run the following to fix the situation:""" % d)
+        self.logger.error('')
+        self.logger.error('    hit purge %(artifact_id)s' % d)
+        self.logger.error('')
 
     @staticmethod
     def create_from_config(config, logger, **kw):
@@ -333,7 +334,7 @@ class BuildStore(object):
             try:
                 f = open(pjoin(path, 'id'))
             except IOError:
-                self._log_artifact_collision(path)
+                self._log_artifact_collision(path, '%s/%s' % (name, digest[:SHORT_ARTIFACT_ID_LEN]))
                 raise IllegalBuildStoreError('can not access file: %s/id' % path)
             with f:
                 present_id = f.read().strip()

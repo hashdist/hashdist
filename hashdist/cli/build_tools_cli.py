@@ -64,7 +64,7 @@ class BuildUnpackSources(object):
     Extracts a set of sources as described in a ``build.json`` spec
 
     Extraction is to  the current directory. Example specification::
-        
+
         {
             ...
            "sources" : [
@@ -88,7 +88,7 @@ class BuildUnpackSources(object):
         already extracted contents will not be removed, so one should
         always extract into a temporary directory, and recursively
         remove it if there was a failure.
-        
+
     """
 
     command = 'build-unpack-sources'
@@ -136,7 +136,7 @@ class BuildWriteFiles(object):
 
     * **target**: Target filename. Variable substitution is performed,
       so it is possible to put ``$ARTIFACT/filename`` here.
-      
+
     * **text**: Contents as a list of lines which will be joined with "\\n".
 
     * **object**: As an alternative to *text*, one can provide an object
@@ -148,7 +148,7 @@ class BuildWriteFiles(object):
       (defaults to False)
 
     Order does not affect hashing. Files will always be encoded in UTF-8.
-        
+
     """
 
     command = 'build-write-files'
@@ -190,7 +190,7 @@ class BuildWhitelist(object):
 class BuildPostprocess(object):
     """
     Walks through directories to perform the actions given by flags
-    (to be used after the build process). Default pat is the one
+    (to be used after the build process). Default path is the one
     given by ``$ARTIFACT``.
 
     --shebang=$technique:
@@ -198,7 +198,7 @@ class BuildPostprocess(object):
         All scripts (executables starting with #!) are re-wired to
         a) if within a profile, launch the interpreter of the profile,
         b) if not in a profile, launch the interpreter using a relative
-        path instead of absolute one to make the artifact relocateable.
+        path instead of absolute one to make the artifact relocatable.
 
         The technique used depends on the value; multiline will use a
         polyglot script fragment to insert a 'multi-line shebang',
@@ -210,6 +210,44 @@ class BuildPostprocess(object):
 
         Remove all 'w' mode bits.
 
+    --relative-rpath:
+
+        Patches the RPATH of all executables to turn them from
+        absolute RPATHS to relative RPATHS. The details vary across
+        platforms, but the goal is to make the artifact
+        relocatable. If relocatability is not supported for the
+        platform, the command exists silently.
+
+    --relative-symlinks:
+
+        Rewrites absolute symlinks pointing within the $ARTIFACT
+        as relative symlinks, and gives an error on symlinks pointing
+        out of the artifact.
+
+    --remove-pkgconfig:
+
+        Remove pkgconfig files as they are not relocatable (at least
+        yet)
+
+    --relative-sh-script=pattern
+
+        Files that matches 'pattern' will be modified so that
+        references to $ARTIFACT will be replaced with a path relative
+        from the script location. For instance, use the pattern
+        `bin/.*-config` to match config-scripts. Code will be inserted
+        at top introducing a hashdist_artifact variable in the script,
+        and then references to $ARTIFACT will be
+
+    --check-relocatable
+
+        Complain loudly if the full path ${ARTIFACT} string is found
+        anywhere within the artifact.
+
+    --check-ignore=REGEX
+
+        Ignore filenames matching REGEX for the relocatability check
+
+
     """
     command = 'build-postprocess'
 
@@ -217,6 +255,12 @@ class BuildPostprocess(object):
     def setup(ap):
         ap.add_argument('--shebang', choices=['multiline', 'launcher', 'none'], default='none')
         ap.add_argument('--write-protect', action='store_true')
+        ap.add_argument('--relative-rpath', action='store_true')
+        ap.add_argument('--remove-pkgconfig', action='store_true')
+        ap.add_argument('--relative-sh-script', action='append')
+        ap.add_argument('--relative-symlinks', action='store_true')
+        ap.add_argument('--check-relocatable', action='store_true')
+        ap.add_argument('--check-ignore', action='append')
         ap.add_argument('--pyc', action='store_true')
         ap.add_argument('path', nargs='?', help='dir/file to post-process (dirs are handled '
                         'recursively)')
@@ -226,7 +270,7 @@ class BuildPostprocess(object):
         from ..core import build_tools
         from ..core import BuildStore
         handlers = []
-        
+
         if args.shebang == 'launcher':
             try:
                 launcher = ctx.env['LAUNCHER']
@@ -243,6 +287,34 @@ class BuildPostprocess(object):
             handlers.append(partial(build_tools.postprocess_multiline_shebang,
                                     build_store))
 
+        if args.relative_sh_script or args.check_relocatable or args.relative_symlinks:
+            if 'ARTIFACT' not in ctx.env:
+                ctx.logger.error('ARTIFACT environment variable not set')
+            artifact_dir = ctx.env['ARTIFACT']
+
+        if args.relative_rpath:
+            build_store = BuildStore.create_from_config(ctx.get_config(), ctx.logger)
+            handlers.append(lambda filename: build_tools.postprocess_rpath(ctx.logger, build_store.artifact_root,
+                                                                           ctx.env, filename))
+
+        if args.relative_sh_script:
+            handlers.append(lambda filename: build_tools.postprocess_sh_script(ctx.logger,
+                                                                               args.relative_sh_script,
+                                                                               artifact_dir,
+                                                                               filename))
+
+        if args.relative_symlinks:
+            handlers.append(lambda filename: build_tools.postprocess_relative_symlinks(ctx.logger, artifact_dir,
+                                                                                       filename))
+
+
+        if args.remove_pkgconfig:
+            handlers.append(lambda filename: build_tools.postprocess_remove_pkgconfig(ctx.logger, filename))
+
+        if args.check_relocatable:
+            handlers.append(lambda filename: build_tools.check_relocatable(ctx.logger, args.check_ignore,
+                                                                            artifact_dir, filename))
+
         if args.write_protect:
             handlers.append(build_tools.write_protect)
 
@@ -253,16 +325,18 @@ class BuildPostprocess(object):
                 ctx.logger.error('path not given and ARTIFACT environment variable not set')
                 raise
 
-        # we traverse post-order so that write-protection of
-        # directories happens very last.  (Although, currently only
-        # files are write-protected so that rm -rf works.)
-        if os.path.isfile(args.path):
+        def apply_handlers(path):
             for handler in handlers:
-                handler(args.path)
+                handler(path)
+                if not os.path.exists(path):
+                    return   # handler deleted file
+
+        # we traverse post-order so that write-protection of
+        # directories happens very last
+        if os.path.isfile(args.path):
+            apply_handlers(args.path)
         else:
             for dirpath, dirnames, filenames in os.walk(args.path, topdown=False):
-                for handler in handlers:
-                    for filename in filenames:
-                        handler(pjoin(dirpath, filename))
-                    handler(dirpath)
-        
+                for filename in filenames:
+                    apply_handlers(pjoin(dirpath, filename))
+                apply_handlers(dirpath)

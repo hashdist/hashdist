@@ -8,6 +8,7 @@ loader is discarded immediately.
 
 import re
 import os
+import collections
 from os.path import join as pjoin
 from .profile import eval_condition
 from ..formats.marked_yaml import yaml_dump, copy_dict_node, dict_like, list_node
@@ -28,7 +29,7 @@ class PackageLoaderBase(object):
     :class:`PackageLoader`.
     """
 
-    _STAGE_SECTIONS = ['build_stages', 'profile_links', 'when_build_dependency']
+    _STAGE_SECTIONS = ['build_stages', 'profile_links', 'when_build_dependency', 'post_process']
     """
     The sections to merge, see :meth:`merge_stages` and meth:`topo_order`
     """
@@ -39,6 +40,7 @@ class PackageLoaderBase(object):
         self.load_yaml = load_yaml
         self.find_file = find_file
         self.load_documents()
+        self.apply_defaults()
         self.process_conditionals()
         self.load_parents()
         self.merge_stages()
@@ -46,20 +48,38 @@ class PackageLoaderBase(object):
 
     def load_documents(self):
         """
-        Loads a package from the given profile, and transforms the package spec to
-        include the parts of the spec inherited through the `extends` section.
-        The `extends` section is removed.
+        Loads a package from the given profile.
 
         Returns ``(spec_doc, hook_files)``. `hook_files` is a list of
         Python hooks to load; max. one per package/proto-package involved
         """
         name = self.name
+        # Note: the 'defaults' section can not take effect for the when clause
+        # selecting a YAML file to load
         self.package_file = self.load_yaml(name, self.parameters)
         self.doc = dict(self.package_file.doc)
+
+    def apply_defaults(self):
+        """
+        Apply parameter defaults.
+
+        The package may contain a `defaults:` key. Its value is a
+        dictionary of default values for the parameters (the
+        ``parameters`` attribute).
+
+        The ``'defaults'`` section then removed.
+        """
+        defaults = self.doc.pop('defaults', {})
+        all_parameters = collections.defaultdict(str, defaults)
+        all_parameters.update(self.parameters)
+        self.parameters = all_parameters
 
     def process_conditionals(self):
         """
         Process "when" clauses.
+
+        Clauses that do not apply are removed. For those that do
+        apply, the "when" conditional is removed.
         """
         #The top-level when to select the doc already done by
         # profile.load_package_yaml.
@@ -70,7 +90,8 @@ class PackageLoaderBase(object):
         """
         Load all parents
 
-        The parents are specified in the profile under ``extends:``.
+        The parents are specified in the profile under
+        ``extends:``. The `extends` section is then removed.
 
         Raises:
         -------
@@ -346,20 +367,25 @@ def topological_stage_sort(stages):
     if len(stage_by_name) != len(stages):
         raise PackageError(stages, 'more than one stage with the same name '
                            '(or anonymous stages with identical contents)')
+
+    def get_stage_by_name(name):
+        try:
+            return stage_by_name[name]
+        except KeyError:
+            raise PackageError(name, 'stage "{0}" referred to, but '
+                               'nowhere defined'.format(name))
+
     # convert 'before' to 'after'
     for stage in stages:
         for later_stage_name in stage['before']:
-            try:
-                later_stage = stage_by_name[later_stage_name]
-            except:
-                raise PackageError(later_stage_name, 'stage "%s" referred to, but '
-                                   'not available' % later_stage_name)
+            later_stage = get_stage_by_name(later_stage_name)
             later_stage['after'] = later_stage['after'] + [stage['name']]  # copy
 
+    # sort only using "after"
     ordered_stage_names = topological_sort(
         sorted(stage_by_name.keys()),
-        lambda stage_name: sorted(stage_by_name[stage_name]['after']))
-    ordered_stages = [stage_by_name[stage_name] for stage_name in ordered_stage_names]
+        lambda stage_name: sorted(get_stage_by_name(stage_name)['after']))
+    ordered_stages = [get_stage_by_name(name) for name in ordered_stage_names]
     for stage in ordered_stages:
         del stage['after']
         del stage['before']

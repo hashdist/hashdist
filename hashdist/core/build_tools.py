@@ -8,16 +8,18 @@ Reference
 
 """
 
+import sys
 import os
 from os.path import join as pjoin
 import json
 from string import Template
 from textwrap import dedent
 import re
+import subprocess
 
 from .common import json_formatting_options
 from .build_store import BuildStore
-from .fileutils import rmdir_empty_up_to, write_protect
+from .fileutils import rmdir_empty_up_to, write_protect, silent_unlink
 
 def execute_files_dsl(files, env):
     """
@@ -37,7 +39,7 @@ def execute_files_dsl(files, env):
     """
     def subs(x):
         return Template(x).substitute(env)
-    
+
     for file_spec in files:
         target = subs(file_spec['target'])
         # Automatically create parent directory of target
@@ -93,11 +95,11 @@ def is_executable(filename):
     return os.stat(filename).st_mode & 0o111 != 0
 
 def postprocess_launcher_shebangs(filename, launcher_program):
-    if not os.path.isfile(filename):
+    if not os.path.isfile(filename) or os.path.islink(filename):
         return
     if 'bin' not in filename:
         return
-    
+
     if is_executable(filename):
         with open(filename) as f:
             is_script = (f.read(2) == '#!')
@@ -128,7 +130,7 @@ def postprocess_multiline_shebang(build_store, filename):
     Try to rewrite the shebang of scripts. This function deals with
     detecting whether the script is a shebang, and if so, rewrite it.
     """
-    if not os.path.isfile(filename) or not is_executable(filename):
+    if not os.path.isfile(filename) or os.path.islink(filename) or not is_executable(filename):
         return
 
     with open(filename) as f:
@@ -149,6 +151,198 @@ def postprocess_multiline_shebang(build_store, filename):
             with open(filename, 'w') as f:
                 f.write(''.join(mod_scriptlines))
 
+#
+# Relocatability
+#
+def postprocess_relative_symlinks(logger, artifact_dir, filename):
+    """
+    Turns absolute symlinks that points inside the artifact_dir into relative
+    symlinks, and gives an error on symlinks that point out of the artifact
+    """
+    if os.path.islink(filename):
+        target = os.readlink(filename)
+        if os.path.isabs(target):
+            if not filename.startswith(artifact_dir):
+                msg = 'Absolute symlink %s points to %s outside of %s' % (filename, target, artifact_dir)
+                logger.error(msg)
+                raise ValueError(msg)
+            else:
+                new_target = os.path.relpath(target, os.path.dirname(filename))
+                logger.debug('Rewriting symlink "%s" from "%s" to "%s"' % (filename, target, new_target))
+                os.unlink(filename)
+                os.symlink(new_target, filename)
+
+def postprocess_rpath(logger, artifact_root_dir, env, filename):
+    if os.path.islink(filename) or not os.path.isfile(filename) or not is_executable(filename):
+        return
+    if 'linux' in sys.platform:
+        postprocess_rpath_linux(logger, env, filename)
+    if 'darwin' in sys.platform:
+        postprocess_rpath_darwin(logger, artifact_root_dir, env, filename)
+
+def _check_call(logger, cmd):
+    """
+    Like subprocess.check_call but additionally captures stdout/stderr, and returns stdout.
+    """
+    p = subprocess.Popen(cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+    out, err = p.communicate()
+    if p.wait() != 0:
+        logger.error('%r failed: %d' % (cmd, p.wait()))
+        raise subprocess.CalledProcessError(
+            'Command %r failed with code %d and stderr:\n%s' % (cmd, p.wait(), err))
+    return out
+
+def postprocess_rpath_darwin(logger, artifact_root_dir, env, filename):
+    """
+    Convert absolute Mach-O dyld links to libraries in the build store to relative links
+    """
+
+    print filename
+    print artifact_root_dir
+
+    out = _check_call(logger, ['otool', '-l', filename])
+
+    def emit_load_cmds(cmd_list):
+        """
+        Given a list of Mach-O load commands, emit all dynamic libraries to be loaded
+        """
+        for i, line in enumerate(cmd_list):
+            if 'cmd LC_LOAD_DYLIB' in line:
+                yield cmd_list[i+2]
+
+    def emit_absolute_libs(otool_l_output):
+        """
+        Given the raw output of otool -l, emit the names of any dynamic libraries that
+        are referred to the absolute location of the artifact_root_dir
+        """
+        cmd_list = out.splitlines()[1:]
+        for load_cmd in emit_load_cmds(cmd_list):
+            lib_path = load_cmd.split()[1]
+            if artifact_root_dir in lib_path:
+                yield lib_path
+
+    if out:
+        # check for the presence of absolute references to the artifact_root_dir
+        d = os.path.dirname(os.path.realpath(filename))
+        for abs_lib_path in emit_absolute_libs(out):
+            rel_lib_path = '@loader_path/' + os.path.relpath(abs_lib_path, d)
+            logger.debug('Rewriting absolute library path on "%s" from "%s" to "%s"' %
+                         (filename, abs_lib_path, rel_lib_path))
+            _check_call(logger, ['install_name_tool', '-change', abs_lib_path, rel_lib_path, filename])
+
+def postprocess_rpath_linux(logger, env, filename):
+    # Read first 4 bytes to check for ELF magic
+    with open(filename) as f:
+        if f.read(4) != '\x7fELF':
+            # Not an ELF file
+            return
+
+    if 'PATCHELF' not in env:
+        raise Exception('PATCHELF not set (Linux relocatable packages depend on patchelf)')
+    patchelf = env['PATCHELF']
+
+    # OK, we have an ELF, patch it. We first shrink the RPATH to what is actually used.
+    _check_call(logger, [patchelf, '--shrink-rpath', filename])
+
+    # Then grab the RPATH, make each path relative to ${ORIGIN}, and set again.
+    out = _check_call(logger, [patchelf, '--print-rpath', filename]).strip()
+    if out:
+        # non-empty RPATH, patch it
+        abs_rpaths_str = out.strip()
+        abs_rpaths = abs_rpaths_str.split(':')
+        d = os.path.dirname(os.path.realpath(filename))
+        rel_rpaths = ['${ORIGIN}/' + os.path.relpath(abs_rpath, d) for abs_rpath in abs_rpaths]
+        rel_rpaths_str = ':'.join(rel_rpaths)
+        logger.debug('Rewriting RPATH on "%s" from "%s" to "%s"' % (filename, abs_rpaths_str, rel_rpaths_str))
+        _check_call(logger, [patchelf, '--set-rpath', rel_rpaths_str, filename])
+
+
+PKG_CONFIG_FILES_RE = re.compile(r'.*/lib/pkgconfig/.*\.pc$')
+def postprocess_remove_pkgconfig(logger, filename):
+    """
+    pkg-config .pc-files include the absolute path. For now, we simply remove the files;
+    in time we may want to submit a PR for https://github.com/pkgconf/pkgconf
+    that allows somehow gracefully handling relative paths in these files
+    """
+    if PKG_CONFIG_FILES_RE.match(os.path.realpath(filename)):
+        logger.info('Removing %s' % filename)
+        silent_unlink(filename)
+
+
+def postprocess_sh_script(logger, patterns, artifact_dir, filename):
+    """
+    `patterns` should only match files that should be modified.
+    Assuming the script is a bash/sh script, we modify it
+    """
+    if not os.path.isfile(filename) or os.path.islink(filename):
+        return
+    filename = os.path.realpath(filename)
+    s = filename[len(artifact_dir):]
+    for pattern in patterns:
+        if re.match(pattern, s):
+            break
+    else:
+        return
+
+    # Number of .. to get from script-dir to artifact_dir
+    up = os.path.relpath(artifact_dir, os.path.dirname(filename))
+
+    # Pattern matches, let's modify the file:
+    # a) Insert a small script to set HASHDIST_ARTIFACT to the artifact containing the script
+    # b) Replace occurences of the artifact dir with ${HASHDIST_ARTIFACT}
+    logger.info('Patching %s to compute artifact path dynamically' % filename)
+    script = ['# Compute HASHDIST_ARTIFACT\n'] + pack_sh_script(dedent("""\
+        o=`pwd`
+        p="$0"
+        while test -L "$p"; do  # while it is a link
+            cd `dirname "$p"`
+            b=`basename "$p"`
+            p=`readlink "$p"`
+        done
+        cd `dirname "$p"`/%(up)s
+        HASHDIST_ARTIFACT=`pwd -P`
+        cd "$o"
+    """ % dict(up=up))).splitlines(True)
+    with open(filename) as f:
+        lines = f.readlines(True)  # keepends=True
+    if not lines:
+        # empty
+        return
+    i = 1 if lines[0].startswith('#!') else 0
+    lines = lines[:i] + script + [line.replace(artifact_dir, '${HASHDIST_ARTIFACT}') for line in lines[i:]]
+    with open(filename, 'w') as f:
+        f.write(''.join(lines))
+
+
+def check_relocatable(logger, ignore_patterns, artifact_dir, filename):
+    """
+    Checks whether `filename` contains the string `artifact_dir`, in which case it is not
+    relocatable.
+
+    For now we simply load the entire file into memory.
+    """
+    if not filename.startswith(artifact_dir):
+        raise ValueError('filename must be prefixed with artifact_dir')
+    s = filename[len(artifact_dir):]
+    for pattern in ignore_patterns:
+        if re.match(pattern, s):
+            return
+
+    artifact_dir_b = artifact_dir.encode(sys.getfilesystemencoding())
+    baddies = []
+    is_link = os.path.islink(filename)
+    if not is_link and os.path.isfile(filename):
+        with open(filename) as f:
+            data = f.read()
+        if artifact_dir_b in data:
+            logger.error('File contains "%s" and can not be relocated: %s' % (artifact_dir_b, filename))
+            baddies.append(filename)
+    elif is_link:
+        if artifact_dir_b in os.readlink(filename):
+            logger.error('Symlink contains "%s" and can not be relocated: %s' % (artifact_dir_b, filename))
+            baddies.append(filename)
+    if baddies:
+        raise Exception('Files not relocatable:\n%s' % ('\n'.join('  ' + x for x in baddies)))
 
 #
 # Shebang
@@ -271,7 +465,7 @@ _launcher_script = dedent("""\
             echo "No profile found."
             exit 127
         fi
-        p=`readlink $p`
+        p=`readlink $p`  # TODO should this not be readlink of `basename $p`?
     done
 """)
 
@@ -375,4 +569,4 @@ def add_modelines(scriptlines, language):
         vi_modeline = []
     return shebang + emacs_modeline + body + vi_modeline
 
-    
+

@@ -61,7 +61,7 @@ class ProfileBuilder(object):
 
         def process(pkgname, pkgspec):
             with hook.python_path_and_modules_sandbox(python_path):
-                ctx = self._load_package_build_context(pkgname)
+                ctx = self._load_package_build_context(pkgname, pkgspec)
                 self._build_specs[pkgname] = pkgspec.assemble_build_spec(
                     self.source_cache,
                     ctx,
@@ -100,7 +100,7 @@ class ProfileBuilder(object):
     def get_build_script(self, pkgname):
         python_path = self.profile.hook_import_dirs
         with hook.python_path_and_modules_sandbox(python_path):
-            ctx = self._load_package_build_context(pkgname)
+            ctx = self._load_package_build_context(pkgname, self._package_specs[pkgname])
             return self._package_specs[pkgname].assemble_build_script(ctx)
 
     def get_status_report(self):
@@ -121,15 +121,15 @@ class ProfileBuilder(object):
 
         imports = []
         for pkgname in sorted_packages:
-            imports.append({'ref': '%s' % to_env_var(pkgname), 'id': self._build_specs[pkgname].artifact_id})
+            imports.append({'ref': '%s' % to_env_var(pkgname),
+                            'id': self._build_specs[pkgname].artifact_id})
 
         commands = []
         install_link_rules = []
         for pkgname in sorted_packages:
             pkg = self._package_specs[pkgname]
-            ref = to_env_var(pkgname)
-            commands += pkg.assemble_build_import_commands(self.profile.parameters, ref)
-            install_link_rules += pkg.assemble_link_dsl(self.profile.parameters, ref, '${ARTIFACT}', link_type)
+            commands += pkg.assemble_build_import_commands()
+            install_link_rules += pkg.assemble_link_dsl('${ARTIFACT}', link_type)
         commands.extend([{"hit": ["create-links", "$in0"],
                           "inputs": [{"json": install_link_rules}]}])
         if write_protect:
@@ -165,10 +165,9 @@ class ProfileBuilder(object):
         builder = ArtifactBuilder(self.build_store, profile_build_spec, extra_env, virtuals, debug)
         builder.build_out(target, config)
 
-    def _load_package_build_context(self, pkgname):
-        hook_files = [self.profile.resolve(fname) for fname in self._package_specs[pkgname].hook_files]
+    def _load_package_build_context(self, pkgname, pkgspec):
+        hook_files = [self.profile.resolve(fname) for fname in pkgspec.hook_files]
         dep_vars = [to_env_var(x) for x in self._package_specs[pkgname].build_deps]
-        ctx = hook_api.PackageBuildContext(pkgname, dep_vars, self.profile.parameters)
+        ctx = hook_api.PackageBuildContext(pkgname, dep_vars, pkgspec.parameters)
         hook.load_hooks(ctx, hook_files)
-        ctx.parameters.update(self.profile.parameters)
         return ctx
