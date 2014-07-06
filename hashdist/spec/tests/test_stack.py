@@ -1,4 +1,5 @@
 import unittest
+import os
 from os.path import join as pjoin
 from .. import profile
 from .. import package
@@ -11,7 +12,7 @@ class BaseStack(unittest.TestCase):
         """
         Load stack and store profile and packagespecs in attributes
         """
-        profile_file = pjoin('test_stack', dirpath, profile_name)
+        profile_file = pjoin(os.path.dirname(__file__), 'test_stack', dirpath, profile_name)
         with profile.TemporarySourceCheckouts(None) as checkouts:
             doc = profile.load_and_inherit_profile(checkouts, profile_file)
             self.profile = profile.Profile(null_logger, doc, checkouts)
