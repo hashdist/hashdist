@@ -35,11 +35,10 @@ class ProfileBuilder(object):
         def visit(pkgname):
             if pkgname not in self._package_specs:
                 if pkgname in visiting:
-                    raise ProfileError(pkgname, 'dependency cycle between packages, including package "%s"' % pkgname)
+                    raise ProfileError(pkgname, 'dependency cycle between packages, '
+                                       'including package "%s"' % pkgname)
                 visiting.add(pkgname)
-                settings = self.profile.packages.get(pkgname, {})
-                use = settings.get('use', pkgname)
-                spec = package.PackageSpec.load(self.profile, use)
+                spec = package.PackageSpec.load(self.profile, pkgname)
                 self._package_specs[pkgname] = spec
                 for dep in spec.build_deps + spec.run_deps:
                     visit(dep)

@@ -268,10 +268,10 @@ def test_load_and_inherit_profile(d):
 
     with profile.TemporarySourceCheckouts(None) as checkouts:
         p = profile.load_and_inherit_profile(checkouts, pjoin(d, "user.yaml"))
-    yield eq_, p['packages'], {'python': {'host': True},
-                               'numpy': {'host': False},
-                               'gcc': {},
-                               'mpi': {'use': 'openmpi'}}
+    eq_(p['packages'], {'python': {'host': True},
+                        'numpy': {'host': False},
+                        'gcc': {},
+                        'mpi': {'use': 'openmpi'}})
 
 
 @temp_working_dir_fixture

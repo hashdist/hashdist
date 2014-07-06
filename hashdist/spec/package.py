@@ -29,9 +29,23 @@ class PackageSpec(object):
     @staticmethod
     def load(profile, name):
         """
-        Loads a single package from a profile, including ancestors. This involves
-        a transform pipeline to put the spec on a simple format where all information
-        in ancestors is inlined, and stages are ordered.
+        Loads a single package from a profile.
+
+        Includes ancestors, which are merged in as appropriate. This
+        involves a transform pipeline to put the spec on a simple
+        format where all information in ancestors is inlined, and
+        stages are ordered.
+
+        Parameters
+        ----------
+
+        profile : :class:`~hashdist.spec.profile.Profile`
+            The profile, which defines parameters to be used.
+
+        name : str
+            The package name. This may be different from the name of
+            the yaml file if you override ``pkg_name: {use:
+            alternate_name}`` in the profile.
         """
         package_parameters = defaultdict(str, profile.parameters)
         package_parameters.update(profile.packages.get(name, {}))

@@ -38,7 +38,7 @@ def eval_condition(expr, parameters):
 class PackageYAML(object):
     """
     Holds content of a package yaml file
-    
+
     The content is unmodified except for `{{VAR}}` variable expansion.
 
     Attributes:
@@ -118,6 +118,28 @@ class Profile(object):
         """Turn <repo>/path into /tmp/foo-342/path"""
         return self.checkouts_manager.resolve(path)
 
+    def _use_for_package(self, pkgname):
+        """
+        Return the actual package name (yaml file).
+
+        Parameters
+        ----------
+
+        pkgname : str
+            The name of the package
+
+        Returns
+        -------
+
+        If there is a ``name: {use: alternate_name}`` section in the
+        profile, then this method will return the alternate
+        name. Otherwise, ``pkgname`` is returned.
+        """
+        try:
+            return self.packages[pkgname]['use']
+        except KeyError:
+            return pkgname
+
     def load_package_yaml(self, pkgname, parameters):
         """
         Searches for the yaml source and loads it.
@@ -162,17 +184,18 @@ class Profile(object):
         * class:`~hashdist.spec.exceptions.PackageError`` is raised if
           a package conflicts with a previous one.
         """
-        yaml_files = self._yaml_cache.get(('package', pkgname), None)
+        use = self._use_for_package(pkgname)
+        yaml_files = self._yaml_cache.get(('package', use), None)
         if yaml_files is None:
-            yaml_filename = pkgname + '.yaml'
+            yaml_filename = use + '.yaml'
             matches = self.file_resolver.glob_files([yaml_filename,
-                                                     pjoin(pkgname, yaml_filename),
-                                                     pjoin(pkgname, pkgname + '-*.yaml')],
+                                                     pjoin(use, yaml_filename),
+                                                     pjoin(use, use + '-*.yaml')],
                                                     match_basename=True)
-            self._yaml_cache['package', pkgname] = yaml_files = [
+            self._yaml_cache['package', use] = yaml_files = [
                 PackageYAML(filename, parameters, pattern != yaml_filename)
                 for match, (pattern, filename) in matches.items()]
-            self.logger.debug('Resolved package %s to %s', pkgname, 
+            self.logger.debug('Resolved package %s to %s', pkgname,
                               [filename for match, (pattern, filename) in matches.items()])
         no_when_file = None
         with_when_file = None
@@ -180,18 +203,18 @@ class Profile(object):
             if 'when' not in pkg.doc:
                 if no_when_file is not None:
                     raise PackageError(pkg.doc, "Two specs found for package %s without"
-                                       " a when-clause to discriminate" % pkgname)
+                                       " a when-clause to discriminate" % use)
                 no_when_file = pkg
                 continue
             doc_when = pkg.doc['when']
             if eval_condition(doc_when, parameters):
                 if with_when_file is not None:
                     raise PackageError(doc_when, "Selected parameters for package %s matches both '%s' and '%s'" %
-                                       (pkgname, doc_when, with_when_file))
+                                       (use, doc_when, with_when_file))
                 with_when_file = pkg
         result = with_when_file if with_when_file is not None else no_when_file
         if result is None:
-            raise ProfileError(pkgname, 'No yaml file for package "{0}" found'.format(pkgname))
+            raise ProfileError(use, 'No yaml file for package "{0}" found'.format(use))
         return result
 
     def find_package_file(self, pkgname, filename):
