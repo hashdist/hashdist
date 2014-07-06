@@ -1,0 +1,7 @@
+defaults:
+  # dummy variable so we can see which package was loaded
+  filename: alternate.yaml
+
+profile_links:
+  - name: everything
+    link: '*/alternate/*'

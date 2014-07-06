@@ -1,0 +1,9 @@
+extends:
+- file: base.yaml
+
+package_dirs:
+- .
+
+packages:
+  original:
+    use: alternate

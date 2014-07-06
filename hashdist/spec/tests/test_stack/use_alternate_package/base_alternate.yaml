@@ -1,0 +1,10 @@
+defaults:
+  # dummy variable so we can see which package was loaded
+  filename: base_alternate.yaml
+
+build_stages:
+  - handler: bash
+    bash: echo base_alternate
+
+profile_links:
+  - link: '*/base_alternate/*'

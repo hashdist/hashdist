@@ -274,7 +274,7 @@ class PackageLoader(PackageLoaderBase):
             except KeyError:
                 continue
             if not self.package_file.in_directory:
-                raise PackageErorr(files, 'Can only contain "files:" in a package directory')
+                raise PackageError(files, 'Can only contain "files:" in a package directory')
             pkg_root = self.package_file.dirname
             def strip_pkg_root(path):
                 assert path.startswith(pkg_root)
