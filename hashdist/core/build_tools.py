@@ -281,6 +281,9 @@ def postprocess_relative_pkgconfig(logger, artifact_dir, filename):
     """
     if not PKG_CONFIG_FILES_RE.match(os.path.realpath(filename)):
         return
+    if os.path.islink(filename):
+        # Link to another pc file, e.g. libpng.pc -> libpng16.pc
+        return
     # we don't have access to the spec of the package that we are rewriting :-(
     # ugly workaround: guess package name from the artifact dir
     name = os.path.basename(os.path.dirname(artifact_dir))
