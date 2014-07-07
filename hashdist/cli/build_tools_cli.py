@@ -229,6 +229,14 @@ class BuildPostprocess(object):
         Remove pkgconfig files as they are not relocatable (at least
         yet)
 
+    --relative-pkgconfig:
+
+       Replace the (absolute) artifact directory in the pc files with
+       a ``PACKAGE_DIR`` variable. This variable must then be defined
+       using ``pkg-config --define-variable=FOO_DIR=artifact_dir``
+       when calling pkg-config later on. Hashstack contains a
+       pkg-config wrapper script to do this.
+
     --relative-sh-script=pattern
 
         Files that matches 'pattern' will be modified so that
@@ -246,8 +254,6 @@ class BuildPostprocess(object):
     --check-ignore=REGEX
 
         Ignore filenames matching REGEX for the relocatability check
-
-
     """
     command = 'build-postprocess'
 
@@ -257,6 +263,7 @@ class BuildPostprocess(object):
         ap.add_argument('--write-protect', action='store_true')
         ap.add_argument('--relative-rpath', action='store_true')
         ap.add_argument('--remove-pkgconfig', action='store_true')
+        ap.add_argument('--relative-pkgconfig', action='store_true')
         ap.add_argument('--relative-sh-script', action='append')
         ap.add_argument('--relative-symlinks', action='store_true')
         ap.add_argument('--check-relocatable', action='store_true')
@@ -287,7 +294,8 @@ class BuildPostprocess(object):
             handlers.append(partial(build_tools.postprocess_multiline_shebang,
                                     build_store))
 
-        if args.relative_sh_script or args.check_relocatable or args.relative_symlinks:
+        if (args.relative_sh_script or args.check_relocatable or
+            args.relative_symlinks or args.relative_pkgconfig):
             if 'ARTIFACT' not in ctx.env:
                 ctx.logger.error('ARTIFACT environment variable not set')
             artifact_dir = ctx.env['ARTIFACT']
@@ -307,9 +315,13 @@ class BuildPostprocess(object):
             handlers.append(lambda filename: build_tools.postprocess_relative_symlinks(ctx.logger, artifact_dir,
                                                                                        filename))
 
-
         if args.remove_pkgconfig:
-            handlers.append(lambda filename: build_tools.postprocess_remove_pkgconfig(ctx.logger, filename))
+            handlers.append(lambda filename: build_tools.postprocess_remove_pkgconfig(
+                ctx.logger, filename))
+
+        if args.relative_pkgconfig:
+            handlers.append(lambda filename: build_tools.postprocess_relative_pkgconfig(
+                ctx.logger, artifact_dir, filename))
 
         if args.check_relocatable:
             handlers.append(lambda filename: build_tools.check_relocatable(ctx.logger, args.check_ignore,

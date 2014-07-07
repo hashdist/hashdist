@@ -260,14 +260,40 @@ def postprocess_rpath_linux(logger, env, filename):
 PKG_CONFIG_FILES_RE = re.compile(r'.*/lib/pkgconfig/.*\.pc$')
 def postprocess_remove_pkgconfig(logger, filename):
     """
-    pkg-config .pc-files include the absolute path. For now, we simply remove the files;
-    in time we may want to submit a PR for https://github.com/pkgconf/pkgconf
-    that allows somehow gracefully handling relative paths in these files
+    Delete pkg-config .pc-files
+
+    These include the absolute path by default. Packages may be able
+    to build without pkg-config information, so one (suboptimal)
+    possibility is to delete them.
     """
     if PKG_CONFIG_FILES_RE.match(os.path.realpath(filename)):
         logger.info('Removing %s' % filename)
         silent_unlink(filename)
 
+def postprocess_relative_pkgconfig(logger, artifact_dir, filename):
+    """
+    Rewrite pkg-config .pc-files without absolute paths.
+
+    Replaces the ``artifact_dir`` with ``${FOO_DIR}`` (replace ``FOO``
+    with package name). The hashstack pkg-config includes a wrapper
+    script that then passes ``--define-variable=FOO_DIR=artifact_dir``
+    to the pkg-config implementation.
+    """
+    if not PKG_CONFIG_FILES_RE.match(os.path.realpath(filename)):
+        return
+    if os.path.islink(filename):
+        # Link to another pc file, e.g. libpng.pc -> libpng16.pc
+        return
+    # we don't have access to the spec of the package that we are rewriting :-(
+    # ugly workaround: guess package name from the artifact dir
+    name = os.path.basename(os.path.dirname(artifact_dir))
+    package_dir = '${' + name.upper() + '_DIR}'
+    logger.info('Rewriting %s using %s', filename, package_dir)
+    with open(filename, 'r') as f:
+        pc = f.read()
+    pc = pc.replace(artifact_dir, package_dir)
+    with open(filename, 'w') as f:
+        f.write(pc)
 
 def postprocess_sh_script(logger, patterns, artifact_dir, filename):
     """
