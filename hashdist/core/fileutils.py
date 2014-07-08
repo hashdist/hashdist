@@ -64,7 +64,7 @@ def silent_unlink(path):
         if e.errno != errno.ENOENT:
             raise
 
-def robust_rmtree(path, logger=None, max_retries=5):
+def robust_rmtree(path, logger=None, max_retries=6):
     """Robustly tries to delete paths.
 
     Retries several times (with increasing delays) if an OSError
