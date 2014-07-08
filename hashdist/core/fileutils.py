@@ -71,7 +71,7 @@ def robust_rmtree(path, logger=None, max_retries=5):
     occurs.  If the final attempt fails, the Exception is propagated
     to the caller.
     """
-
+    dt = 1
     for i in range(max_retries):
         try:
             shutil.rmtree(path)
@@ -79,8 +79,9 @@ def robust_rmtree(path, logger=None, max_retries=5):
         except OSError, e:
             if logger:
                 logger.info('Unable to remove path: %s' % path)
-                logger.info('Retrying after %d seconds' % i)
-            time.sleep(i)
+                logger.info('Retrying after %d seconds' % dt)
+            time.sleep(dt)
+            dt *= 2
 
     # Final attempt, pass any Exceptions up to caller.
     shutil.rmtree(path)
