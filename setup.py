@@ -11,7 +11,7 @@ except:
 
 setup(
     name = "hashdist",
-    version = "0.3c1",
+    version = "0.3",
     author = "HashDist Developers",
     author_email = "hashdist@googlegroups.com",
     description = (short_desc),
