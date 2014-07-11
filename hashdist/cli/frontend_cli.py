@@ -65,8 +65,9 @@ class ProfileFrontendBase(object):
 @register_subcommand
 class Build(ProfileFrontendBase):
     """
-    Builds a profile in the Hashdist YAML profile spec format, and
-    outputs a symlink to the resulting profile at the same location
+    Build a profile in the HashDist YAML profile spec format.
+
+    And output a symlink to the resulting profile at the same location
     as the profile yaml file, but without the .yaml suffix.
 
     If you provide the package argument to build a single package, the
@@ -190,7 +191,9 @@ class Show(ProfileFrontendBase):
 @register_subcommand
 class BuildDir(ProfileFrontendBase):
     """
-    Creates the build directory, ready for build, in a given location, for debugging purposes
+    Create the build directory, ready for build, in a given location.
+
+    For debugging purposes.
     """
     command = 'bdir'
 
