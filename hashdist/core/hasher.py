@@ -202,7 +202,7 @@ class Hasher(DocumentSerializer):
     Cryptographically hashes buffers or nested objects ("JSON-like" object structures).
     See :class:`DocumentSerializer` for more details.
 
-    This is the standard hashing method of Hashdist.
+    This is the standard hashing method of HashDist.
     """
     def __init__(self, x=None):
         DocumentSerializer.__init__(self, hash_type())
@@ -214,13 +214,13 @@ class Hasher(DocumentSerializer):
 
     def format_digest(self):
         """
-        The Hashdist standard digest.
+        The HashDist standard digest.
         """
         return format_digest(self._wrapped)
 
 
 def format_digest(hasher):
-    """The Hashdist standard format for encoding hash digests
+    """The HashDist standard format for encoding hash digests
 
     This is one of the cases where it is prudent to just repeat the
     implementation in the docstring::

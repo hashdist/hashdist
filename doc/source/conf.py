@@ -41,7 +41,7 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 # General information about the project.
-project = u'Hashdist'
+project = u'HashDist'
 copyright = u'2012'
 
 # The version info for the project you're documenting, acts as replacement for
@@ -168,7 +168,7 @@ pygments_style = 'sphinx'
 #html_file_suffix = None
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = 'Hashdistdoc'
+htmlhelp_basename = 'HashDistDoc'
 
 
 # -- Options for LaTeX output --------------------------------------------------
@@ -182,8 +182,8 @@ htmlhelp_basename = 'Hashdistdoc'
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title, author, documentclass [howto/manual]).
 latex_documents = [
-  ('index', 'Hashdist.tex', u'Hashdist Documentation',
-   u'Hashdist team', 'manual'),
+  ('index', 'HashDist.tex', u'HashDist Documentation',
+   u'HashDist team', 'manual'),
 ]
 
 # The name of an image file (relative to this directory) to place at the top of
@@ -215,6 +215,6 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    ('index', 'hashdist', u'Hashdist Documentation',
-     [u'Hashdist team'], 1)
+    ('index', 'hashdist', u'HashDist Documentation',
+     [u'HashDist team'], 1)
 ]

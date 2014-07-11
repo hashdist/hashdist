@@ -1,5 +1,5 @@
 """
-:mod:`hashdist.spec.profile` --- Hashdist Profiles
+:mod:`hashdist.spec.profile` --- HashDist Profiles
 ==================================================
 
 Not supported:

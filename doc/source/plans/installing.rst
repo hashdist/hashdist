@@ -1,28 +1,28 @@
-Installing Hashdist for use in software distributions
+Installing HashDist for use in software distributions
 =====================================================
 
 Dependencies
 ------------
 
-Hashdist depends on Python 2.6+.
+HashDist depends on Python 2.6+.
 
 A bootstrap script should be made to facilitate installation everywhere...
 
 Bundling vs. sharing
 --------------------
 
-Hashdist (by which we mean both the library/programs and the source
+HashDist (by which we mean both the library/programs and the source
 and build artifact directories on disk) can either be shared between
 distributions or isolated; thus one may have build artifacts
 in ``~/.hashdist`` which are shared between PyHPC and QSnake, while
-Sage has its own Hashdist store in ``~/path/to/sage/store``.
+Sage has its own HashDist store in ``~/path/to/sage/store``.
 
 .. note::
     
-    The main point of sharing Hashdist is actually to share it
+    The main point of sharing HashDist is actually to share it
     between different versions of the same distribution; i.e., two
     different QSnake versions may be located in different paths on disk,
-    but if they use the global Hashdist they will share the build
+    but if they use the global HashDist they will share the build
     artifacts they have in common.
 
     Another advantage is simply sharing the source store among
@@ -30,10 +30,10 @@ Sage has its own Hashdist store in ``~/path/to/sage/store``.
     and git repos.
 
 
-Managing conflicting Hashdist installations
+Managing conflicting HashDist installations
 -------------------------------------------
 
-By default, Hashdist core tools are exposed through the ``hit``
+By default, HashDist core tools are exposed through the ``hit``
 command and the ``hashdist`` Python package. It is configured through
 ``~/.hitconfig``::
 
@@ -49,7 +49,7 @@ command and the ``hashdist`` Python package. It is configured through
 
     <...>
 
-If a software distribution bundles its own isolated Hashdist
+If a software distribution bundles its own isolated HashDist
 environment then the ``hit`` command should be rebranded (e.g.,
 ``qsnake-hit``), and it should read a different configuration
 file. Similarly, the Python package should be rebranded (e.g.,
@@ -70,11 +70,11 @@ read ``~/.hitconfig`` and then launch a newer version of
 ``hit``. (However, ``qsnake-hit`` is free to behave however it
 likes.)
 
-The best way of distributing Hashdist is in fact to get it through the
+The best way of distributing HashDist is in fact to get it through the
 operating system package manager. In that case, the `hit` key in ``~/.hitconfig``
 will point to ``/usr/bin/hit``. Alternatively, a
 bootstrapping solution is provided and recommended which make sure that each
-distribution using a non-rebranded Hashdist use the same one.
+distribution using a non-rebranded HashDist use the same one.
 
 
 

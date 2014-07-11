@@ -4,7 +4,7 @@ A significant portion of the package building logic should eventually find
 its way into here.
 
 Hook files are re-loaded for every package build, and so decorators etc.
-are run again. The machinery used to Hashdist to load hook files is
+are run again. The machinery used to HashDist to load hook files is
 found in .hook.
 """
 import types

@@ -4,7 +4,7 @@
 
 Building artifact descriptions can be time-consuming if it involves,
 e.g., probing the host system for information and so on. This is
-simply a key-value store stored in a central location for Hashdist
+simply a key-value store stored in a central location for HashDist
 (typically ``~/.hit/cache``). Anything in the cache can be removed
 without further notice.
 """

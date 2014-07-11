@@ -1,5 +1,5 @@
 """
-Handles reading the Hashdist configuration file. By default this is
+Handles reading the HashDist configuration file. By default this is
 ``~/.hashdist/config.yaml``.
 """
 
@@ -15,7 +15,7 @@ DEFAULT_CONFIG_DIRS = ('ba', 'bld', 'src', 'db', 'cache', 'gcroots')
 
 config_schema = {
     "$schema": "http://json-schema.org/draft-04/schema#",
-    "title": "Hashdist configuration file schema",
+    "title": "HashDist configuration file schema",
     "type": "object",
     "properties": {
         "build_stores": {

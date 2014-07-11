@@ -1,4 +1,4 @@
-Hashdist API reference
+HashDist API reference
 ----------------------
 
 
