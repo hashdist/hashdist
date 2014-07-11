@@ -190,7 +190,9 @@ class Show(ProfileFrontendBase):
 @register_subcommand
 class BuildDir(ProfileFrontendBase):
     """
-    Creates the build directory, ready for build, in a given location, for debugging purposes
+    Create the build directory, ready for build, in a given location.
+
+    For debugging purposes.
     """
     command = 'bdir'
 
