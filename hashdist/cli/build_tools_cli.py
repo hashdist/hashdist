@@ -189,8 +189,9 @@ class BuildWhitelist(object):
 @register_subcommand
 class BuildPostprocess(object):
     """
-    Walks through directories to perform the actions given by flags
-    (to be used after the build process). Default path is the one
+    Walk through directories to perform the actions given by flags.
+
+    To be used after the build process. Default path is the one
     given by ``$ARTIFACT``.
 
     --shebang=$technique:
