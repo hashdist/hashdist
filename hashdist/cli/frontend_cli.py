@@ -112,7 +112,7 @@ class Build(ProfileFrontendBase):
 @register_subcommand
 class Develop(ProfileFrontendBase):
     """
-    Builds a development profile in the Hashdist YAML profile spec
+    Builds a development profile in the HashDist YAML profile spec
     format, at the same location as the profile yaml file, but without
     the .yaml suffix.
 
@@ -146,7 +146,7 @@ class Develop(ProfileFrontendBase):
 @register_subcommand
 class Status(ProfileFrontendBase):
     """
-    Status a profile in the Hashdist YAML profile spec format, and
+    Status a profile in the HashDist YAML profile spec format, and
     outputs a symlink to the resulting profile at the same location
     without the .yaml suffix.
     """
@@ -261,7 +261,7 @@ class MvCpBase(object):
             f = open(artifact_id_file)
         except IOError as e:
             if e.errno == errno.ENOENT:
-                sys.stderr.write('Symlink does not point to a Hashdist artifact: %s\n' % args.source)
+                sys.stderr.write('Symlink does not point to a HashDist artifact: %s\n' % args.source)
                 return 1
             else:
                 raise
@@ -279,7 +279,7 @@ class MvCpBase(object):
 @register_subcommand
 class CP(MvCpBase):
     """
-    Copies a Hashdist profile symlink while keeping GC references up
+    Copies a HashDist profile symlink while keeping GC references up
     to date.
 
     You may manually manipulate GC references by modifying the
@@ -290,7 +290,7 @@ class CP(MvCpBase):
 @register_subcommand
 class MV(MvCpBase):
     """
-    Moves a Hashdist profile symlink while keeping GC references in sync.
+    Moves a HashDist profile symlink while keeping GC references in sync.
 
     You may manually manipulate GC references by modifying the
     gc_roots directory (see configuration file)
@@ -304,7 +304,7 @@ class MV(MvCpBase):
 @register_subcommand
 class RM(object):
     """
-    Removes a Hashdist profile symlink while keeping GC references in sync.
+    Removes a HashDist profile symlink while keeping GC references in sync.
 
     You may manually manipulate GC references by modifying the
     gc_roots directory (see configuration file).

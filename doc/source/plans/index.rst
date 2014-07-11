@@ -1,4 +1,4 @@
-Plans for Hashdist
+Plans for HashDist
 ==================
 
 

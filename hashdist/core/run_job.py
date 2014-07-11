@@ -673,7 +673,7 @@ class CommandTreeExecution(object):
                     f.write("export %s='%s'\n" % (key, value))
 
             with working_directory(env['PWD']):
-                sys.stderr.write('Entering Hashdist debug mode. Please execute the following command: \n')
+                sys.stderr.write('Entering HashDist debug mode. Please execute the following command: \n')
                 sys.stderr.write('  %s\n' % args)
                 sys.stderr.write('\n')
                 sys.stderr.write('When you are done, "exit 1" to abort build, or "exit 0" to continue.\n\n')

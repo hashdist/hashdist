@@ -7,7 +7,7 @@ Terminology
 -----------
 
 **Distribution**:
-    An end-user software distribution that makes use of Hashdist
+    An end-user software distribution that makes use of HashDist
     under the hood, e.g., python-hpcmp
 
 **Artifact**:
@@ -22,7 +22,7 @@ Terminology
 **Package**:
     Used in the loose sense; a program/library, e.g., NumPy, Python etc.; 
     what is **not** meant is a specific package format like ``.spkg``, ``.egg``
-    and so on (which is left undefined in the bottom two Hashdist layers)
+    and so on (which is left undefined in the bottom two HashDist layers)
 
 Design principles
 -----------------
@@ -38,7 +38,7 @@ Design principles
  * However, implementations of those protocols are currently kept as
    simple as possible.
 
- * Hashdist is a language-neutral solution; Python is the
+ * HashDist is a language-neutral solution; Python is the
    implementation language chosen but the core tools can (in theory)
    be rewritten in C or Ruby without the users noticing any difference
 
@@ -51,14 +51,14 @@ Design principles
 Powerusers' guide, layer by layer
 ---------------------------------
 
-Hashdist consists of two (eventually perhaps three) layers. The idea
+HashDist consists of two (eventually perhaps three) layers. The idea
 is to provide something useful for as many as possible. If a
 distribution only uses the the *core layer* (or even only some of the
 components within it) it can keep on mostly as before, but get a
 performance boost from the caching aspect.  If the distribution wants
-to buy into the greater Hashdist vision, it can use the *profile
+to buy into the greater HashDist vision, it can use the *profile
 specification layer*.  Finally, for end-users, a final user-interface
-layer is needed to make things friendly.  Here Hashdist
+layer is needed to make things friendly.  Here HashDist
 will probably remain silent for some time, but some standards,
 best practices and utilities may emerge. For now, a user interface ideas section is
 included below.

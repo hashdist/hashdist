@@ -1,4 +1,4 @@
-Hashdist core components
+HashDist core components
 ========================
 
 Source store
@@ -224,7 +224,7 @@ Sandboxing
 By setting ``LD_PRELOAD`` it is possible to override ``libc.so`` and
 filter all filesystem calls in order to create a sandbox and make sure
 that the build does not read from ``/usr`` (or anywhere outside the
-Hashdist store, except through symlinks), which would indicate that
+HashDist store, except through symlinks), which would indicate that
 the build reaches out to pull stuff it shouldn't. The Grand Unified
 Builder (GUB) takes this approach.
 

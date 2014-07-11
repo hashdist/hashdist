@@ -1,14 +1,14 @@
-Specifying a Hashdist software profile
+Specifying a HashDist software profile
 ======================================
 
-There are specification file types in Hashdist.  The *profile spec*
+There are specification file types in HashDist.  The *profile spec*
 describes *what* to build; what packages should be included in the
 profile and the options for each package. A *package spec* contains
 the *how* part: A (possibly parametrized) description for building a
 single package.
 
 The basic language of the specification files is YAML, see
-http://yaml.org.  Style guide: For YAML files within the Hashdist
+http://yaml.org.  Style guide: For YAML files within the HashDist
 project, we use 2 space indents, and no indent before
 vertically-formatted lists (as seen below).
 
@@ -16,7 +16,7 @@ Profile specification
 ---------------------
 
 The profile spec is what the user points the `hit` tool to to build a profile.
-By following references in it, Hashdist should be able to find all the information
+By following references in it, HashDist should be able to find all the information
 needed (including the package specification files). An example end-user profile
 might look like this::
 
@@ -135,7 +135,7 @@ given parameters. One of the files may lack the **when** clause
 (conventionally, the one without a dash and a suffix), which
 corresponds to a default fallback file.
 
-Also, Hashdist searches in the package directories for ``mypkg.py``,
+Also, HashDist searches in the package directories for ``mypkg.py``,
 which specifies a Python module with hook functions that can further
 influence the build. Documentation for the Python hook system is TBD,
 and the API tentative. Examples in ``base/autotools.py`` in the
@@ -147,7 +147,7 @@ we will not repeat them here, but simply list documentation on each clause.
 In strings; ``{{param_name}}`` will usually expand to the parameter in
 question while assembling the specification needed, and are expanded
 before artifact hashes are computed. Expansions of the form ``${FOO}``
-are expanded at build-time (by the Hashdist build system or the shell,
+are expanded at build-time (by the HashDist build system or the shell,
 depending on context), and the variable name is what is hashed.
 
 

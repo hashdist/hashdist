@@ -1,12 +1,12 @@
-User's guide to Hashdist
+User's guide to HashDist
 ========================
 
 Installing and making the `hit` tool available
 ----------------------------------------------
 
-Hashdist requires Python 2.7 and git.
+HashDist requires Python 2.7 and git.
 
-To start using Hashdist, clone the repo that contains the core tool, and put
+To start using HashDist, clone the repo that contains the core tool, and put
 the ``bin``-directory in your ``PATH``::
 
     $ git clone https://github.com/hashdist/hashdist.git 
@@ -25,13 +25,13 @@ beneath ``~/.hashdist``.  To change this, edit
 Setting up your software profile
 --------------------------------
 
-Using Hashdist is based on the following steps:
+Using HashDist is based on the following steps:
 
  1) First, describe the software profile you want to build in a configuration file ("I want Python, NumPy, SciPy").
 
  2) Use a dedicated git repository to manage that configuration file
 
- 3) For every git commit, Hashdist will be able to build the specified
+ 3) For every git commit, HashDist will be able to build the specified
     profile, and *cache* the results, so that you can jump around in
     the history of your software profile.
 
@@ -78,13 +78,13 @@ to build.
 Garbage collection
 ------------------
 
-Hashdist does not have the concepts of "upgrade" or "uninstall", but
+HashDist does not have the concepts of "upgrade" or "uninstall", but
 simply keeps everything it has downloaded or built around forever. To
 free up disk space, you may invoke the garbage collector to remove
 unused builds.
 
 Currently the garbage collection strategy is very simple: When you
-invoke garbage collection manually, Hashdist removes anything that
+invoke garbage collection manually, HashDist removes anything that
 isn't currently in use. To figure out what that means, you may invoke
 ``hit gc --list``; continueing on the example from above, we
 would find::
@@ -95,12 +95,12 @@ would find::
 
 This indicates that if you run a plain ``hit gc``, software accessible
 through ``/path/to/myprofile/default`` will be kept, but all other builds
-will be removed from the Hashdist store. To try it, you may comment out
+will be removed from the HashDist store. To try it, you may comment out
 the ``zlib`` line from ``default.yaml``, then run ``hit build``, and
 then ``hit gc`` -- the zlib software is removed at the last step.
 
 If you want to manipulate profile symlinks, you should use the ``hit
-cp``, ``hit mv``, and ``hit rm`` commands, so that Hashdist can
+cp``, ``hit mv``, and ``hit rm`` commands, so that HashDist can
 correctly track the profile links. This is useful to keep multiple
 profiles around. E.g., if you first execute::
 
@@ -120,7 +120,7 @@ an underscore in front), or manually remove symlinks.
 
    As a corollary to the description above, if you do a plain
    ``mv`` of a symlink to a profile, and then execute ``hit gc``,
-   then the software profile may be deleted by Hashdist.
+   then the software profile may be deleted by HashDist.
 
 
 Debug features
@@ -142,7 +142,7 @@ A couple of commands allow you to see what happens when building.
 
 This extracts Jinja2 sources to ``bld``, puts a Bash build-script in
 ``bld/_hashdist/build.sh``. However, if you go ahead and try to run it
-the environment will not be the same as when Hashdist builds, so this
+the environment will not be the same as when HashDist builds, so this
 is a bit limited so far. [TODO: ``hit debug`` which also sets the right
 environment and sets the ``$ARTIFACT`` directory.]
 

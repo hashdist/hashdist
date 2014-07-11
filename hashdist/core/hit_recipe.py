@@ -20,7 +20,7 @@ def hit_cli_build_spec(python=None, package=None):
     without executing commands.
 
     It is created with the Python interpreter currently running,
-    loading the Hashdist package currently running (i.e.,
+    loading the HashDist package currently running (i.e.,
     independent of any "python" dependency in the build spec).
 
     Parameters
@@ -30,7 +30,7 @@ def hit_cli_build_spec(python=None, package=None):
         Path to Python interpreter to use (default: ``sys.executable``)
 
     package : str
-        Path to Hashdist package to use (default: deduced from ``__file__``)
+        Path to HashDist package to use (default: deduced from ``__file__``)
 
     Returns
     -------
@@ -84,9 +84,9 @@ def hit_cli_build_spec(python=None, package=None):
 def ensure_hit_cli_artifact(build_store, config):
     """
     Builds an artifact which executes the 'hit' command using the current
-    Python interpreter and current Hashdist package.
+    Python interpreter and current HashDist package.
 
-    Note: The current Hashdist package is merely symlinked to, the
+    Note: The current HashDist package is merely symlinked to, the
     hash of the artifact doesn't mean much. See this as a way for the
     running process to inject a CLI into the build environment.
 

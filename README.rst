@@ -1,4 +1,4 @@
-Hashdist
+HashDist
 ========
 
 **Home Page**:
@@ -26,7 +26,7 @@ Hashdist
     Andy Terrel
 
 **Funding:**
-    Hashdist is partially funded by the International Research Office,
+    HashDist is partially funded by the International Research Office,
     US Army Engineer Research and Development Center, BAA contract
     W911NF-12-1-0604
 

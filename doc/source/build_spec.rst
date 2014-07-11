@@ -4,7 +4,7 @@ Build specifications and artifacts
 The build spec (``build.json``)
 -------------------------------
 
-The heart of Hashdist are *build specs*, JSON documents that describes
+The heart of HashDist are *build specs*, JSON documents that describes
 everything that goes into a build: the source code to use, the build
 environment, the build commands.
 
@@ -75,7 +75,7 @@ or the hash::
     files themselves; they are simply the *API for the build artifact
     store*. It is the responsibility of distributions such as
     *python-hpcmp* to properly generate build specifications for
-    Hashdist in a user-friendly manner.
+    HashDist in a user-friendly manner.
 
 
 Build artifacts
@@ -86,9 +86,9 @@ prefix-style directory containing one library/program only, i.e.,
 typical subdirectories are ``bin``, ``include``, ``lib`` and so on.
 The build artifact should ideally be in a relocatable form that can
 be moved around or packed and distributed to another computer (see
-:doc:`building`), although Hashdist does not enforce this.
+:doc:`building`), although HashDist does not enforce this.
 
-A Hashdist artifact ID has the form ``name/hash``, e.g.,
+A HashDist artifact ID has the form ``name/hash``, e.g.,
 ``zlib/4niostz3iktlg67najtxuwwgss5vl6k4``. For the artifact paths on
 disk, a shortened form (4-char hash) is used to make things more
 friendly to the human user. If there is a collision, the length is
@@ -167,7 +167,7 @@ Discussion
 Safety of the shortened IDs
 '''''''''''''''''''''''''''
 
-Hashdist will never use these to resolve build artifacts, so collision
+HashDist will never use these to resolve build artifacts, so collision
 problems come in two forms:
 
 First, automatically finding the list of run-time dependencies from

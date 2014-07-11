@@ -203,7 +203,7 @@ class BuildPostprocess(object):
 
         The technique used depends on the value; multiline will use a
         polyglot script fragment to insert a 'multi-line shebang',
-        while 'launcher' will use the Hashdist 'launcher' tool. The
+        while 'launcher' will use the HashDist 'launcher' tool. The
         latter looks for the path to the 'launcher' artifact in the
         LAUNCHER environment variable.
 

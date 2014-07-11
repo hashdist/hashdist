@@ -1,8 +1,8 @@
 Guidelines for packaging/building
 =================================
 
-Hashdist can be used to build software in many ways. This document
-describes what the Hashdist authors recommend and the helper tools
+HashDist can be used to build software in many ways. This document
+describes what the HashDist authors recommend and the helper tools
 available for post-processing.
 
 Principles

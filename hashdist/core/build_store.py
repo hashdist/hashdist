@@ -5,15 +5,15 @@
 Principles
 ----------
 
-The build store is the very core of Hashdist: Producing build artifacts
+The build store is the very core of HashDist: Producing build artifacts
 identified by hash-IDs. It's important to have a clear picture of just
 what the build store is responsible for and not.
 
 Nix takes a pure approach where an artifact hash is guaranteed to
 identify the resulting binaries (up to anything inherently random in
 the build process, like garbage left by compilers). In contrast,
-Hashdist takes a much more lenient approach where the strictness is
-configurable. The primary goal of Hashdist is to make life simpler
+HashDist takes a much more lenient approach where the strictness is
+configurable. The primary goal of HashDist is to make life simpler
 by reliably triggering rebuilds when software components are updated,
 not total control of the environment (in which case Nix is likely
 the better option).
@@ -29,7 +29,7 @@ parallel.
 Artifact IDs
 ------------
 
-A Hashdist artifact ID has the form ``name/hash``, e.g.,
+A HashDist artifact ID has the form ``name/hash``, e.g.,
 ``zlib/4niostz3iktlg67najtxuwwgss5vl6k4``.
 
 For the artifact paths on disk, a shortened form (4-char hash) is used
@@ -347,7 +347,7 @@ class BuildStore(object):
                     self.logger.error('    %s (wants to access/build)' % artifact_id)
                     self.logger.error('')
                     self.logger.error('The odds of this happening due to chance are very low.')
-                    self.logger.error('Please get in touch with the Hashdist developer mailing list.')
+                    self.logger.error('Please get in touch with the HashDist developer mailing list.')
                     raise IllegalBuildStoreError('Hashes collide in first 12 chars: %s and %s' % (present_id, artifact_id))
             return path
 
@@ -439,7 +439,7 @@ class BuildStore(object):
         write_protect(fname)
 
     def _encode_symlink(self, symlink):
-        """Format of Hashdist-managed entries in gc_roots directory; an underscore + base64"""
+        """Format of HashDist-managed entries in gc_roots directory; an underscore + base64"""
         return '_' + base64.b64encode(symlink).replace('=', '-')
 
     def create_symlink_to_artifact(self, artifact_id, symlink_target):

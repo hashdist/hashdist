@@ -392,7 +392,7 @@ def make_relative_multiline_shebang(build_store, filename, scriptlines):
     ----------
 
     build_store : BuildStore
-        Used to identify shebangs that reference paths within Hashdist artifacts
+        Used to identify shebangs that reference paths within HashDist artifacts
 
     scriptlines : list of str
         List of lines in the script; each line includes terminating newline

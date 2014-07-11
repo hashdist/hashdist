@@ -3,7 +3,7 @@ Overview
 
 There are 3 licenses:
 
- * Hashdist: BSD 3-clause
+ * HashDist: BSD 3-clause
  * jsonschema: MIT
  * pyyaml: MIT
  * sh: MIT
@@ -14,7 +14,7 @@ The licenses for each component are copied verbatim below.
 
 
 ##################################################################
-# Hashdist                                                       #
+# HashDist                                                       #
 ##################################################################
 
 Copyright (c) 2012, Dag Sverre Seljebotn and Ondrej Certik
@@ -35,7 +35,7 @@ met:
    distribution.
 
  - Neither the name of Dag Sverre Seljebotn nor the names of other
-   Hashdist contributors may be used to endorse or promote products
+   HashDist contributors may be used to endorse or promote products
    derived from this software without specific prior written
    permission.
 

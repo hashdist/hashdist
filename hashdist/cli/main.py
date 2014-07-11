@@ -48,7 +48,7 @@ def register_subcommand(cls, command=None):
     _subcommands[name] = cls
     return cls
 
-class HashdistCommandContext(object):
+class HashDistCommandContext(object):
     def __init__(self, argparser, subcommand_parsers, out_stream, config_filename, env, logger):
         self.argparser = argparser
         self.subcommand_parsers = subcommand_parsers
@@ -102,7 +102,7 @@ def command_line_entry_point(unparsed_argv, env, logger, default_config_filename
     """The main ``hit`` command-line entry point
     """
     description = textwrap.dedent('''
-    Entry-point for various Hashdist command-line tools
+    Entry-point for various HashDist command-line tools
     ''')
 
     parser = argparse.ArgumentParser(description=description,
@@ -142,7 +142,7 @@ def command_line_entry_point(unparsed_argv, env, logger, default_config_filename
         if args.verbose:
             logger.set_level(DEBUG)
 
-        ctx = HashdistCommandContext(parser, subcmd_parsers, sys.stdout, args.config_file, env, logger)
+        ctx = HashDistCommandContext(parser, subcmd_parsers, sys.stdout, args.config_file, env, logger)
 
         retcode = args.subcommand_handler(ctx, args)
         if retcode is None:
