@@ -150,7 +150,7 @@ environment and sets the ``$ARTIFACT`` directory.]
 Developing the base profile
 ---------------------------
 
-If you want to develop the ``hashstack2`` repository yourself, using a
+If you want to develop the ``hashstack`` repository yourself, using a
 dedicated local-machine profile repo becomes tedious. Instead, copy
 the ``default.example.yaml`` to ``default.yaml``. Then simply run
 ``hit build`` directly in the base profile (in which case the personal

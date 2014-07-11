@@ -22,7 +22,7 @@ might look like this::
 
     extends:
     - name: hashstack
-      urls: ['https://github.com/hashdist/hashstack2.git']
+      urls: ['https://github.com/hashdist/hashstack.git']
       key: 'git:5042aeaaee9841575e56ad9f673ef1585c2f5a46'
       file: debian.yaml
 
@@ -141,7 +141,7 @@ influence the build. Documentation for the Python hook system is TBD,
 and the API tentative. Examples in ``base/autotools.py`` in the
 Hashstack repo.
 
-Examples of package specs are in https://github.com/hashdist/hashstack2, and
+Examples of package specs are in https://github.com/hashdist/hashstack, and
 we will not repeat them here, but simply list documentation on each clause.
 
 In strings; ``{{param_name}}`` will usually expand to the parameter in
