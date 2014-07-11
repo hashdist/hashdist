@@ -11,13 +11,13 @@ except:
 
 setup(
     name = "hashdist",
-    version = "0.3c1",
+    version = "0.3",
     author = "HashDist Developers",
     author_email = "hashdist@googlegroups.com",
     description = (short_desc),
     license = "BSD",
     keywords = "package management openscience hpc",
-    url = "http://packages.python.org/hashdist",
+    url = "http://hashdist.github.io/",
     scripts=['bin/hit', 'bin/hit-check-libs'],
     packages=['hashdist',
 	      'hashdist.cli',
