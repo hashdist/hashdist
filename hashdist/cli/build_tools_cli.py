@@ -61,7 +61,7 @@ class CreateLinks(object):
 @register_subcommand
 class BuildUnpackSources(object):
     """
-    Extracts a set of sources as described in a ``build.json`` spec
+    Extract a set of sources as described in a ``build.json`` spec.
 
     Extraction is to  the current directory. Example specification::
 
