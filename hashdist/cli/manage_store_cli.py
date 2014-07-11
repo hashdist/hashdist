@@ -16,9 +16,10 @@ from .main import register_subcommand
 @register_subcommand
 class InitHome(object):
     __doc__ = """
-    Initializes the current user's home directory for Hashdist by
-    creating the ~/.hashdist directory. Further configuration can then
-    by done by modifying %s.
+    Initialize the current user's home directory for HashDist.
+
+    Create the ~/.hashdist directory. Further configuration can
+    then by done by modifying %s.
     """ % DEFAULT_CONFIG_FILENAME_REPR
     command = 'init-home'
 
