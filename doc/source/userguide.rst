@@ -1,5 +1,5 @@
-User's guide to Hashdist v. 0.2
-===============================
+User's guide to Hashdist
+========================
 
 Installing and making the `hit` tool available
 ----------------------------------------------

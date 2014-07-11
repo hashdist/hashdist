@@ -1,12 +1,6 @@
 Build specifications and artifacts
 ==================================
 
-.. warning::
-
-    dagss: I'm writing this in the anticipation of soon adding a few
-    low-hanging fruits to Hashdist. So the examples don't currently
-    work, but should.
-
 The build spec (``build.json``)
 -------------------------------
 
