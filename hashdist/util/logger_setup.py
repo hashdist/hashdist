@@ -13,47 +13,72 @@ The root logger is used by default::
 
     >>> configure_logging('INFO')
     [INFO] configured logging: INFO
-    >>> root = logging.getLogger()
+    >>> root = getLogger()
     >>> root.name
     'root'
+    >>> root.debug('debug is not show when configured with INFO')
+    >>> root.info('info is the lowest level that is shown with INFO')
+    [INFO] info is the lowest level that is shown with INFO
     >>> root.warning('this is a warning')
     [WARNING] this is a warning
+    >>> root.error('this is an error')
+    [ERROR] this is an error
+    >>> root.critical('this is critical')
+    [CRITICAL] this is critical
 
-The "build" logger is used to log the builder output. It does not add
-any information to stdout::
+The "package" logger is used to log progress on packages, and it
+includes the package name.  This logger is also used to log the
+builder output.
 
-    >>> build = logging.getLogger('build')
-    >>> build.name
-    'build'
-    >>> build.warning('this is a warning')
-    this is a warning
+It is supposed to be used with an additional ``pkg`` key which you
+have to either pass manually or using an adapter::
 
-The "package" logger is used to log progress on packages. It is
-supposed to be used with an additional ``pkg`` key which you have to
-either pass manually or using an adapter::
-
-    >>> pkg = logging.getLogger('package')
-    >>> pkg.name
+    >>> pkg = getLogger('package', 'foo')
+    >>> pkg  # doctest: +ELLIPSIS
+    <logging.LoggerAdapter ...>
+    >>> pkg.logger.name
     'package'
-    >>> pkg.warning('this is a warning', extra={'pkg':'foo'})
+    >>> pkg.debug('debug is not show when configured with INFO')
+    >>> pkg.info('info is the lowest level that is shown with INFO')
+    [foo] info is the lowest level that is shown with INFO
+    >>> pkg.warning('this is a warning')
     [foo] this is a warning
-    >>> log_foo = logging.LoggerAdapter(pkg, {'pkg':'foo'})
-    >>> log_foo.warning('this is a warning')
+    >>> pkg.error('error and critical include the level name')
+    [foo|ERROR] error and critical include the level name
+    >>> pkg.critical('error and critical include the level name')
+    [foo|CRITICAL] error and critical include the level name
+
+Redirection to file can be done with the :class:`log_to_file`
+context. It intentionally ignores all log levels, that is, the log
+file will always contain DEBUG and higher::
+
+    >>> import os, tempfile
+    >>> fd, tmp = tempfile.mkstemp()
+    >>> os.close(fd)
+    >>> with log_to_file('package', tmp):
+    ...     pkg.debug('debug is not show when configured with INFO')
+    ...     pkg.info('info is the lowest level that is shown with INFO')
+    ...     pkg.warning('this is a warning')
+    [foo] info is the lowest level that is shown with INFO
     [foo] this is a warning
+    >>> with open(tmp, 'r') as f:
+    ...     file_log = f.read()
+    >>> print(file_log.splitlines())    # doctest: +ELLIPSIS +NORMALIZE_WHITESPACE
+    ['... - DEBUG: [package:<doctest hashdist.util] debug is not show when configured with INFO',
+     '... - INFO: [package:<doctest hashdist.util] info is the lowest level that is shown with INFO',
+     '... - WARNING: [package:<doctest hashdist.util] this is a warning']
+    >>> os.unlink(tmp)
 
-The null logger is only used in doctests and doesn't print anything::
+The null logger is only used in doctests and does not print anything::
 
-    >>> null = logging.getLogger('null_logger')
+    >>> null = getLogger('null_logger')
     >>> null.error('this is an error')
 
-Configuring a higher log level suppresses output as well, except for
-the package logger which is part of the UI::
+Configuring a higher log level suppresses output as well::
 
     >>> configure_logging('CRITICAL')
     >>> root.error('this is a general error')
-    >>> build.error('this is a build error')
-    >>> log_foo.error('this is a foo error')
-    [foo] this is a foo error
+    >>> pkg.error('this is a foo error')
 
 For doctesting only, revert back to the nose logging handlers::
 
@@ -81,7 +106,6 @@ class LogConfigurationStore(object):
         self._logger.level = self._level
 
 
-
 _ERROR_OCCURRED = False
 
 def has_error_occurred():
@@ -91,33 +115,29 @@ def has_error_occurred():
     return _ERROR_OCCURRED
 
 
-def set_log_level(level):
+class HashDistFormatter(logging.Formatter):
     """
-    Set which log messages are displayed.
-
-    This function adjusts various log levels to exclude messages with
-    a lower priority than ``level``.
-
-    Arguments:
-    ----------
-
-    level : string or int
-        The desired log level as defined by the Python logging module
+    Custom log formatter according to our taste
     """
-    level_string_to_value = dict(
-        CRITICAL=logging.CRITICAL, ERROR=logging.ERROR, WARNING=logging.WARNING, 
-        INFO=logging.INFO, DEBUG=logging.DEBUG)
-    try:
-        level = level_string_to_value[level.upper()]
-    except KeyError:
-        raise ValueError('level must be integer or a valid log level string')
-    except AttributeError:
-        pass
-    root = logging.getLogger()
-    root.setLevel(level=level)
-    build = logging.getLogger('build')
-    build_handler = [h for h in build.handlers if h.name == 'build_handler'][0]
-    build_handler.setLevel(level)
+    def __init__(self, fmt, debug=None, info=None, warning=None, error=None, critical=None):
+        m = monochrome if not want_color() else lambda x:x
+        logging.Formatter.__init__(self, m(fmt))
+        self._custom_fmt = f = dict()
+        if debug:    f[logging.DEBUG]    = logging.Formatter(m(debug))
+        if info:     f[logging.INFO]     = logging.Formatter(m(info))
+        if warning:  f[logging.WARNING]  = logging.Formatter(m(warning))
+        if error:    f[logging.ERROR]    = logging.Formatter(m(error))
+        if critical: f[logging.CRITICAL] = logging.Formatter(m(critical))
+
+    def format(self, record):
+        if record.levelno >= logging.ERROR:
+            global _ERROR_OCCURRED
+            _ERROR_OCCURRED = True
+        try:
+            fmt = self._custom_fmt[record.levelno]
+            return fmt.format(record)
+        except KeyError:
+            return logging.Formatter.format(self, record)
 
 
 def configure_logging(config):
@@ -147,6 +167,7 @@ def configure_logging(config):
         set_log_level(config)
     else:
         _configure_logging_from_yaml(config)
+    # Logging works now
     root = logging.getLogger()
     root.info('configured logging: %s', config)
 
@@ -164,10 +185,6 @@ def _configure_logging_from_yaml(filename):
     from hashdist.deps import yaml
     with open(filename, 'r') as f:
         config_dict = yaml.load(f)
-    if not want_color():
-        fmt = config_dict['formatters']
-        for key, value in fmt.items():
-            fmt[key]['format'] = monochrome(value['format'])
     from hashdist.deps.py26_dictconfig import dictConfig
     #try:
     #    from logging.config import dictConfig
@@ -181,6 +198,71 @@ def _configure_logging_from_yaml(filename):
         # if there is no logger there will be no output
         print('Configuring the logger encountered an exception: ' + str(err))
         raise err
+
+
+def set_log_level(level):
+    """
+    Set which log messages are displayed.
+
+    This function adjusts various log levels to exclude messages with
+    a lower priority than ``level``.
+
+    Arguments:
+    ----------
+
+    level : string or int
+        The desired log level as defined by the Python logging module
+    """
+    level_string_to_value = dict(
+        CRITICAL=logging.CRITICAL, ERROR=logging.ERROR, WARNING=logging.WARNING,
+        INFO=logging.INFO, DEBUG=logging.DEBUG)
+    try:
+        level = level_string_to_value[level.upper()]
+    except KeyError:
+        raise ValueError('level must be integer or a valid log level string')
+    except AttributeError:
+        pass
+    logging.getLogger().setLevel(level=level)
+    # Store in module globals
+    global _pkg_logger
+    pkg_logger = logging.getLogger('package')
+    pkg_handler = [h for h in pkg_logger.handlers if h.name == 'package_handler'][0]
+    pkg_handler.setLevel(level)
+
+
+def getLogger(name=None, pkg=None):
+    """
+    Get Logger
+
+    This function extends ``logging.getLogger`` with a shortcut to get
+    a package logger.
+
+    Arguments:
+    ----------
+
+    name : str or ``None``
+        The logger name. Must be one of
+
+        * ``None``: If nothing is specified, the root logger.
+
+        * ``'package'``: The logger for packages
+
+        * ``'null_logger'``: The null logger for doctesting
+
+    pkg : str (optional)
+        Required only for the ``'package'`` logger. The package name.
+
+    Return:
+    -------
+
+    A logger.
+    """
+    logger = logging.getLogger(name)
+    if name == 'package':
+        return logging.LoggerAdapter(logger, {'pkg':pkg})
+    else:
+        return logger
+
 
 
 class log_to_file(object):

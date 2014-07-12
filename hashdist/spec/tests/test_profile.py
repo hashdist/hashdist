@@ -315,7 +315,7 @@ def test_defaults_section_in_package(d):
           - when: foo
             handler: bash
     """)
-
+    null_logger = logging.getLogger('null_logger')
     def get_build_stages_of_mypkg(profile_file):
         with profile.TemporarySourceCheckouts(None) as checkouts:
             doc = profile.load_and_inherit_profile(checkouts, pjoin(d, profile_file))

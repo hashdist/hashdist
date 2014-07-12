@@ -3,7 +3,9 @@ import os
 from os.path import join as pjoin
 from .. import profile
 from .. import package
-from hashdist.hdist_logging import null_logger
+
+from hashdist.util.logger_setup import getLogger
+null_logger = getLogger('null_logger')
 
 
 class BaseStack(unittest.TestCase):

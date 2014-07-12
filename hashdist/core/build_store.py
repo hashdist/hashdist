@@ -139,7 +139,6 @@ import sys
 import re
 import errno
 import json
-import logging
 import base64
 
 from .source_cache import SourceCache
@@ -152,7 +151,7 @@ from .fileutils import silent_unlink, robust_rmtree, rmtree_up_to, silent_makedi
 from .fileutils import rmtree_write_protected, atomic_symlink, realpath_to_symlink, allow_writes
 from . import run_job
 
-from hashdist.util.logger_setup import log_to_file
+from hashdist.util.logger_setup import log_to_file, getLogger
 
 
 class BuildSpec(object):
@@ -512,8 +511,7 @@ class BuildStore(object):
 class ArtifactBuilder(object):
     def __init__(self, build_store, build_spec, extra_env, virtuals, debug):
         self.build_store = build_store
-        self.logger = logging.LoggerAdapter(logging.getLogger('package'),
-                                            {'pkg':build_spec.doc['name']})
+        self.logger = getLogger('package', build_spec.doc['name'])
         self.build_spec = build_spec
         self.artifact_id = build_spec.artifact_id
         self.virtuals = virtuals
@@ -621,17 +619,14 @@ class ArtifactBuilder(object):
         job_spec = self.build_spec.doc['build']
 
         log_filename = pjoin(build_dir, 'build.log')
-        root_log = logging.getLogger()
-        build_log = logging.getLogger('build')
-        root_log.debug('Start log output to file %s', log_filename)
-        with log_to_file('build', log_filename):
-            self.logger.info('Building %s, follow log with:' % self.build_spec.short_artifact_id)
-            self.logger.info('  tail -f %s' % log_filename)
-
-            self.build_store.prepare_build_dir(config, build_log, self.build_spec, build_dir)
+        self.logger.warning('Building %s, follow log with:' % self.build_spec.short_artifact_id)
+        self.logger.warning('  tail -f %s' % log_filename)
+        self.logger.debug('Start log output to file %s', log_filename)
+        with log_to_file('package', log_filename):
+            self.build_store.prepare_build_dir(config, self.logger, self.build_spec, build_dir)
 
             try:
-                run_job.run_job(build_log, self.build_store, job_spec,
+                run_job.run_job(self.logger, self.build_store, job_spec,
                                 env, artifact_dir, self.virtuals, cwd=build_dir, config=config,
                                 temp_dir=job_tmp_dir, debug=self.debug)
             except:
@@ -642,7 +637,7 @@ class ArtifactBuilder(object):
                 # the caller
                 raise BuildFailedError("%s: %s" % (exc_type.__name__, exc_value), build_dir,
                                        (exc_type, exc_value, exc_tb)), None, exc_tb
-        root_log.debug('Stop log output to file %s', log_filename)
+        self.logger.debug('Stop log output to file %s', log_filename)
         log_gz_filename = pjoin(artifact_dir, 'build.log.gz')
         with allow_writes(artifact_dir):
             gzip_compress(log_filename, log_gz_filename)
