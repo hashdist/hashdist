@@ -1,3 +1,6 @@
 packages:
   base_original:
     use: base_alternate
+
+  base_origdirectory:
+    use: base_altdirectory

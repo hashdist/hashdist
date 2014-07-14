@@ -34,11 +34,10 @@ class PackageLoaderBase(object):
     The sections to merge, see :meth:`merge_stages` and meth:`topo_order`
     """
 
-    def __init__(self, name, parameters, load_yaml, find_file):
+    def __init__(self, name, parameters, load_yaml):
         self.name = name
         self.parameters = parameters
         self.load_yaml = load_yaml
-        self.find_file = find_file
         self.load_documents()
         self.apply_defaults()
         self.process_conditionals()
@@ -108,7 +107,7 @@ class PackageLoaderBase(object):
 
     def _load_parent(self, parent_name):
         """Helper for :meth:`load_parents` """
-        parent = PackageLoaderBase(parent_name, self.parameters, self.load_yaml, self.find_file)
+        parent = PackageLoaderBase(parent_name, self.parameters, self.load_yaml)
         all_names = set(p.name for p in self.all_parents)
         new_names = set(p.name for p in parent.all_parents)
         if all_names.intersection(new_names):
@@ -211,7 +210,7 @@ class PackageLoader(PackageLoaderBase):
         All parents, direct and indirect
     """
 
-    def __init__(self, name, parameters, load_yaml, find_file):
+    def __init__(self, name, parameters, load_yaml):
         """
         Load package yaml and postprocess it.
 
@@ -228,12 +227,8 @@ class PackageLoader(PackageLoaderBase):
         load_yaml : function
             Callable to load the yaml, see
             :meth:`hashdist.spec.profile.load_package_yaml`.
-
-        find_file : function
-            Callable to find auxiliary files, see
-            :meth:`hashdist.spec.profile.find_package_file`.
         """
-        super(PackageLoader, self).__init__(name, parameters, load_yaml, find_file)
+        super(PackageLoader, self).__init__(name, parameters, load_yaml)
         self.override_requested_sources()
         self.expand_globs_in_build_stages_files()
 
@@ -329,8 +324,7 @@ class PackageLoader(PackageLoaderBase):
         """
         hook_files = []
         for loader in self.all_parents + [self]:
-            py_file = loader.name + '.py'
-            hook = self.find_file(loader.name, py_file)
+            hook = loader.package_file.hook_filename
             if hook:
                 hook_files.append(hook)
         return hook_files

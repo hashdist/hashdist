@@ -1,0 +1,1 @@
+Example of a file referenced in a build stage files: section

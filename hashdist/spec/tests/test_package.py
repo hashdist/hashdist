@@ -85,10 +85,12 @@ def test_create_build_spec():
 
 class MockPackageYAML(PackageYAML):
 
-    def __init__(self, filename, doc):
+    def __init__(self, filename, doc, hook_filename):
+        self.profile = profile
         self.doc = doc
-        self.filename = '/path/to/' + filename
+        self.filename = filename
         self.in_directory = False
+        self.hook_filename = hook_filename
 
 
 class MockProfile(object):
@@ -100,10 +102,15 @@ class MockProfile(object):
 
     def load_package_yaml(self, name, parameters):
         try:
-            filename = '%s.yaml' % name
-            return MockPackageYAML(filename, self.files[filename])
-        except AttributeError:
+            filename = name + '.yaml'
+            doc = self.files[filename]
+        except KeyError:
             return None
+        hook = name + '.py'
+        if hook not in self.files:
+            hook = None
+        return MockPackageYAML(filename, doc, hook)
+
 
     def find_package_file(self, name, filename):
         return filename if filename in self.files else None
@@ -208,11 +215,11 @@ def test_load_and_inherit_package():
     prof = MockProfile(files)
 
     loader = package_loader.PackageLoader('mypackage', {'param1':'from profile'},
-                                          load_yaml=prof.load_package_yaml,
-                                          find_file=prof.find_package_file)
-    assert set(p.name for p in loader.all_parents) == set(['base1', 'base2', 'grandparent'])
-    assert set(p.name for p in loader.direct_parents) == set(['base1', 'base2'])
-    assert loader.get_hook_files() == ['grandparent.py', 'base1.py', 'mypackage.py']
+                                          load_yaml=prof.load_package_yaml)
+    eq_(set(p.name for p in loader.all_parents), set(['base1', 'base2', 'grandparent']))
+    eq_(set(p.name for p in loader.direct_parents), set(['base1', 'base2']))
+    eq_(loader.get_hook_files(),
+        ['grandparent.py', 'base1.py', 'mypackage.py'])
 
     eq_(sorted(loader.parameters.items()),
         [('param1', 'from profile'), ('param2', 'from package defaults')])
