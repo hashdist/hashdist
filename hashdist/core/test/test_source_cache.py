@@ -7,6 +7,7 @@ import hashlib
 from StringIO import StringIO
 import stat
 import errno
+import logging
 from contextlib import closing
 
 pjoin = os.path.join
@@ -16,8 +17,9 @@ from ..source_cache import (ArchiveSourceCache, SourceCache,
         KeyNotFoundError, SourceNotFoundError, SecurityError, RemoteFetchError)
 from ..hasher import Hasher, format_digest
 
-from .utils import temp_dir, working_directory, VERBOSE, logger, assert_raises, MemoryLogger
+from .utils import temp_dir, working_directory, VERBOSE, logger, assert_raises
 from . import utils
+from hashdist.util.logger_fixtures import log_capture
 
 from nose.tools import eq_
 
@@ -148,14 +150,15 @@ def test_common_prefix():
 
 
 def test_trap_tarball_attack():
-    logger = MemoryLogger()
+    logger = logging.getLogger()
     with temp_source_cache(logger) as sc:
         for tb in mock_dangerous_tarballs:
-            key = sc.fetch_archive('file:' + tb)
-            with temp_dir() as d:
-                with assert_raises(SecurityError):
-                    sc.unpack(key, d)
-                assert any('attempted to break out' in line for line in logger.lines)
+            with log_capture() as logger:
+                key = sc.fetch_archive('file:' + tb)
+                with temp_dir() as d:
+                    with assert_raises(SecurityError):
+                        sc.unpack(key, d)
+            logger.assertLogged('^ERROR:.*attempted to break out')
 
 def test_tarball():
     with temp_source_cache() as sc:

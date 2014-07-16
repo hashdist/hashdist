@@ -1,14 +1,14 @@
 import functools
-
+import logging
 from nose import SkipTest
 
 from ..host import WrongHostTypeError
 from ..debian import DebianHostPackages
 from ...core import null_cache
-from ...hdist_logging import null_logger
 
 def setup():
     global deb
+    null_logger = logging.getLogger('null_logger')
     try:
         deb = DebianHostPackages(null_logger, null_cache)
     except WrongHostTypeError, e:

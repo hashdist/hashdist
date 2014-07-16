@@ -3,6 +3,7 @@ import os
 import shutil
 import tempfile
 import subprocess
+import logging
 from os.path import join as pjoin
 from nose.tools import eq_, ok_
 
@@ -13,7 +14,6 @@ from ...core.test.test_source_cache import temp_source_cache
 from .. import profile
 from .. import package
 from ..exceptions import ProfileError
-from hashdist.hdist_logging import null_logger
 
 def gitify(dir):
     with working_directory(dir):
@@ -214,6 +214,7 @@ def test_resource_resolution(d):
     dump(pjoin(d, "level1", "pkgs", "foo.yaml"), "{}")
     dump(pjoin(d, "level1", "pkgs", "bar.yaml"), "{}")
 
+    null_logger = logging.getLogger('null_logger')
     with profile.TemporarySourceCheckouts(None) as checkouts:
         doc = profile.load_and_inherit_profile(checkouts, pjoin(d, "level3", "profile.yaml"))
         p = profile.Profile(null_logger, doc, checkouts)
@@ -314,7 +315,7 @@ def test_defaults_section_in_package(d):
           - when: foo
             handler: bash
     """)
-
+    null_logger = logging.getLogger('null_logger')
     def get_build_stages_of_mypkg(profile_file):
         with profile.TemporarySourceCheckouts(None) as checkouts:
             doc = profile.load_and_inherit_profile(checkouts, pjoin(d, profile_file))

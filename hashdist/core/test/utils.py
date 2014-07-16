@@ -13,8 +13,9 @@ from contextlib import closing
 from nose.tools import eq_
 
 from ..fileutils import silent_makedirs
-from ...hdist_logging import Logger, null_logger, DEBUG
-from logging import getLevelName
+
+import logging
+from hashdist.util.logger_setup import configure_logging
 
 from os.path import join as pjoin
 
@@ -126,36 +127,14 @@ def ctxmgr_to_fixture(ctxmgr_func):
     return decorator
 
 
-#
-# Logger to use during unit-testing
-#
 
 VERBOSE = bool(int(os.environ.get('VERBOSE', '0')))
-
 if VERBOSE:
-    logger = Logger(DEBUG, 'tests')
+    configure_logging('DEBUG')
+    logger = logging.getLogger()
 else:
-    logger = null_logger
-
-class MemoryLogger(Logger):
-    def __init__(self, names=[], lines=None):
-        if lines is None:
-            lines = []
-        self.lines = lines
-        self.level = DEBUG
-        self.names = names
-
-    def get_sub_logger(self, name):
-        return MemoryLogger(self.names + [name], self.lines)
-
-    def log(self, level, msg, *args):
-        if args:
-            msg = msg % args
-        if self.names:
-            msg = '%s:%s' % ('/'.join(self.names), msg)
-        msg = "%s:%s" % (getLevelName(level), msg)
-        self.lines.append(msg)
-
+    configure_logging('WARNING')
+    logger = logging.getLogger('null_logger')
 
 #
 # Mock archives

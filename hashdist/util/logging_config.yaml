@@ -1,0 +1,66 @@
+version: 1
+
+formatters:
+
+  abbreviated:
+    '()': hashdist.util.logger_setup.HashDistFormatter
+    format:   "[%(levelname)s] %(message)s"
+    debug:    "\x1b[37m[%(levelname)s]\x1b[39;49;00m %(message)s"
+    info:     "\x1b[33m[%(levelname)s]\x1b[39;49;00m %(message)s"
+    warning:  "\x1b[34;01m[%(levelname)s]\x1b[39;49;00m %(message)s"
+    error:    "\x1b[31m[%(levelname)s]\x1b[39;49;00m %(message)s"
+    critical: "\x1b[31;01m[%(levelname)s]\x1b[39;49;00m %(message)s"
+
+  packagename:
+    '()': hashdist.util.logger_setup.HashDistFormatter
+    format:   "[%(pkg)s] %(message)s"
+    debug:    "[\x1b[37m%(pkg)s\x1b[39;49;00m] %(message)s"
+    info:     "[\x1b[33m%(pkg)s\x1b[39;49;00m] %(message)s"
+    warning:  "[\x1b[34;01m%(pkg)s\x1b[39;49;00m] %(message)s"
+    error:    "[\x1b[31m%(pkg)s|%(levelname)s\x1b[39;49;00m] %(message)s"
+    critical: "[\x1b[31;01m%(pkg)s|%(levelname)s\x1b[39;49;00m] %(message)s"
+
+  long:
+    # This is not used, but serves as an example for how to customize the output
+    format: "%(asctime)s - %(levelname)s: %(message)s"
+    datefmt: '%Y/%m/%d %H:%M:%S'
+
+
+handlers:
+
+  root_handler:
+    class: logging.StreamHandler
+    formatter: abbreviated
+    stream: ext://sys.stdout
+
+  package_handler:
+    class: logging.StreamHandler
+    formatter: packagename
+    stream: ext://sys.stdout
+    level: WARNING
+
+  null_handler:
+     class: logging.NullHandler
+
+
+root:
+  # The root logger is used by default.
+  level: WARNING
+  handlers: [root_handler]
+
+
+loggers:
+
+  package:
+    # Log header includes package name. Its debug output is the
+    # build.log. A file handler will be attached dynamically since we
+    # do not know the log file name in advance.
+    level: DEBUG
+    handlers: [package_handler]
+    propagate: False
+
+  null_logger:
+    # The null logger for unit tests
+    level: NOTSET
+    handlers: [null_handler]
+    propagate: False

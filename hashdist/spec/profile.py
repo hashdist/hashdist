@@ -216,8 +216,8 @@ class Profile(object):
                 PackageYAML(filename, parameters, pattern != yaml_filename,
                             hook_filename=hook_filename)
                 for match, (pattern, filename) in matches.items()]
-            self.logger.debug('Resolved package %s to %s', pkgname,
-                              [filename for match, (pattern, filename) in matches.items()])
+            self.logger.info('Resolved package %s to %s', pkgname,
+                             [filename for match, (pattern, filename) in matches.items()])
         no_when_file = None
         with_when_file = None
         for pkg in yaml_files:

@@ -20,7 +20,7 @@ controlled environment and run the commands. The idea is to be able
 to reproduce a job run, and hash the job spec. Example:
 
 .. code-block:: python
-    
+
     {
         "import" : [
             {"ref": "BASH", "id": "virtual:bash"},
@@ -47,7 +47,7 @@ to reproduce a job run, and hash the job spec. Example:
     }
 
 
-      
+
 Job spec root node
 ------------------
 
@@ -119,7 +119,7 @@ See example above for basic script structure. Rules:
  * `files` specifies files that are dumped to temporary files and made available
    as `$in0`, `$in1` and so on. Each file has the form ``{typestr: value}``,
    where `typestr` means:
-   
+
        * ``text``: `value` should be a list of strings which are joined by newlines
        * ``string``: `value` is dumped verbatim to file
        * ``json``: `value` is any JSON document, which is serialized to the file
@@ -201,7 +201,8 @@ from StringIO import StringIO
 import json
 from pprint import pprint
 
-from ..hdist_logging import CRITICAL, ERROR, WARNING, INFO, DEBUG
+from logging import CRITICAL, ERROR, WARNING, INFO, DEBUG
+from hashdist.util.logger_setup import suppress_log_info, sublevel_added
 
 from .common import working_directory
 
@@ -243,7 +244,7 @@ def handle_imports(logger, build_store, artifact_dir, virtuals, job_spec):
     env = {}
     HDIST_IMPORT = []
     HDIST_IMPORT_PATHS = []
-    
+
     for import_ in imports:
         dep_id = import_['id']
         dep_ref = import_['ref'] if 'ref' in import_ else None
@@ -358,7 +359,7 @@ def canonicalize_job_spec(job_spec):
     result['import'] = [
         canonicalize_import(item) for item in result.get('import', ())]
     return result
-    
+
 def substitute(x, env):
     """
     Substitute environment variable into a string following the rules
@@ -391,7 +392,7 @@ class CommandTreeExecution(object):
 
     Executing :meth:`run` multiple times amounts to executing
     different variable scopes (but with same logging pipes set up).
-    
+
     Parameters
     ----------
 
@@ -517,7 +518,7 @@ class CommandTreeExecution(object):
     def handle_append_flag(self, node, env, node_pos):
         self.handle_env_mod(node, env, node_pos,
                             node['append_flag'], 'append', ' ')
-    
+
     def handle_prepend_flag(self, node, env, node_pos):
         self.handle_env_mod(node, env, node_pos,
                             node['prepend_flag'], 'prepend', ' ')
@@ -615,10 +616,10 @@ class CommandTreeExecution(object):
 
     def run_cmd(self, args, env, stdout_to=None):
         logger = self.logger
-        logger.debug('running %r' % args)
-        logger.debug('environment:')
+        logger.info('running %r' % args)
+        logger.info('environment:')
         for line in pformat(env).splitlines():
-            logger.debug('  ' + line)
+            logger.info('  ' + line)
         try:
             self.logged_check_call(args, env, stdout_to)
         except subprocess.CalledProcessError, e:
@@ -626,39 +627,40 @@ class CommandTreeExecution(object):
             raise
 
     def run_hit(self, args, env, stdout_to=None):
+        """
+        Run ``hit`` in the same process.
+
+        But do not emit INFO-messages from sub-command unless level is
+        DEBUG.
+        """
         args = ['hit'] + args
         logger = self.logger
-        logger.debug('running %r' % args)
-        # run it in the same process, but do not emit
-        # INFO-messages from sub-command unless level is DEBUG
-        old_level = logger.level
+        logger.info('running %r' % args)
         old_stdout = sys.stdout
-        try:
-            if logger.level > DEBUG:
-                logger.level = WARNING
-            if stdout_to is not None:
-                sys.stdout = stdout_to
-
-            if len(args) >= 2 and args[1] == 'logpipe':
-                if len(args) != 4:
-                    raise ValueError('wrong number of arguments to "hit logpipe"')
-                sublogger_name, level = args[2:]
-                self.create_log_pipe(sublogger_name, level)
-            else:
-                from ..cli.main import command_line_entry_point
-                with working_directory(env['PWD']):
-                    retcode = command_line_entry_point(args, env, logger)
-                if retcode != 0:
-                    raise RuntimeError("hit command failed with code: %d" % ret)
-        except SystemExit as e:
-            logger.error("hit command failed with code: %d" % e.code)
-            raise
-        except Exception as e:
-            logger.error("hit command failed: %s" % str(e))
-            raise
-        finally:
-            logger.level = old_level
-            sys.stdout = old_stdout
+        with suppress_log_info('package'):
+            try:
+                if stdout_to is not None:
+                    sys.stdout = stdout_to
+                if len(args) >= 2 and args[1] == 'logpipe':
+                    # raise SystemExit(99)   # Unused??
+                    if len(args) != 4:
+                        raise ValueError('wrong number of arguments to "hit logpipe"')
+                    sublogger_name, level = args[2:]
+                    self.create_log_pipe(sublogger_name, level)
+                else:
+                    from ..cli.main import command_line_entry_point
+                    with working_directory(env['PWD']):
+                        retcode = command_line_entry_point(args, env, secondary=True)
+                    if retcode != 0:
+                        raise RuntimeError("hit command failed with code: %d" % ret)
+            except SystemExit as e:
+                logger.error("hit command failed with code: %d" % e.code)
+                raise
+            except Exception as e:
+                logger.error("hit command failed: %s" % str(e))
+                raise
+            finally:
+                sys.stdout = old_stdout
 
     def debug_call(self, args, env):
         env = dict(env)
@@ -762,14 +764,14 @@ class CommandTreeExecution(object):
                             if line[-1] == '\n':
                                 line = line[:-1]
                             if encoding:
-                                logger.debug(line.decode(encoding))
+                                logger.info(line.decode(encoding))
                             else:
-                                logger.debug(line)
+                                logger.info(line)
             if proc.poll() is not None:
                 break
         for buf in buffers.values():
             if buf != '':
-                logger.debug(buf)
+                logger.info(buf)
         return proc.wait()
 
     def _log_process_with_logpipes(self, proc, stdout_to):
@@ -778,14 +780,14 @@ class CommandTreeExecution(object):
         # interlaced with use of log pipe etc. we avoid readline(), but
         # instead use os.open to read and handle line-assembly ourselves...
         logger = self.logger
-        
+
         stdout_fd, stderr_fd = proc.stdout.fileno(), proc.stderr.fileno()
         poller = select.poll()
         poller.register(stdout_fd)
         poller.register(stderr_fd)
 
         # Set up { fd : (logger, level) }
-        loggers = {stdout_fd: (logger, DEBUG), stderr_fd: (logger, DEBUG)}
+        loggers = {stdout_fd: (None, INFO), stderr_fd: (None, INFO)}
         buffers = {stdout_fd: '', stderr_fd: ''}
 
         # The FIFO pipes are a bit tricky as they need to the re-opened whenever
@@ -793,14 +795,14 @@ class CommandTreeExecution(object):
         # dict.
 
         fd_to_logpipe = {} # stderr/stdout not re-opened
-        
-        def open_fifo(fifo_filename, logger, level):
+
+        def open_fifo(fifo_filename, header, level):
             # need to open in non-blocking mode to avoid waiting for printing client process
             fd = os.open(fifo_filename, os.O_NONBLOCK|os.O_RDONLY)
             # remove non-blocking after open to treat all streams uniformly in
             # the reading code
             fcntl.fcntl(fd, fcntl.F_SETFL, os.O_RDONLY)
-            loggers[fd] = (logger, level)
+            loggers[fd] = (header, level)
             buffers[fd] = ''
             fd_to_logpipe[fd] = fifo_filename
             poller.register(fd)
@@ -809,8 +811,9 @@ class CommandTreeExecution(object):
             buf = buffers[fd]
             if buf:
                 # flush buffer in case last line not terminated by '\n'
-                sublogger, level = loggers[fd]
-                sublogger.log(level, buf)
+                header, level = loggers[fd]
+                with sublevel_added(logger, header):
+                    logger.log(level, buf)
             del buffers[fd]
 
         def close_fifo(fd):
@@ -819,17 +822,16 @@ class CommandTreeExecution(object):
             os.close(fd)
             del loggers[fd]
             del fd_to_logpipe[fd]
-            
+
         def reopen_fifo(fd):
             fifo_filename = fd_to_logpipe[fd]
-            logger, level = loggers[fd]
+            header, level = loggers[fd]
             close_fifo(fd)
-            open_fifo(fifo_filename, logger, level)
+            open_fifo(fifo_filename, header, level)
 
         for (header, level), fifo_filename in self.log_fifo_filenames.items():
-            sublogger = logger.get_sub_logger(header)
-            open_fifo(fifo_filename, sublogger, level)
-            
+            open_fifo(fifo_filename, header, level)
+
         while True:
             # Python poll() doesn't return when SIGCHLD is received;
             # and there's the freak case where a process first
@@ -868,11 +870,11 @@ class CommandTreeExecution(object):
                         else:
                             buffers[fd] = ''
                         # have list of lines, emit them to logger
-                        sublogger, level = loggers[fd]
+                        header, level = loggers[fd]
                         for line in lines:
-                            if line[-1] == '\n':
-                                line = line[:-1]
-                            sublogger.log(level, line)
+                            line = line.rstrip('\n')
+                            with sublevel_added(logger, header):
+                                logger.log(level, line)
 
         flush_buffer(stderr_fd)
         flush_buffer(stdout_fd)

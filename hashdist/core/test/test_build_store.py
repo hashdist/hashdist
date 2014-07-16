@@ -118,7 +118,8 @@ def test_basic(tempdir, sc, bldr, config):
     assert not bldr.is_present(spec)
     name, path = bldr.ensure_present(spec, config, extra_env={'EXTRA': 'extra'})
     assert bldr.is_present(spec)
-    assert ['artifact.json', 'bar', 'build.json', 'build.log.gz', 'hello', 'id'] == sorted(os.listdir(path))
+    eq_(['artifact.json', 'bar', 'build.json', 'build.log.gz', 'hello', 'id'],
+        sorted(os.listdir(path)))
     with file(pjoin(path, 'hello')) as f:
         got = sorted(f.readlines())
         eq_(''.join(got), dedent('''\
