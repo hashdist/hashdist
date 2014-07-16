@@ -64,14 +64,14 @@ def silent_unlink(path):
         if e.errno != errno.ENOENT:
             raise
 
-def robust_rmtree(path, logger=None, max_retries=5):
+def robust_rmtree(path, logger=None, max_retries=6):
     """Robustly tries to delete paths.
 
     Retries several times (with increasing delays) if an OSError
     occurs.  If the final attempt fails, the Exception is propagated
     to the caller.
     """
-
+    dt = 1
     for i in range(max_retries):
         try:
             shutil.rmtree(path)
@@ -79,8 +79,9 @@ def robust_rmtree(path, logger=None, max_retries=5):
         except OSError, e:
             if logger:
                 logger.info('Unable to remove path: %s' % path)
-                logger.info('Retrying after %d seconds' % i)
-            time.sleep(i)
+                logger.info('Retrying after %d seconds' % dt)
+            time.sleep(dt)
+            dt *= 2
 
     # Final attempt, pass any Exceptions up to caller.
     shutil.rmtree(path)
