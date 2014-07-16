@@ -52,8 +52,7 @@ class PackageSpec(object):
         package_parameters['package'] = name
         from package_loader import PackageLoader
         loader = PackageLoader(name, package_parameters,
-                               load_yaml=profile.load_package_yaml,
-                               find_file=profile.find_package_file)
+                               load_yaml=profile.load_package_yaml)
         return PackageSpec(name, loader.stages_topo_ordered(),
                            loader.get_hook_files(), loader.parameters)
 

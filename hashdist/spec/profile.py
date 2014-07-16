@@ -55,7 +55,7 @@ class PackageYAML(object):
         Parameters with the defaults from the package yaml file applied
     """
 
-    def __init__(self, filename, parameters, in_directory):
+    def __init__(self, filename, parameters, in_directory, hook_filename=None):
         """
         Constructor
 
@@ -63,7 +63,7 @@ class PackageYAML(object):
         ----------
 
         filename : str
-            Name of the package yaml file
+            Full qualified name of the package yaml file
 
         parameters : dict
             The parameters to use for `{{VAR}}` variable
@@ -72,10 +72,14 @@ class PackageYAML(object):
 
         in_directory : boolean
             Whether the package yaml file is in its own directory.
+
+        hook_file : str or ``None``
+            The associated hook file, if there is one.
         """
         self.filename = filename
         self._init_load(filename, parameters)
         self.in_directory = in_directory
+        self.hook_filename = hook_filename
 
     def _init_load(self, filename, parameters):
         # To support the defaults section we first load the file, read defaults,
@@ -93,6 +97,21 @@ class PackageYAML(object):
 
     @property
     def dirname(self):
+        """
+        Name of the package directory.
+
+        Returns:
+        --------
+
+        String, full qualified name of the directory containing the
+        yaml file.
+
+        Raises:
+        -------
+
+        A ``ValueError`` is raised if the package is a stand-alone
+        yaml file, that is, there is no package directory.
+        """
         if self.in_directory:
             return os.path.dirname(self.filename)
         else:
@@ -142,9 +161,9 @@ class Profile(object):
 
     def load_package_yaml(self, pkgname, parameters):
         """
-        Searches for the yaml source and loads it.
+        Search for the yaml source and load it.
 
-        Loads the source for ``pkgname`` from either
+        Load the source for ``pkgname`` from either
 
         * ``$pkgs/pkgname.yaml``,
         * ``$pkgs/pkgname/pkgname.yaml``, or
@@ -161,7 +180,7 @@ class Profile(object):
         exception is raised. A document without a when-clause is
         overridden by those with a when-clause.
 
-        Arguments:
+        Parameters:
         ----------
 
         pkgname : string
@@ -188,12 +207,14 @@ class Profile(object):
         yaml_files = self._yaml_cache.get(('package', use), None)
         if yaml_files is None:
             yaml_filename = use + '.yaml'
+            hook_filename = self.search_hook_import_dirs(use + '.py')
             matches = self.file_resolver.glob_files([yaml_filename,
                                                      pjoin(use, yaml_filename),
                                                      pjoin(use, use + '-*.yaml')],
                                                     match_basename=True)
             self._yaml_cache['package', use] = yaml_files = [
-                PackageYAML(filename, parameters, pattern != yaml_filename)
+                PackageYAML(filename, parameters, pattern != yaml_filename,
+                            hook_filename=hook_filename)
                 for match, (pattern, filename) in matches.items()]
             self.logger.debug('Resolved package %s to %s', pkgname,
                               [filename for match, (pattern, filename) in matches.items()])
@@ -219,9 +240,54 @@ class Profile(object):
 
     def find_package_file(self, pkgname, filename):
         """
-        Attempts to find a package resource file at $pkgs/$filename or $pkgs/$pkgname/$filename.
+        Find a package resource file.
+
+        Search for the file at:
+
+        * ``$pkgs/filename``,
+
+        * ``$pkgs/pkgname/filename``,
+
+        in this order.
+
+        Parameters:
+        ----------
+
+        pkgname : string
+            Name of the package (excluding ``.yaml``).
+
+        filename : string
+            File name to look for.
+
+        Returns:
+        --------
+
+        The full qualifiedfilename as a string, or ``None`` if no file
+        is found.
         """
-        return self.file_resolver.find_file([filename, pjoin(pkgname, filename)])
+        use = self._use_for_package(pkgname)
+        return self.file_resolver.find_file([filename, pjoin(use, filename)])
+
+    def search_hook_import_dirs(self, filename):
+        """
+        Search for ``filename`` in ``hook_import_dirs``.
+
+        Note that the search path is defined in the profile.
+
+        Parameters:
+        ----------
+
+        filename : string
+            File name to look for.
+
+        Returns:
+        --------
+
+        The full qualified filename as a string, or ``None`` if no file
+        is found.
+        """
+        files = [pjoin(path, filename) for path in self.doc.get('hook_import_dirs', [])]
+        return self.file_resolver.find_file(files)
 
     def __repr__(self):
         return 'Profile containing ' + ', '.join(

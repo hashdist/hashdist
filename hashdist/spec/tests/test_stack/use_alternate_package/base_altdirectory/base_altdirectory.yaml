@@ -1,0 +1,14 @@
+# Example package-with-directory
+# This tests overriding origdirectory with a use: directive
+
+defaults:
+  # dummy variable so we can see which package was loaded
+  filename: base_altdirectory.yaml
+
+build_stages:
+- name: refer_to_file
+  files: [base_alternate_file.txt]
+
+profile_links:
+  - name: everything
+    link: '*/base_altdirectory/*'

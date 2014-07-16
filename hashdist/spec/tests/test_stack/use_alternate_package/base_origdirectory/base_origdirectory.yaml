@@ -1,0 +1,7 @@
+# Example package-with-directory
+
+defaults:
+  # dummy variable so we can see which package was loaded
+  filename: base_origdirectory.yaml
+
+

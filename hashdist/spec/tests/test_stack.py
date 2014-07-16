@@ -32,22 +32,85 @@ class TestUseAlternatePackage(BaseStack):
         self.assertEqual(self.profile.packages['base_original'],
                          {'use': 'base_alternate'})
 
+    def assertDsl(self, dsl, **kwds):
+        for key, value in kwds.items():
+            self.assertEqual(dsl[0][key], value)
+
     def test_use(self):
         """Test ``original: {use: alternate}`` in the profile"""
         # Due to the use:, the alternate package is actually loaded
-        self.assertEqual(self.original.parameters['filename'], 'alternate.yaml')
+        pkg = self.original
+        self.assertEqual(pkg.parameters['filename'], 'alternate.yaml')
         # But as far as the specs are concered, it is named 'original'
-        self.assertEqual(self.original.name, 'original')
-        dsl = self.original.assemble_link_dsl('target')
-        self.assertEqual(dsl[0]['prefix'], u'${ORIGINAL_DIR}')
-        self.assertEqual(dsl[0]['select'], u'${ORIGINAL_DIR}/*/alternate/*')
+        self.assertEqual(pkg.name, 'original')
+        self.assertDsl(pkg.assemble_link_dsl('target'),
+            prefix=u'${ORIGINAL_DIR}',
+            select=u'${ORIGINAL_DIR}/*/alternate/*')
+        # the hook is the hook of the used alternate package
+        self.assertEqual(len(pkg.hook_files), 1)
+        assert pkg.hook_files[0].endswith(u'/hooks/alternate.py')
 
     def test_base_use(self):
-        """Test ``original: {use: alternate}`` in the profile base"""
+        """Test ``base_original: {use: base_alternate}`` in the profile base"""
         # Due to the use:, the alternate package is actually loaded
-        self.assertEqual(self.base_original.parameters['filename'], 'base_alternate.yaml')
+        pkg = self.base_original
+        self.assertEqual(pkg.parameters['filename'], 'base_alternate.yaml')
         # But as far as the specs are concered, it is named 'original'
-        self.assertEqual(self.base_original.name, 'base_original')
-        dsl = self.base_original.assemble_link_dsl('target')
-        self.assertEqual(dsl[0]['prefix'], u'${BASE_ORIGINAL_DIR}')
-        self.assertEqual(dsl[0]['select'], u'${BASE_ORIGINAL_DIR}/*/base_alternate/*')
+        self.assertEqual(pkg.name, 'base_original')
+        self.assertDsl(pkg.assemble_link_dsl('target'),
+            prefix=u'${BASE_ORIGINAL_DIR}',
+            select=u'${BASE_ORIGINAL_DIR}/*/base_alternate/*')
+        # the hook is the hook of the used alternate package
+        self.assertEqual(len(pkg.hook_files), 1)
+        assert pkg.hook_files[0].endswith(u'/hooks/base_alternate.py')
+
+    def assertFindFile(self, pkgname, filename, expected):
+        actual = self.profile.find_package_file(pkgname, filename)
+        if expected is None:
+            assert actual is None
+        else:
+            assert actual.endswith(expected)
+
+    def test_directory_use(self):
+        """Test ``origdirectory: {use: altdirectory}`` for package-with-directory"""
+        # Due to the use:, the altdirectory package is actually loaded
+        pkg = self.origdirectory
+        self.assertEqual(pkg.parameters['filename'], 'altdirectory.yaml')
+        # But as far as the specs are concered, it is named 'origdirectory'
+        self.assertEqual(pkg.name, 'origdirectory')
+        self.assertDsl(pkg.assemble_link_dsl('target'),
+            prefix=u'${ORIGDIRECTORY_DIR}',
+            select=u'${ORIGDIRECTORY_DIR}/*/altdirectory/*')
+        # the hook is the hook of the used alternate package
+        self.assertEqual(len(pkg.hook_files), 1)
+        assert pkg.hook_files[0].endswith(u'/hooks/altdirectory.py')
+        # File referenced in the build stage section
+        build_stage = pkg.doc['build_stages'][0]
+        self.assertEqual(build_stage['handler'], 'refer_to_file')
+        self.assertEqual(build_stage['files'], ['alternate_file.txt'])
+        self.assertFindFile('origdirectory', 'alternate_file.txt',
+                            u'/altdirectory/alternate_file.txt')
+        self.assertFindFile('origdirectory', 'original_file.txt', None)
+        self.assertFindFile('altdirectory', 'original_file.txt', None)
+
+    def test_directory_base_use(self):
+        """Test ``base_origdirectory: {use: base_altdirectory}`` in the profile base"""
+        # Due to the use:, the altdirectory package is actually loaded
+        pkg = self.base_origdirectory
+        self.assertEqual(pkg.parameters['filename'], 'base_altdirectory.yaml')
+        # But as far as the specs are concered, it is named 'origdirectory'
+        self.assertEqual(pkg.name, 'base_origdirectory')
+        self.assertDsl(pkg.assemble_link_dsl('target'),
+            prefix=u'${BASE_ORIGDIRECTORY_DIR}',
+            select=u'${BASE_ORIGDIRECTORY_DIR}/*/base_altdirectory/*')
+        # the hook is the hook of the used alternate package
+        self.assertEqual(len(pkg.hook_files), 1)
+        assert pkg.hook_files[0].endswith(u'/hooks/base_altdirectory.py')
+        # File referenced in the build stage section
+        build_stage = pkg.doc['build_stages'][0]
+        self.assertEqual(build_stage['handler'], 'refer_to_file')
+        self.assertEqual(build_stage['files'], ['base_alternate_file.txt'])
+        self.assertFindFile('base_origdirectory', 'base_alternate_file.txt',
+                            u'/base_altdirectory/base_alternate_file.txt')
+        self.assertFindFile('base_origdirectory', 'base_original_file.txt', None)
+        self.assertFindFile('base_altdirectory', 'base_original_file.txt', None)

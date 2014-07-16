@@ -1,0 +1,9 @@
+# Example package-with-directory
+
+defaults:
+  # dummy variable so we can see which package was loaded
+  filename: origdirectory.yaml
+
+build_stages:
+- name: refer_to_file
+  files: [original_file.txt]
