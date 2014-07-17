@@ -41,26 +41,38 @@ class PackageYAML(object):
 
     The content is unmodified except for `{{VAR}}` variable expansion.
 
-    Attributes:
-    -----------
+    Attributes
+    ----------
 
     doc : dict
         The deserialized yaml source
 
     in_directory : boolean
         Whether the yaml file is in its private package directory that
-        may contain other files, or where it is a stand-alone file.
+        may contain other files.
 
     parameters : dict of str
         Parameters with the defaults from the package yaml file applied
+
+    filename : str
+        Full qualified name of the package yaml file
+
+    hook_filename : str or ``None``
+        Full qualified name of the package ``.py`` hook file, if it
+        exists.
     """
 
-    def __init__(self, filename, parameters, in_directory, hook_filename=None):
+    def __init__(self, used_name, filename, parameters, in_directory):
         """
         Constructor
 
-        Arguments:
+        Parameters
         ----------
+
+        used_name : str
+            The actual package name (as overridden by ``use:``, if
+            present. E.g. ``mpich``, and not the virtual package
+            name``mpi``).
 
         filename : str
             Full qualified name of the package yaml file
@@ -72,14 +84,12 @@ class PackageYAML(object):
 
         in_directory : boolean
             Whether the package yaml file is in its own directory.
-
-        hook_file : str or ``None``
-            The associated hook file, if there is one.
         """
         self.filename = filename
         self._init_load(filename, parameters)
         self.in_directory = in_directory
-        self.hook_filename = hook_filename
+        hook = os.path.abspath(pjoin(os.path.dirname(filename), used_name + '.py'))
+        self.hook_filename = hook if os.path.exists(hook) else None
 
     def _init_load(self, filename, parameters):
         # To support the defaults section we first load the file, read defaults,
@@ -100,14 +110,14 @@ class PackageYAML(object):
         """
         Name of the package directory.
 
-        Returns:
-        --------
+        Returns
+        -------
 
         String, full qualified name of the directory containing the
         yaml file.
 
-        Raises:
-        -------
+        Raises
+        ------
 
         A ``ValueError`` is raised if the package is a stand-alone
         yaml file, that is, there is no package directory.
@@ -163,7 +173,8 @@ class Profile(object):
         """
         Search for the yaml source and load it.
 
-        Load the source for ``pkgname`` from either
+        Load the source for ``pkgname`` (after substitution by a
+        ``use:`` profile section, if any) from either
 
         * ``$pkgs/pkgname.yaml``,
         * ``$pkgs/pkgname/pkgname.yaml``, or
@@ -180,7 +191,7 @@ class Profile(object):
         exception is raised. A document without a when-clause is
         overridden by those with a when-clause.
 
-        Parameters:
+        Parameters
         ----------
 
         pkgname : string
@@ -189,13 +200,13 @@ class Profile(object):
         parameters : dict
             The profile parameters.
 
-        Returns:
-        --------
+        Returns
+        -------
 
         A :class:`PackageYAML` instance if successfull.
 
-        Raises:
-        -------
+        Raises
+        ------
 
         * class:`~hashdist.spec.exceptions.ProfileError`` is raised if
           there is no such package.
@@ -207,14 +218,12 @@ class Profile(object):
         yaml_files = self._yaml_cache.get(('package', use), None)
         if yaml_files is None:
             yaml_filename = use + '.yaml'
-            hook_filename = self.search_hook_import_dirs(use + '.py')
             matches = self.file_resolver.glob_files([yaml_filename,
                                                      pjoin(use, yaml_filename),
                                                      pjoin(use, use + '-*.yaml')],
                                                     match_basename=True)
             self._yaml_cache['package', use] = yaml_files = [
-                PackageYAML(filename, parameters, pattern != yaml_filename,
-                            hook_filename=hook_filename)
+                PackageYAML(use, filename, parameters, pattern != yaml_filename)
                 for match, (pattern, filename) in matches.items()]
             self.logger.info('Resolved package %s to %s', pkgname,
                              [filename for match, (pattern, filename) in matches.items()])
@@ -250,7 +259,7 @@ class Profile(object):
 
         in this order.
 
-        Parameters:
+        Parameters
         ----------
 
         pkgname : string
@@ -259,35 +268,14 @@ class Profile(object):
         filename : string
             File name to look for.
 
-        Returns:
-        --------
+        Returns
+        -------
 
         The full qualifiedfilename as a string, or ``None`` if no file
         is found.
         """
         use = self._use_for_package(pkgname)
         return self.file_resolver.find_file([filename, pjoin(use, filename)])
-
-    def search_hook_import_dirs(self, filename):
-        """
-        Search for ``filename`` in ``hook_import_dirs``.
-
-        Note that the search path is defined in the profile.
-
-        Parameters:
-        ----------
-
-        filename : string
-            File name to look for.
-
-        Returns:
-        --------
-
-        The full qualified filename as a string, or ``None`` if no file
-        is found.
-        """
-        files = [pjoin(path, filename) for path in self.doc.get('hook_import_dirs', [])]
-        return self.file_resolver.find_file(files)
 
     def __repr__(self):
         return 'Profile containing ' + ', '.join(
@@ -369,15 +357,15 @@ class FileResolver(object):
         Search for a file with the given filename/path relative to the
         root of each of ``self.search_dirs``.
 
-        Arguments:
+        Parameters
         ----------
 
         filenames : list of strings
             Filenames to seach for. The entire list will be searched
             before moving on to the next layer/overlay.
 
-        Returns:
-        --------
+        Returns
+        -------
 
         Returns the found file (in the
         ``<repo_name>/some/path``-convention), or None if no file was
@@ -399,7 +387,7 @@ class FileResolver(object):
         Like ``find_file``, but uses a set of patterns and tries to match each
         pattern against the filesystem using ``glob.glob``.
 
-        Arguments:
+        Parameters
         ----------
 
         patterns : list of strings
@@ -410,8 +398,8 @@ class FileResolver(object):
             is compared (i.e., one file with each basename will be
             returned).
 
-        Returns:
-        --------
+        Returns
+        -------
 
         The result is a dict mapping the "matched name" to a pair
         (pattern, full qualified path).
