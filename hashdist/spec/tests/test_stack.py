@@ -50,7 +50,8 @@ class TestUseAlternatePackage(BaseStack):
             select=u'${ORIGINAL_DIR}/*/alternate/*')
         # the hook is the hook of the used alternate package
         self.assertEqual(len(pkg.hook_files), 1)
-        assert pkg.hook_files[0].endswith(u'/hooks/alternate.py')
+        assert pkg.hook_files[0].endswith(
+            u'tests/test_stack/use_alternate_package/alternate.py'), pkg.hook_files
 
     def test_base_use(self):
         """Test ``base_original: {use: base_alternate}`` in the profile base"""
@@ -64,7 +65,8 @@ class TestUseAlternatePackage(BaseStack):
             select=u'${BASE_ORIGINAL_DIR}/*/base_alternate/*')
         # the hook is the hook of the used alternate package
         self.assertEqual(len(pkg.hook_files), 1)
-        assert pkg.hook_files[0].endswith(u'/hooks/base_alternate.py')
+        assert pkg.hook_files[0].endswith(
+            u'tests/test_stack/use_alternate_package/base_alternate.py'), pkg.hook_files
 
     def assertFindFile(self, pkgname, filename, expected):
         actual = self.profile.find_package_file(pkgname, filename)
@@ -85,7 +87,9 @@ class TestUseAlternatePackage(BaseStack):
             select=u'${ORIGDIRECTORY_DIR}/*/altdirectory/*')
         # the hook is the hook of the used alternate package
         self.assertEqual(len(pkg.hook_files), 1)
-        assert pkg.hook_files[0].endswith(u'/hooks/altdirectory.py')
+        assert pkg.hook_files[0].endswith(
+            u'tests/test_stack/use_alternate_package/altdirectory/altdirectory.py'), \
+            pkg.hook_files
         # File referenced in the build stage section
         build_stage = pkg.doc['build_stages'][0]
         self.assertEqual(build_stage['handler'], 'refer_to_file')
@@ -107,7 +111,9 @@ class TestUseAlternatePackage(BaseStack):
             select=u'${BASE_ORIGDIRECTORY_DIR}/*/base_altdirectory/*')
         # the hook is the hook of the used alternate package
         self.assertEqual(len(pkg.hook_files), 1)
-        assert pkg.hook_files[0].endswith(u'/hooks/base_altdirectory.py')
+        assert pkg.hook_files[0].endswith(
+            u'tests/test_stack/use_alternate_package/base_altdirectory/base_altdirectory.py'), \
+            pkg.hook_files
         # File referenced in the build stage section
         build_stage = pkg.doc['build_stages'][0]
         self.assertEqual(build_stage['handler'], 'refer_to_file')

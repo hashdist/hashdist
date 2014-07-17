@@ -53,14 +53,25 @@ class PackageYAML(object):
 
     parameters : dict of str
         Parameters with the defaults from the package yaml file applied
+
+    filename : str
+        Full qualified name of the package yaml file
+
+    hook_filename : str or ``None``.
+        Full qualified name of the package ``.py`` hook file, if it
+        exists.
     """
 
-    def __init__(self, filename, parameters, in_directory, hook_filename=None):
+    def __init__(self, use_name, filename, parameters, in_directory):
         """
         Constructor
 
         Arguments:
         ----------
+
+        use_name : str
+            The actual package name (as overridden by ``use:``, if
+            present).
 
         filename : str
             Full qualified name of the package yaml file
@@ -72,14 +83,12 @@ class PackageYAML(object):
 
         in_directory : boolean
             Whether the package yaml file is in its own directory.
-
-        hook_file : str or ``None``
-            The associated hook file, if there is one.
         """
         self.filename = filename
         self._init_load(filename, parameters)
         self.in_directory = in_directory
-        self.hook_filename = hook_filename
+        hook = os.path.abspath(pjoin(os.path.dirname(filename), use_name + '.py'))
+        self.hook_filename = hook if os.path.exists(hook) else None
 
     def _init_load(self, filename, parameters):
         # To support the defaults section we first load the file, read defaults,
@@ -207,14 +216,12 @@ class Profile(object):
         yaml_files = self._yaml_cache.get(('package', use), None)
         if yaml_files is None:
             yaml_filename = use + '.yaml'
-            hook_filename = self.search_hook_import_dirs(use + '.py')
             matches = self.file_resolver.glob_files([yaml_filename,
                                                      pjoin(use, yaml_filename),
                                                      pjoin(use, use + '-*.yaml')],
                                                     match_basename=True)
             self._yaml_cache['package', use] = yaml_files = [
-                PackageYAML(filename, parameters, pattern != yaml_filename,
-                            hook_filename=hook_filename)
+                PackageYAML(use, filename, parameters, pattern != yaml_filename)
                 for match, (pattern, filename) in matches.items()]
             self.logger.info('Resolved package %s to %s', pkgname,
                              [filename for match, (pattern, filename) in matches.items()])
@@ -267,27 +274,6 @@ class Profile(object):
         """
         use = self._use_for_package(pkgname)
         return self.file_resolver.find_file([filename, pjoin(use, filename)])
-
-    def search_hook_import_dirs(self, filename):
-        """
-        Search for ``filename`` in ``hook_import_dirs``.
-
-        Note that the search path is defined in the profile.
-
-        Parameters:
-        ----------
-
-        filename : string
-            File name to look for.
-
-        Returns:
-        --------
-
-        The full qualified filename as a string, or ``None`` if no file
-        is found.
-        """
-        files = [pjoin(path, filename) for path in self.doc.get('hook_import_dirs', [])]
-        return self.file_resolver.find_file(files)
 
     def __repr__(self):
         return 'Profile containing ' + ', '.join(
