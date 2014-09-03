@@ -391,7 +391,9 @@ class GitSourceCache(object):
             env = os.environ
         else:
             env = self.get_repo_env(repo_name)
-        p = subprocess.Popen(['git'] + list(args), env=env,
+        cmd = ['git'] + list(args)
+        self.logger.info('running: %s' % cmd)
+        p = subprocess.Popen(cmd, env=env,
                              stdout=subprocess.PIPE, stdin=subprocess.PIPE,
                              stderr=subprocess.PIPE)
         out, err = p.communicate()
