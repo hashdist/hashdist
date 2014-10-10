@@ -147,7 +147,7 @@ from .common import (InvalidBuildSpecError, BuildFailedError,
                      IllegalBuildStoreError,
                      json_formatting_options, SHORT_ARTIFACT_ID_LEN,
                      working_directory)
-from .fileutils import silent_unlink, robust_rmtree, rmtree_up_to, silent_makedirs, gzip_compress, write_protect
+from .fileutils import silent_unlink, robust_rmtree, silent_makedirs, gzip_compress, write_protect
 from .fileutils import rmtree_write_protected, atomic_symlink, realpath_to_symlink, allow_writes
 from . import run_job
 
