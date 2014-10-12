@@ -19,50 +19,52 @@ def allow_writes(path):
     if modified:
         os.chmod(path, old_mode)
 
+
 def silent_copy(src, dst):
     try:
         if os.path.isdir(src):
             shutil.copytree(src, dst)
         else:
             shutil.copy(src, dst)
-    except OSError, e:
-        if e.errno != errno.EEXIST:
-            raise
-    except IOError, e:
+    except OSError:
         if not filecmp.cmp(src, dst):
             raise
 
+
 def silent_relative_symlink(src, dst):
-    dstdir = os.path.dirname(dst)
-    rel_src = os.path.relpath(src, dstdir)
     try:
+        dstdir = os.path.dirname(dst)
+        rel_src = os.path.relpath(src, dstdir)
         os.symlink(rel_src, dst)
-    except OSError, e:
-        if e.errno != errno.EEXIST:
+    except OSError:
+        if not os.path.exists(dst):
             raise
+
 
 def silent_absolute_symlink(src, dst):
     try:
         os.symlink(os.path.abspath(src), dst)
-    except OSError, e:
-        if e.errno != errno.EEXIST:
+    except OSError:
+        if not os.path.exists(dst):
             raise
+
 
 def silent_makedirs(path):
     """like os.makedirs, but does not raise error in the event that the directory already exists"""
     try:
         os.makedirs(path)
-    except OSError, e:
-        if e.errno != errno.EEXIST:
+    except OSError:
+        if not os.path.isdir(path):
             raise
 
 def silent_unlink(path):
     """like os.unlink but does not raise error if the file does not exist"""
     try:
         os.unlink(path)
-    except OSError, e:
-        if e.errno != errno.ENOENT:
+    except OSError:
+        if os.path.exists(path):
             raise
+
 
 def robust_rmtree(path, logger=None, max_retries=6):
     """Robustly tries to delete paths.
@@ -76,7 +78,7 @@ def robust_rmtree(path, logger=None, max_retries=6):
         try:
             shutil.rmtree(path)
             return
-        except OSError, e:
+        except OSError:
             if logger:
                 logger.info('Unable to remove path: %s' % path)
                 logger.info('Retrying after %d seconds' % dt)
@@ -86,7 +88,8 @@ def robust_rmtree(path, logger=None, max_retries=6):
     # Final attempt, pass any Exceptions up to caller.
     shutil.rmtree(path)
 
-def rmtree_up_to(path, parent, silent=False):
+
+def rmtree_up_to(path, parent):
     """Executes ``shutil.rmtree(path, ignore_errors=True)``,
     and then removes any empty parent directories
     up until (and excluding) parent.
@@ -101,6 +104,7 @@ def rmtree_up_to(path, parent, silent=False):
     path, child = os.path.split(path)
     rmdir_empty_up_to(path, parent)
 
+
 def rmdir_empty_up_to(path, parent):
     """Removes the directory `path` and any empty parent directories
     up until and excluding parent.
@@ -108,26 +112,29 @@ def rmdir_empty_up_to(path, parent):
     if not os.path.isabs(path):
         raise ValueError('only absolute paths supported')
     if not path.startswith(parent):
-        raise valueError('must have part.startswith(parent)')
+        raise ValueError('must have part.startswith(parent)')
     while path != parent:
         if path == parent:
             break
         try:
             os.rmdir(path)
-        except OSError, e:
+        except OSError as e:
             if e.errno != errno.ENOTEMPTY:
                 raise
             break
         path, child = os.path.split(path)
 
+
 def gzip_compress(source_filename, dest_filename):
     chunk_size = 16 * 1024
-    with file(source_filename, 'rb') as src:
+    with open(source_filename, 'rb') as src:
         with closing(gzip.open(dest_filename, 'wb')) as dst:
             while True:
                 chunk = src.read(chunk_size)
-                if not chunk: break
+                if not chunk:
+                    break
                 dst.write(chunk)
+
 
 def atomic_symlink(source, dest):
     """Overwrites a destination symlink atomically without raising error
@@ -139,7 +146,7 @@ def atomic_symlink(source, dest):
         try:
             templink = dest + '-%d' % i
             os.symlink(source, templink)
-        except OSError, e:
+        except OSError as e:
             if e.errno == errno.EEXIST:
                 i += 1
             else:
@@ -152,10 +159,12 @@ def atomic_symlink(source, dest):
         os.unlink(templink)
         raise
 
+
 def write_protect(path):
     if not os.path.islink(path):
         mode = os.stat(path).st_mode
         os.chmod(path, mode & ~0o222)
+
 
 def write_allow(path):
     if not os.path.islink(path):
@@ -183,11 +192,12 @@ def rmtree_write_protected(rootpath):
                 os.rmdir(qname)
     os.rmdir(rootpath)
 
+
 def touch(filename, readonly=False):
-    with open(filename, 'w') as f:
-        pass
+    open(filename, 'wa').close()
     if readonly:
         write_protect(filename)
+
 
 def realpath_to_symlink(filename):
     """Acts like ``os.path.realpath`` on the parent directory of the given file
