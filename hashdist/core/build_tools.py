@@ -188,7 +188,7 @@ def _check_call(logger, cmd):
     out, err = p.communicate()
     if p.wait() != 0:
         logger.error('%r failed: %d' % (cmd, p.wait()))
-        raise subprocess.CalledProcessError(
+        raise Exception(
             'Command %r failed with code %d and stderr:\n%s' % (cmd, p.wait(), err))
     return out
 
@@ -594,5 +594,3 @@ def add_modelines(scriptlines, language):
     else:
         vi_modeline = []
     return shebang + emacs_modeline + body + vi_modeline
-
-
