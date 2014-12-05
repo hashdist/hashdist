@@ -397,3 +397,26 @@ def test_files_glob(d):
           handler: build_without_glob
         when_build_dependency: []
     """))
+
+def test_update_mode():
+    doc = marked_yaml_load("""\
+        build_stages:
+          - name: configure
+            mode: update
+            extra: ['--without-ensurepip']
+
+          - name: configure
+            mode: update
+            extra: ['--enable-framework=${ARTIFACT}']
+    """)
+    p = package.PackageSpec("mypackage", doc, [], {'bar':'othervalue'})
+    ctx = hook_api.PackageBuildContext(p.name, {}, p.parameters)
+    ctx.parameters['foo'] = 'somevalue'
+    #script = p.assemble_build_script(ctx)
+    #eq_(script, dedent("""\
+    #    set -e
+    #    export HDIST_IN_BUILD=yes
+    #    ./configure --with-foo=somevalue --with-bar=othervalue
+    #    make
+    #    make install
+    #"""))
