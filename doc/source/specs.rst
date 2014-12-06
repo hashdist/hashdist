@@ -263,7 +263,27 @@ package. This is the default behaviour. On the other hand,::
     bash: |
         ./configure --prefix=${ARTIFACT}
 
-entirely replaces the configure stage of the base package. Finally,::
+entirely replaces the configure stage of the base package. 
+
+The ``update`` mode will update dictionaries and lists within a stage,
+so it can be helpful for building up a set of actions for a given
+stage,::
+
+    - name: configure
+       append: {overriden_value: "1", a_key: "a"}
+       extra: ['--shared']
+    - name: configure
+      mode: update
+      append: {overriden_value: "2", b_key: "b"}
+      extra: ['--without-ensurepip']
+
+is equivalent to,::
+
+    - name: configure
+      append: {overriden_value: "2", a_key: "a", b_key: "b"}
+      extra: ['--shared', '--without-ensurepip']
+
+Finally,::
 
   - name: configure
     mode: remove  # !!

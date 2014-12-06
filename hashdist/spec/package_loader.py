@@ -414,11 +414,21 @@ def inherit_stages(descendant_stages, ancestors):
             del stage['mode']
         else:
             mode = 'override'
-
         if mode == 'override':
             x = stages.get(name, {})
             x.update(stage)
             stages[name] = x
+        elif mode == 'update':
+            if name not in stages:
+                raise PackageError(name, 'cannot use mode: update on an empty stage')
+            x = stages[name]
+            for node_name, node_value in stage.iteritems():
+                if node_name not in x:
+                    x[node_name] = node_value
+                elif isinstance(node_value, dict):
+                    x[node_name].update(node_value)
+                elif isinstance(node_value, list):
+                    x[node_name].extend(node_value)
         elif mode == 'replace':
             stages[name] = stage
         elif mode == 'remove':
