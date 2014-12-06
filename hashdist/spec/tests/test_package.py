@@ -210,7 +210,6 @@ def test_load_and_inherit_package():
     files['grandparent.py'] = '{}'
     files['base1.py'] = '{}'
     files['mypackage.py'] = '{}'
-    files['mypackage.py'] = '{}'
 
     prof = MockProfile(files)
 
@@ -247,6 +246,29 @@ def test_load_and_inherit_package():
     """)
     eq_(expected, loader.doc)
 
+def test_update_mode():
+    files = {}
+    files['python.yaml'] = """
+    build_stages:
+    - name: configure
+    - name: configure
+      mode: update
+      append: {LDFLAGS: "--overridden-flag"}
+      extra: ['--without-ensurepip']
+    - name: configure
+      mode: update
+      append: {LDFLAGS: "-Wl,-rpath,${ARTIFACT}/lib"}
+      extra: ['--enable-shared']
+    - name: configure
+      mode: update
+      extra: ['--enable-framework=${ARTIFACT}']
+    """
+    prof = MockProfile(files)
+    loader = package_loader.PackageLoader('python', {}, load_yaml=prof.load_package_yaml)
+    expected = [{'name': 'configure',
+                 'append': {'LDFLAGS': '-Wl,-rpath,${ARTIFACT}/lib'},
+                 'extra': ['--without-ensurepip', '--enable-shared', '--enable-framework=${ARTIFACT}']}]
+    eq_(expected, loader.doc['build_stages'])
 
 def test_order_stages():
     loader = package_loader.PackageLoader.__new__(package_loader.PackageLoader)
@@ -269,7 +291,6 @@ def test_order_stages():
     when_build_dependency: []
     """)
     eq_(expected, loader.stages_topo_ordered())
-
 
 def test_extend_list():
 
@@ -353,7 +374,6 @@ def test_when_list():
         doc, {'platform': 'windows', 'host': False})
     assert {'dictionary': [3, {'nested': 'dict'}]} == r
 
-
 @temp_working_dir_fixture
 def test_files_glob(d):
     dump('pkgs/bar/bar.yaml', """
@@ -398,25 +418,3 @@ def test_files_glob(d):
         when_build_dependency: []
     """))
 
-def test_update_mode():
-    doc = marked_yaml_load("""\
-        build_stages:
-          - name: configure
-            mode: update
-            extra: ['--without-ensurepip']
-
-          - name: configure
-            mode: update
-            extra: ['--enable-framework=${ARTIFACT}']
-    """)
-    p = package.PackageSpec("mypackage", doc, [], {'bar':'othervalue'})
-    ctx = hook_api.PackageBuildContext(p.name, {}, p.parameters)
-    ctx.parameters['foo'] = 'somevalue'
-    #script = p.assemble_build_script(ctx)
-    #eq_(script, dedent("""\
-    #    set -e
-    #    export HDIST_IN_BUILD=yes
-    #    ./configure --with-foo=somevalue --with-bar=othervalue
-    #    make
-    #    make install
-    #"""))
