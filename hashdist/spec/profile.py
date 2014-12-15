@@ -431,7 +431,7 @@ class FileResolver(object):
         return result
 
 
-def load_and_inherit_profile(checkouts, include_doc, cwd=None):
+def load_and_inherit_profile(checkouts, include_doc, cwd=None, override_parameters=None):
     """
     Loads a Profile given an include document fragment, e.g.::
 
@@ -502,8 +502,12 @@ def load_and_inherit_profile(checkouts, include_doc, cwd=None):
             doc[section].extend(parent_doc.get(section, []))
 
     # Merge parameters. Can't have the same parameter from more than one parent
-    # *unless* it's overriden by this document, in which case it's OK.
+    # *unless* it's overridden by this document or command line, in which case it's OK.
+
+    if override_parameters is not None:
+        doc['parameters'].update(override_parameters)
     parameters = doc.setdefault('parameters', {})
+
     overridden = parameters.keys()
     for parent_doc in parents:
         for k, v in parent_doc.get('parameters', {}).iteritems():
@@ -531,6 +535,6 @@ def load_and_inherit_profile(checkouts, include_doc, cwd=None):
     doc['packages'] = packages
     return doc
 
-def load_profile(logger, checkout_manager, profile_file):
-    doc = load_and_inherit_profile(checkout_manager, profile_file)
+def load_profile(logger, checkout_manager, profile_file, override_parameters=None):
+    doc = load_and_inherit_profile(checkout_manager, profile_file, None, override_parameters)
     return Profile(logger, doc, checkout_manager)
