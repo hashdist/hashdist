@@ -6,6 +6,7 @@ import shutil
 from pprint import pprint
 from .main import register_subcommand, DEFAULT_CONFIG_FILENAME_REPR
 import errno
+from .utils import parameter_pair
 
 def add_build_args(ap):
     ap.add_argument('-j', metavar='CPUCOUNT', default=1, type=int, help='number of CPU cores to utilize')
@@ -16,8 +17,15 @@ def add_build_args(ap):
 def add_profile_args(ap):
     ap.add_argument('profile', nargs='?', default='default.yaml', help='yaml file describing profile to build (default: default.yaml)')
 
+def add_package_args(ap):
+    ap.add_argument('--package', default=None, help='package to build (default: build all)')
+
 def add_develop_args(ap):
     ap.add_argument('-l', '--link', default='absolute', help='Link action: one of [absolute, relative, copy] (default: absolute)')
+
+def add_parameter_args(ap):
+    ap.add_argument('parameters', nargs='*', type=parameter_pair,
+                    help="profile parameters of the form 'x=y' to override")
 
 def add_target_args(ap):
     ap.add_argument('target', nargs='?', default='', help='directory to use for build dir (default: profile/package name)')
@@ -32,7 +40,8 @@ class ProfileFrontendBase(object):
         self.source_cache = SourceCache.create_from_config(ctx.get_config(), ctx.logger)
         self.build_store = BuildStore.create_from_config(ctx.get_config(), ctx.logger)
         self.checkouts = TemporarySourceCheckouts(self.source_cache)
-        self.profile = load_profile(self.ctx.logger, self.checkouts, args.profile)
+        parameters = dict(args.parameters) if args.parameters else None
+        self.profile = load_profile(self.ctx.logger, self.checkouts, args.profile, parameters)
         self.builder = ProfileBuilder(self.ctx.logger, self.source_cache, self.build_store, self.profile)
 
     @classmethod
@@ -79,10 +88,10 @@ class Build(ProfileFrontendBase):
     def setup(cls, ap):
         add_profile_args(ap)
         add_build_args(ap)
-        ap.add_argument('package', nargs='?', help='package to build (default: build all)')
+        add_package_args(ap)
+        add_parameter_args(ap)
 
     def profile_builder_action(self):
-        from ..core import atomic_symlink
 
         if not self.args.profile.endswith('.yaml'):
             self.ctx.error('profile filename must end with yaml')
@@ -127,6 +136,7 @@ class Develop(ProfileFrontendBase):
         add_build_args(ap)
         add_target_args(ap)
         add_develop_args(ap)
+        add_parameter_args(ap)
 
     def profile_builder_action(self):
         if not self.args.profile.endswith('.yaml'):
@@ -155,6 +165,7 @@ class Status(ProfileFrontendBase):
     @classmethod
     def setup(cls, ap):
         add_profile_args(ap)
+        add_parameter_args(ap)
 
     def profile_builder_action(self):
         report = self.builder.get_status_report()
@@ -175,6 +186,7 @@ class Show(ProfileFrontendBase):
         add_profile_args(ap)
         ap.add_argument('subcommand', choices=['buildspec', 'script'])
         ap.add_argument('package', help='package to show information about')
+        add_parameter_args(ap)
 
     def profile_builder_action(self):
         if self.args.subcommand == 'buildspec':
