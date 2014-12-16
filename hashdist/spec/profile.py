@@ -505,7 +505,7 @@ def load_and_inherit_profile(checkouts, include_doc, cwd=None, override_paramete
     # *unless* it's overridden by this document or command line, in which case it's OK.
 
     if override_parameters is not None:
-        doc['parameters'].update(override_parameters)
+        doc.setdefault('parameters', {}).update(override_parameters)
     parameters = doc.setdefault('parameters', {})
 
     overridden = parameters.keys()
