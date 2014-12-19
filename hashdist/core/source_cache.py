@@ -881,7 +881,8 @@ class TarballHandler(object):
                     try:
                         member.name.decode('ascii', 'strict')
                     except UnicodeDecodeError:
-                        self.logger.warning("Archive contained a non-ascii path: %s.  Skipping." % member.name.decode('ascii', 'replace'))
+                        self.logger.warning("Archive contained a non-ascii path: %s.  Skipping."
+                                            % member.name.decode('ascii', 'replace'))
                         continue
 
                     if not os.path.abspath(pjoin(target_dir, member.name)).startswith(target_dir):
