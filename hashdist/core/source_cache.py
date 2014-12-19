@@ -880,6 +880,12 @@ class TarballHandler(object):
                 for member in members:
                     if len(member.name) <= prefix_len:
                         continue
+                    try:
+                        member.name.decode('ascii', 'strict')
+                    except UnicodeDecodeError:
+                        self.logger.warning("Archive contained a non-ascii path: %s.  Skipping." % member.name.decode('ascii', 'replace'))
+                        continue
+
                     if not os.path.abspath(pjoin(target_dir, member.name)).startswith(target_dir):
                         raise SecurityError("Archive attempted to break out of target dir "
                                             "with filename: %s" % member.name)
