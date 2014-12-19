@@ -874,8 +874,6 @@ class TarballHandler(object):
                 members = archive.getmembers()
                 prefix_len = len(common_path_prefix([member.name for member in members
                                                      if member.type != tarfile.DIRTYPE]))
-                # Filter away too short directory entries, remove prefix,
-                # and prevent directory escape attacks
                 filtered_members = []
                 for member in members:
                     if len(member.name) <= prefix_len:
