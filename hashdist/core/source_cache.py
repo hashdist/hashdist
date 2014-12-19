@@ -881,7 +881,8 @@ class TarballHandler(object):
                         raise SecurityError("Archive attempted to break out of target dir "
                                             "with filename: %s" % member.name)
                     member.name = member.name[prefix_len:]
-                archive.extractall(target_dir, members)
+                    filtered_members.append(member)
+                archive.extractall(target_dir, filtered_members)
 
     def tarfileobj_from_name(self, filename):
         return open(filename, 'r');
