@@ -40,7 +40,7 @@ class ProfileFrontendBase(object):
         self.source_cache = SourceCache.create_from_config(ctx.get_config(), ctx.logger)
         self.build_store = BuildStore.create_from_config(ctx.get_config(), ctx.logger)
         self.checkouts = TemporarySourceCheckouts(self.source_cache)
-        parameters = dict(args.parameters) if args.parameters else None
+        parameters = dict(args.parameters) if hasattr(args, 'parameters') else None
         self.profile = load_profile(self.ctx.logger, self.checkouts, args.profile, parameters)
         self.builder = ProfileBuilder(self.ctx.logger, self.source_cache, self.build_store, self.profile)
 
@@ -337,7 +337,7 @@ class RM(object):
         else:
             build_store.remove_symlink_to_artifact(args.what)
 
-            
+
 class PrintLibs(object):
     """
     Print all dynamic libraries from the given profile.
