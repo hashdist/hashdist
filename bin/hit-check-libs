@@ -16,12 +16,7 @@ try:
 except ImportError:
     from hashdist.deps import argparse
 
-<<<<<<< HEAD
-from hashdist.hdist_logging import Logger
 from hashdist.cli.main import HashDistCommandContext
-=======
-from hashdist.cli.main import HashdistCommandContext
->>>>>>> replace custom logging with python standard library
 from hashdist.core import BuildStore
 from hashdist.formats.config import (DEFAULT_CONFIG_FILENAME_REPR,
         DEFAULT_CONFIG_FILENAME)
