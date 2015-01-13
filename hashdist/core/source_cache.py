@@ -719,7 +719,7 @@ class ArchiveSourceCache(object):
             self.logger.error(msg)
             raise RemoteFetchError(msg)
 
-        if not create_archive_handler(type).verify(temp_path):
+        if not create_archive_handler(type, self.logger).verify(temp_path):
             self.logger.error("File downloaded from '%s' is not a valid archive" % url)
             raise SourceNotFoundError("File downloaded from '%s' is not a valid archive" % url)
 
@@ -800,7 +800,7 @@ class ArchiveSourceCache(object):
                 scatter_files(files, target_dir)
             else:
                 try:
-                    create_archive_handler(type).unpack(infile, target_dir, hash)
+                    create_archive_handler(type, self.logger).unpack(infile, target_dir, hash)
                 except SourceCacheError, e:
                     self.logger.error(str(e))
                     raise
@@ -847,6 +847,9 @@ def common_path_prefix(paths):
 class TarballHandler(object):
     chunk_size = 16 * 1024
 
+    def __init__(self, logger):
+        self.logger = logger
+
     def verify(self, filename):
         import tarfile
         try:
@@ -871,17 +874,23 @@ class TarballHandler(object):
                 members = archive.getmembers()
                 prefix_len = len(common_path_prefix([member.name for member in members
                                                      if member.type != tarfile.DIRTYPE]))
-                # Filter away too short directory entries, remove prefix,
-                # and prevent directory escape attacks
                 filtered_members = []
                 for member in members:
                     if len(member.name) <= prefix_len:
                         continue
+                    try:
+                        member.name.decode('ascii', 'strict')
+                    except UnicodeDecodeError:
+                        self.logger.warning("Archive contained a non-ascii path: %s.  Skipping."
+                                            % member.name.decode('ascii', 'replace'))
+                        continue
+
                     if not os.path.abspath(pjoin(target_dir, member.name)).startswith(target_dir):
                         raise SecurityError("Archive attempted to break out of target dir "
                                             "with filename: %s" % member.name)
                     member.name = member.name[prefix_len:]
-                archive.extractall(target_dir, members)
+                    filtered_members.append(member)
+                archive.extractall(target_dir, filtered_members)
 
     def tarfileobj_from_name(self, filename):
         return open(filename, 'r');
@@ -924,6 +933,10 @@ class TarXzHandler(TarballHandler):
 class ZipHandler(object):
     type = 'zip'
     exts = ['zip']
+
+    def __init__(self, logger):
+        self.logger = logger
+
     def verify(self, filename):
         from zipfile import ZipFile
         with closing(ZipFile(filename)) as f:
@@ -959,8 +972,8 @@ for cls in [TarGzHandler, TarBz2Handler, TarXzHandler, ZipHandler]:
 archive_types = sorted(archive_types)
 
 
-def create_archive_handler(type):
-    return archive_handler_classes[type]()
+def create_archive_handler(type, logger):
+    return archive_handler_classes[type](logger)
 
 def hit_pack(files, stream=None):
     """
