@@ -157,6 +157,9 @@ from . import run_job
 
 from hashdist.util.logger_setup import log_to_file, getLogger
 
+class RemoteBuildStoreFetchError(Exception):
+    pass
+
 class BuildStoreError(Exception):
     pass
 class StoreNotFoundError(BuildStoreError):
@@ -355,12 +358,12 @@ class BuildStore(object):
                 stream = urllib2.urlopen(url)
             except urllib2.HTTPError, e:
                 msg = "urllib failed to download (code: %d): %s" % (e.code, url)
-                self.logger.error(msg)
-                raise RemoteFetchError(msg)
+                self.logger.warning(msg)
+                raise RemoteBuildStoreFetchError(msg)
             except urllib2.URLError, e:
                 msg = "urllib failed to download (reason: %s): %s" % (e.reason, url)
-                self.logger.error(msg)
-                raise RemoteFetchError(msg)
+                self.logger.warning(msg)
+                raise RemoteBuildStoreFetchError(msg)
 
         # Download file to a temporary file within self.packs_path, while hashing
         # it.
@@ -392,8 +395,8 @@ class BuildStore(object):
             # Remove temporary file if there was a failure
             os.unlink(temp_path)
             msg = "Unhandled Exception in Download: %s" % e
-            self.logger.error(msg)
-            raise RemoteFetchError(msg)
+            self.logger.warning(msg)
+            raise RemoteBuildStoreFetchError(msg)
         os.chmod(temp_path, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
         os.system('cd %s; tar xzvf %s; rm -f %s' % (self.artifact_root,temp_path,temp_path))
     def resolve(self, artifact_id):
@@ -430,6 +433,10 @@ class BuildStore(object):
             try:
                 self._download_artifact(url,path)
             except StoreNotFoundError:
+                continue
+            except RemoteBuildStoreFetchError:
+                msg = "Could not fetch existing build, continuing"
+                self.logger.warning(msg)
                 continue
             else:
                 return True # found it
