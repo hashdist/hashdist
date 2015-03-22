@@ -23,9 +23,9 @@ config_schema = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "dir": {"type": "string"}
-                },
-                "required": ["dir"]
+                    "dir": {"type": "string"},
+                    "url": {"type": "string"},
+                }
             },
             "minItems": 1
         },
@@ -71,7 +71,8 @@ def load_config_file(filename, logger):
     doc = load_yaml_from_file(filename)
     validate_yaml(doc, config_schema)
     for entry in doc['build_stores']:
-        entry['dir'] = _ensure_dir(_make_abs(basedir, entry['dir']), logger)
+        if entry.has_key('dir'):
+            entry['dir'] = _ensure_dir(_make_abs(basedir, entry['dir']), logger)
 
     for entry in doc['source_caches']:
         if sum(['url' in entry, 'dir' in entry]) != 1:

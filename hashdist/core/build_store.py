@@ -135,14 +135,18 @@ Reference
 import os
 from os.path import join as pjoin
 import shutil
+import hashlib
 import sys
 import re
 import errno
 import json
 import base64
+import tempfile
+import urllib2
+import stat
 
-from .source_cache import SourceCache
-from .hasher import hash_document, prune_nohash
+from .source_cache import SourceCache,ProgressBar
+from .hasher import hash_document, prune_nohash,HashingWriteStream
 from .common import (InvalidBuildSpecError, BuildFailedError,
                      IllegalBuildStoreError,
                      json_formatting_options, SHORT_ARTIFACT_ID_LEN,
@@ -153,6 +157,10 @@ from . import run_job
 
 from hashdist.util.logger_setup import log_to_file, getLogger
 
+class BuildStoreError(Exception):
+    pass
+class StoreNotFoundError(BuildStoreError):
+    pass
 
 class BuildSpec(object):
     """Wraps the document corresponding to a build.json
@@ -230,6 +238,7 @@ def shorten_artifact_id(artifact_id, length=SHORT_ARTIFACT_ID_LEN):
     name, digest = artifact_id.split('/')
     return '%s/%s' % (name, digest[:length])
 
+SIMPLE_FILE_URL_RE = re.compile(r'^file:/?[^/]+.*$')
 
 class BuildStore(object):
     """
@@ -255,9 +264,10 @@ class BuildStore(object):
 
     logger : Logger
     """
-
-
-    def __init__(self, temp_build_dir, artifact_root, gc_roots_dir, logger, create_dirs=False):
+    
+    chunk_size = 16 * 1024
+    
+    def __init__(self, temp_build_dir, artifact_root, gc_roots_dir, logger, mirrors=(), create_dirs=False):
         self.temp_build_dir = os.path.realpath(temp_build_dir)
         self.artifact_root = os.path.realpath(artifact_root)
         self.gc_roots_dir = gc_roots_dir
@@ -265,6 +275,7 @@ class BuildStore(object):
         if create_dirs:
             for d in [self.temp_build_dir, self.artifact_root]:
                 silent_makedirs(d)
+        self.mirrors = mirrors
 
     def _log_artifact_collision(self, path, artifact_id):
         d = dict(path=path, artifact_id=artifact_id)
@@ -280,16 +291,22 @@ class BuildStore(object):
 
     @staticmethod
     def create_from_config(config, logger, **kw):
-        """Creates a SourceCache from the settings in the configuration
+        """Creates a BuildStore from the settings in the configuration
         """
-        if len(config['build_stores']) != 1:
-            logger.error("Only a single build store currently supported")
+        if 'dir' not in config['build_stores'][0]:
+            logger.error('First build store needs to be a local directory')
             raise NotImplementedError()
-
+        mirrors = []
+        for entry in config['build_stores'][1:]:
+            if 'url' not in entry:
+                logger.error('All but first source cache currently needs to be remote')
+                raise NotImplementedError()
+            mirrors.append(entry['url'])
         return BuildStore(config['build_temp'],
                           config['build_stores'][0]['dir'],
                           config['gc_roots'],
-                          logger,
+                          logger, 
+                          mirrors,
                           **kw)
 
     def get_build_dir(self):
@@ -323,13 +340,69 @@ class BuildStore(object):
     def _get_artifact_path(self, name, digest):
         return pjoin(self.artifact_root, name, digest[:SHORT_ARTIFACT_ID_LEN])
 
+    def _download_artifact(self, url,path):
+        # Provide a special case for local files
+        use_urllib = not SIMPLE_FILE_URL_RE.match(url)
+        if not use_urllib:
+            try:
+                stream = open(url[len('file:'):])
+            except IOError as e:
+                raise StoreNotFoundError(str(e))
+        else:
+            # Make request.
+            sys.stderr.write('Downloading %s...\n' % url)
+            try:
+                stream = urllib2.urlopen(url)
+            except urllib2.HTTPError, e:
+                msg = "urllib failed to download (code: %d): %s" % (e.code, url)
+                self.logger.error(msg)
+                raise RemoteFetchError(msg)
+            except urllib2.URLError, e:
+                msg = "urllib failed to download (reason: %s): %s" % (e.reason, url)
+                self.logger.error(msg)
+                raise RemoteFetchError(msg)
+
+        # Download file to a temporary file within self.packs_path, while hashing
+        # it.
+        self.logger.info("Downloading '%s'" % url)
+        temp_fd, temp_path = tempfile.mkstemp(prefix='downloading-', dir=self.artifact_root)
+        try:
+            f = os.fdopen(temp_fd, 'wb')
+            tee = HashingWriteStream(hashlib.sha256(), f)
+            if use_urllib:
+                if 'Content-Length' in stream.headers:
+                    progress = ProgressBar(int(stream.headers["Content-Length"]))
+                else:
+                    progress = ProgressSpinner()
+            try:
+                n = 0
+                while True:
+                    chunk = stream.read(self.chunk_size)
+                    if not chunk: break
+                    if use_urllib:
+                        n += len(chunk)
+                        progress.update(n)
+                    tee.write(chunk)
+            finally:
+                stream.close()
+                f.close()
+                if use_urllib:
+                    progress.finish()
+        except Exception as e:
+            # Remove temporary file if there was a failure
+            os.unlink(temp_path)
+            msg = "Unhandled Exception in Download: %s" % e
+            self.logger.error(msg)
+            raise RemoteFetchError(msg)
+        os.chmod(temp_path, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
+        os.system('cd %s; tar xzvf %s; rm -f %s' % (self.artifact_root,temp_path,temp_path))
     def resolve(self, artifact_id):
         """Given an artifact_id, resolve the short path for it, or return
         None if the artifact isn't built.
         """
         name, digest = artifact_id.split('/')
         path = self._get_artifact_path(name, digest)
-        if not os.path.exists(path):
+        if not os.path.exists(path) and not self.fetch_from_mirrors(name,digest[:SHORT_ARTIFACT_ID_LEN],path):
             return None
         else:
             try:
@@ -351,7 +424,17 @@ class BuildStore(object):
                     self.logger.error('Please get in touch with the HashDist developer mailing list.')
                     raise IllegalBuildStoreError('Hashes collide in first 12 chars: %s and %s' % (present_id, artifact_id))
             return path
-
+    def fetch_from_mirrors(self, name,digest,path):
+        for mirror in self.mirrors:
+            url = '%s/%s/%s.tar.gz' % (mirror, name, digest)
+            try:
+                self._download_artifact(url,path)
+            except StoreNotFoundError:
+                continue
+            else:
+                return True # found it
+        return False
+        
     def is_present(self, build_spec):
         build_spec = as_build_spec(build_spec)
         return self.resolve(build_spec.artifact_id) is not None
