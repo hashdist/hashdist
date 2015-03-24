@@ -322,7 +322,7 @@ def postprocess_sh_script(logger, patterns, artifact_dir, filename):
         p="$0"
         while test -L "$p"; do  # while it is a link
             cd `dirname "$p"`
-            b=`basename "$p"`
+            cd `pwd -P`
             p=`readlink "$p"`
         done
         cd `dirname "$p"`/%(up)s
