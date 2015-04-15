@@ -16,6 +16,15 @@ HashDist
 **Mailing list:**
     https://groups.google.com/forum/?fromgroups#!forum/hashdist
 
+**HashStack (Packages and Profiles for HashDist):**
+    https://github.com/hashdist/hashstack/
+
+**Wiki:**
+    https://github.com/hashdist/hashdist/wiki
+
+**Command-line Help:**
+    ``hit help`` or ``hit help <command>``
+
 **Authors:**
     Aron Ahmadia,
     Volker Braun,
@@ -35,7 +44,7 @@ Note: ``master`` is the development branch.
 Copyright and license
 ---------------------
 
-Copyright (c) 2012-2014, HashDist Developers. All rights
+Copyright (c) 2012-2015, HashDist Developers. All rights
 reserved.
 
 HashDist is licensed under the BSD 3-clause license. See LICENSE.txt
