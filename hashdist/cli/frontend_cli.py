@@ -247,6 +247,23 @@ class GC(object):
             build_store = BuildStore.create_from_config(ctx.get_config(), ctx.logger)
             build_store.gc()
 
+@register_subcommand
+class ListProfiles(object):
+    __doc__ = """
+    List installed profiles.
+    """
+
+    command = 'list-profiles'
+
+    @staticmethod
+    def run(ctx, args):
+        from ..core import BuildStore
+        gc_roots_dir = ctx.get_config()['gc_roots']
+        # write header to stderr, list to stdout
+        sys.stderr.write("List of GC roots:\n")
+        for gc_root in os.listdir(gc_roots_dir):
+            sys.stdout.write("%s\n" % os.readlink(pjoin(gc_roots_dir, gc_root)))
+
 class MvCpBase(object):
     @classmethod
     def setup(cls, ap):
