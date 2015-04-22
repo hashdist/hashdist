@@ -461,16 +461,20 @@ class ShowPackage(object):
                 package_hash)
         import json
         d = json.load(open(pjoin(package_path, "artifact.json")))
+        b = json.load(open(pjoin(package_path, "build.json")))
 
         sys.stdout.write('Information about the %s package:\n' % \
                 package_name_ui_color)
         sys.stdout.write('Path: %s\n' % package_path)
         sys.stdout.write('Full package hash: %s\n' % \
                 color.turquoise(package_hash_full))
+        sys.stdout.write('List of sources:\n')
+        for s in b["sources"]:
+            sys.stdout.write('    %s\n' % s["key"])
         sys.stdout.write('List of dependencies:\n')
         for dep in d["dependencies"]:
             package_name, package_hash = dep.split("/")
-            sys.stdout.write('%s\n' % (package_name + color.turquoise("@" + \
+            sys.stdout.write('    %s\n' % (package_name + color.turquoise("@" + \
                     package_hash)))
 
 
