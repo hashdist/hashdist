@@ -264,7 +264,8 @@ class ListProfiles(object):
     def run(ctx, args):
         from ..core import BuildStore
         gc_roots_dir = ctx.get_config()['gc_roots']
-        sys.stdout.write("List of installed profiles (profile_name@profile_hash):\n")
+        sys.stdout.write("List of installed profiles (profile_name{}):\n" \
+                .format(color.turquoise("@profile_hash")))
         for gc_root in os.listdir(gc_roots_dir):
             profile_name = os.path.basename(os.readlink(pjoin(gc_roots_dir,
                 gc_root)))
