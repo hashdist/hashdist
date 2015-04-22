@@ -7,6 +7,7 @@ from pprint import pprint
 from .main import register_subcommand, DEFAULT_CONFIG_FILENAME_REPR
 import errno
 from .utils import parameter_pair
+from ..util.ansi_color import color
 
 def add_build_args(ap):
     ap.add_argument('-j', metavar='CPUCOUNT', default=1, type=int, help='number of CPU cores to utilize')
@@ -258,7 +259,6 @@ class ListProfiles(object):
     @staticmethod
     def setup(ap):
         pass
-        #ap.add_argument('--list', action='store_true', help='Show list of GC roots')
 
     @staticmethod
     def run(ctx, args):
@@ -269,7 +269,8 @@ class ListProfiles(object):
             profile_name = os.path.basename(os.readlink(pjoin(gc_roots_dir,
                 gc_root)))
             profile_hash = gc_root
-            sys.stdout.write("{}@{}\n".format(profile_name, profile_hash))
+            sys.stdout.write(profile_name \
+                    + color.turquoise("@" + profile_hash) + "\n")
 
 class MvCpBase(object):
     @classmethod
