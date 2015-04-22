@@ -351,6 +351,87 @@ class LoadProfile(object):
                 profile_name_ui_color)
         sys.stdout.write('# . <(hit load %s)\n' % profile_name)
 
+@register_subcommand
+class ShowProfile(object):
+    __doc__ = """
+    Lists packages and other information about a given profile.
+
+    Example:
+
+        $ hit show py32
+        Information about the py32@loglud5apymb profile:
+        Path: /local/certik/bld/profile/loglud5apymb
+        Full profile hash: loglud5apymbhz3esdvq5tvb4js26hqq
+        List of packages:
+        berkeleydb-5@ezpn7nogtzm4rt7hdhujxhn3o7nyhlaq
+        blas@xsvwemqbi4dtutp326zzjpoldt62lqpa
+        bzip2@yhn7t7sdxdfdkhyie6hg36hqvgccj7rj
+        cmake@ugrko5ribtzlnijeygdngjxzk774ea6w
+        gdbm@xqni5hcjx43andearscwqprb54wxnopq
+        lapack@enbo6mjc6pkeoaoxnykphtro67cnqwqe
+        launcher@wvmh5uvayzv3bxqk5kirztzn3rckjyv7
+        mpi@hbd47qrzmwyecvdbonfalbn5xtqurzi3
+        ncurses@viognkgus4njgat77hcakdedqccl3wjy
+        nose@v7xodqh7kz4drb45ylswzazeqgem4hel
+        numpy@oomyf2lggbc3bpl3bpdkp3teh5nfqyxc
+        openssl@m6pttxckahscjt6jdev5acigozwa6ths
+        patchelf@k3rloj265ogtl4dmmmbmyt34dnffryka
+        pcre@2dpe5reczy3rt2jpx33hs2v675tofarr
+        perl@xskj3irapqvxclfj5vnb4kgqcygpbpmt
+        python@3dy43mxwqukrufgdrrlf3jng3ik7yaml
+        readline@5tdfuoei3z6ektgh7v7lh3ra36s32ssp
+        scipy@2mbg5u5xdskh2iezre6vewrsbalnfyci
+        setuptools@4cd55p423ojcptjk5wugz7kiakxhcour
+        sqlite@m5jo67qgu6zfrjydvg3fj3c5zvguflsx
+        swig@qlr7obcxibc6erl74unyuactjlta7pec
+        sympy@zglxlpatnl6e4omr22rj65spkm6u7vfg
+        zlib@3el5ccejre7bcjqgld5gp6iym4ccd5oe
+
+
+    """
+
+    command = 'show'
+
+    @staticmethod
+    def setup(ap):
+        ap.add_argument('profile', nargs='?', default='default', help='profile to show (default: default)')
+
+    @staticmethod
+    def run(ctx, args):
+        from ..core import BuildStore
+        gc_roots_dir = ctx.get_config()['gc_roots']
+        for gc_root in os.listdir(gc_roots_dir):
+            profile_name = os.path.basename(os.readlink(pjoin(gc_roots_dir,
+                gc_root)))
+            if profile_name == args.profile:
+                break
+        else:
+            raise Exception("Profile '%s' not installed" % args.profile)
+        try:
+            profile_path = os.readlink(os.readlink(pjoin(gc_roots_dir, gc_root)))
+        except OSError:
+            # FIXME: query our runtime database instead, it should be there
+            raise Exception("Profile '%s' was deleted" % args.profile)
+        profile_hash = os.path.basename(profile_path)
+        profile_name_ui = profile_name + "@" + profile_hash
+        profile_name_ui_color = profile_name + color.turquoise("@" + \
+                profile_hash)
+
+        sys.stdout.write('Information about the %s profile:\n' % \
+                profile_name_ui_color)
+        sys.stdout.write('Path: %s\n' % profile_path)
+        import json
+        d = json.load(open(pjoin(profile_path, "artifact.json")))
+        profile_hash_full = d["id"].split("/")[1]
+        sys.stdout.write('Full profile hash: %s\n' % \
+                color.turquoise(profile_hash_full))
+        sys.stdout.write('List of packages:\n')
+        for dep in d["dependencies"]:
+            package_name, package_hash = dep.split("/")
+            sys.stdout.write('%s\n' % (package_name + color.turquoise("@" + \
+                    package_hash)))
+
+
 class MvCpBase(object):
     @classmethod
     def setup(cls, ap):
