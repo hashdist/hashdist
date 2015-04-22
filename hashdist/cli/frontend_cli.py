@@ -283,9 +283,17 @@ class ListProfiles(object):
         for gc_root in os.listdir(gc_roots_dir):
             profile_name = os.path.basename(os.readlink(pjoin(gc_roots_dir,
                 gc_root)))
-            profile_hash = gc_root
-            sys.stdout.write(profile_name \
+            try:
+                profile_hash = os.path.basename(os.readlink(os.readlink(pjoin(gc_roots_dir, gc_root))))
+                sys.stdout.write(profile_name \
                     + color.turquoise("@" + profile_hash) + "\n")
+            except OSError:
+                # FIXME: This happens if the user deletes the symlink from the
+                # hashstack repository. The fix is to not go into the
+                # repository at all, but rather query our runtime database
+                # directly. Until then, we just print DELETED in red.
+                sys.stdout.write(profile_name \
+                    + color.red("@DELETED") + "\n")
 
 @register_subcommand
 class LoadProfile(object):
@@ -310,18 +318,32 @@ class LoadProfile(object):
 
     @staticmethod
     def setup(ap):
-        add_profile_args(ap)
+        ap.add_argument('profile', nargs='?', default='default', help='profile to load (default: default)')
 
     @staticmethod
     def run(ctx, args):
         from ..core import BuildStore
         gc_roots_dir = ctx.get_config()['gc_roots']
-        sys.stdout.write('export HASHSTACK="${HOME}/repos/hashstack/default"\n')
+        for gc_root in os.listdir(gc_roots_dir):
+            profile_name = os.path.basename(os.readlink(pjoin(gc_roots_dir,
+                gc_root)))
+            if profile_name == args.profile:
+                break
+        else:
+            raise Exception("Profile '%s' not installed" % args.profile)
+        try:
+            profile_path = os.readlink(os.readlink(pjoin(gc_roots_dir, gc_root)))
+        except OSError:
+            # FIXME: query our runtime database instead, it should be there
+            raise Exception("Profile '%s' was deleted" % args.profile)
+        profile_hash = os.path.basename(profile_path)
+        sys.stdout.write('export HASHSTACK="%s"\n' % profile_path)
         sys.stdout.write('export PATH="${HASHSTACK}/bin":${PATH}\n')
         sys.stdout.write('echo "Exporting HASHSTACK=$HASHSTACK"\n')
         sys.stdout.write("""echo "Adding \\${HASHSTACK}/bin to PATH"\n""")
         sys.stdout.write('\n')
-        sys.stdout.write('# To load this profile, execute in Bash:\n')
+        sys.stdout.write('# To load the %s profile, execute in Bash:\n' % \
+                (profile_name + color.turquoise("@" + profile_hash)))
         sys.stdout.write('# . <(hit load py32)\n')
 
 class MvCpBase(object):
