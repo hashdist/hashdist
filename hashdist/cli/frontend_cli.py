@@ -417,15 +417,57 @@ class ShowProfile(object):
         profile_name_ui_color = profile_name + color.turquoise("@" + \
                 profile_hash)
 
-        sys.stdout.write('Information about the %s profile:\n' % \
-                profile_name_ui_color)
-        sys.stdout.write('Path: %s\n' % profile_path)
         import json
         d = json.load(open(pjoin(profile_path, "artifact.json")))
         profile_hash_full = d["id"].split("/")[1]
+
+        sys.stdout.write('Information about the %s profile:\n' % \
+                profile_name_ui_color)
+        sys.stdout.write('Path: %s\n' % profile_path)
         sys.stdout.write('Full profile hash: %s\n' % \
                 color.turquoise(profile_hash_full))
         sys.stdout.write('List of packages:\n')
+        for dep in d["dependencies"]:
+            package_name, package_hash = dep.split("/")
+            sys.stdout.write('%s\n' % (package_name + color.turquoise("@" + \
+                    package_hash)))
+
+@register_subcommand
+class ShowPackage(object):
+    __doc__ = """
+    Shows dependencies and other information about a given package.
+
+    Example:
+
+        $ hit show-package python@3dy43mxwqukrufgdrrlf3jng3ik7yaml
+
+
+    """
+
+    command = 'show-package'
+
+    @staticmethod
+    def setup(ap):
+        ap.add_argument('package', nargs='?', help='package to show')
+
+    @staticmethod
+    def run(ctx, args):
+        from ..core import BuildStore
+        build_store_dir = ctx.get_config()['build_stores'][0]["dir"]
+        package_name, package_hash_full = args.package.split("@")
+        package_hash = package_hash_full[:12] # FIXME -- use the right length
+        package_path = pjoin(build_store_dir, package_name, package_hash)
+        package_name_ui_color = package_name + color.turquoise("@" + \
+                package_hash)
+        import json
+        d = json.load(open(pjoin(package_path, "artifact.json")))
+
+        sys.stdout.write('Information about the %s package:\n' % \
+                package_name_ui_color)
+        sys.stdout.write('Path: %s\n' % package_path)
+        sys.stdout.write('Full package hash: %s\n' % \
+                color.turquoise(package_hash_full))
+        sys.stdout.write('List of dependencies:\n')
         for dep in d["dependencies"]:
             package_name, package_hash = dep.split("/")
             sys.stdout.write('%s\n' % (package_name + color.turquoise("@" + \
