@@ -256,13 +256,20 @@ class ListProfiles(object):
     command = 'list-profiles'
 
     @staticmethod
+    def setup(ap):
+        pass
+        #ap.add_argument('--list', action='store_true', help='Show list of GC roots')
+
+    @staticmethod
     def run(ctx, args):
         from ..core import BuildStore
         gc_roots_dir = ctx.get_config()['gc_roots']
-        # write header to stderr, list to stdout
-        sys.stderr.write("List of GC roots:\n")
+        sys.stdout.write("List of installed profiles (profile_name@profile_hash):\n")
         for gc_root in os.listdir(gc_roots_dir):
-            sys.stdout.write("%s\n" % os.readlink(pjoin(gc_roots_dir, gc_root)))
+            profile_name = os.path.basename(os.readlink(pjoin(gc_roots_dir,
+                gc_root)))
+            profile_hash = gc_root
+            sys.stdout.write("{}@{}\n".format(profile_name, profile_hash))
 
 class MvCpBase(object):
     @classmethod
