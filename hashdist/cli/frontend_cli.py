@@ -285,14 +285,14 @@ class ListProfiles(object):
                 gc_root)))
             try:
                 profile_hash = os.path.basename(os.readlink(os.readlink(pjoin(gc_roots_dir, gc_root))))
-                sys.stdout.write(profile_name \
+                sys.stdout.write("    " + profile_name \
                     + color.turquoise("@" + profile_hash) + "\n")
             except OSError:
                 # FIXME: This happens if the user deletes the symlink from the
                 # hashstack repository. The fix is to not go into the
                 # repository at all, but rather query our runtime database
                 # directly. Until then, we just print DELETED in red.
-                sys.stdout.write(profile_name \
+                sys.stdout.write("    " + profile_name \
                     + color.red("@DELETED") + "\n")
 
 @register_subcommand
@@ -429,7 +429,7 @@ class ShowProfile(object):
         sys.stdout.write('List of packages:\n')
         for dep in d["dependencies"]:
             package_name, package_hash = dep.split("/")
-            sys.stdout.write('%s\n' % (package_name + color.turquoise("@" + \
+            sys.stdout.write('    %s\n' % (package_name + color.turquoise("@" +\
                     package_hash)))
 
 @register_subcommand
