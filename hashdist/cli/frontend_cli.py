@@ -252,6 +252,20 @@ class GC(object):
 class ListProfiles(object):
     __doc__ = """
     List installed profiles.
+
+    This command prints the list of names and hashes of all installed profiles.
+
+    Example:
+
+        $ hit list-profiles
+        List of installed profiles (profile_name@profile_hash):
+        basis@_L2hvbWUvY2VydGlrL3JlcG9zL2hhc2hzdGFjay9iYXNpcw--
+        py32@_L2hvbWUvY2VydGlrL3JlcG9zL2hhc2hzdGFjay9weTMy
+        py3@_L2hvbWUvY2VydGlrL3JlcG9zL2hhc2hzdGFjay9weTM-
+        py34@_L2hvbWUvY2VydGlrL3JlcG9zL2hhc2hzdGFjay9weTM0
+        xx@_L2hvbWUvY2VydGlrL3JlcG9zL2hhc2hzdGFjay94eA--
+        hd_base@_L2hvbWUvY2VydGlrL3JlcG9zL2hhc2hzdGFjay9oZF9iYXNl
+
     """
 
     command = 'list-profiles'
@@ -272,6 +286,43 @@ class ListProfiles(object):
             profile_hash = gc_root
             sys.stdout.write(profile_name \
                     + color.turquoise("@" + profile_hash) + "\n")
+
+@register_subcommand
+class LoadProfile(object):
+    __doc__ = """
+    Loads a given profile.
+
+    Execute the output of this command in a Bash shell to load the profile:
+
+        $ . <(hit load py32)
+
+    This sets the HASHSTACK environemnt variable to point to the root of the
+    profile (you can then use it when building other code by hand, e.g. 'gcc
+    -I$HASHSTACK/include') and adds $HASHSTACK/bin into your PATH.
+
+    You can examine the Bash commands that are being executed by:
+
+        $ hit load py32
+
+    """
+
+    command = 'load'
+
+    @staticmethod
+    def setup(ap):
+        add_profile_args(ap)
+
+    @staticmethod
+    def run(ctx, args):
+        from ..core import BuildStore
+        gc_roots_dir = ctx.get_config()['gc_roots']
+        sys.stdout.write('export HASHSTACK="${HOME}/repos/hashstack/default"\n')
+        sys.stdout.write('export PATH="${HASHSTACK}/bin":${PATH}\n')
+        sys.stdout.write('echo "Exporting HASHSTACK=$HASHSTACK"\n')
+        sys.stdout.write("""echo "Adding \\${HASHSTACK}/bin to PATH"\n""")
+        sys.stdout.write('\n')
+        sys.stdout.write('# To load this profile, execute in Bash:\n')
+        sys.stdout.write('# . <(hit load py32)\n')
 
 class MvCpBase(object):
     @classmethod
