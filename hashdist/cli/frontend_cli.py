@@ -337,14 +337,19 @@ class LoadProfile(object):
             # FIXME: query our runtime database instead, it should be there
             raise Exception("Profile '%s' was deleted" % args.profile)
         profile_hash = os.path.basename(profile_path)
+        profile_name_ui = profile_name + "@" + profile_hash
+        profile_name_ui_color = profile_name + color.turquoise("@" + \
+                profile_hash)
+
         sys.stdout.write('export HASHSTACK="%s"\n' % profile_path)
         sys.stdout.write('export PATH="${HASHSTACK}/bin":${PATH}\n')
         sys.stdout.write('echo "Exporting HASHSTACK=$HASHSTACK"\n')
         sys.stdout.write("""echo "Adding \\${HASHSTACK}/bin to PATH"\n""")
+        sys.stdout.write('echo "Profile %s loaded."\n' % profile_name_ui)
         sys.stdout.write('\n')
         sys.stdout.write('# To load the %s profile, execute in Bash:\n' % \
-                (profile_name + color.turquoise("@" + profile_hash)))
-        sys.stdout.write('# . <(hit load py32)\n')
+                profile_name_ui_color)
+        sys.stdout.write('# . <(hit load %s)\n' % profile_name)
 
 class MvCpBase(object):
     @classmethod
