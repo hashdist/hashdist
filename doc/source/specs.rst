@@ -164,8 +164,9 @@ depending on context), and the variable name is what is hashed.
 
 **sources**:
 
-  Sources to download. For now, this should be a list with a single item,
-  as implementing a **target** attribute is TBD.
+  Sources to download.  This should be a list of ``key`` and ``url``
+  pairs.  To generate the ``key`` for a new file, use the ``hit
+  fetch`` command.
 
 **dependencies**:
 
