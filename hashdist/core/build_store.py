@@ -270,7 +270,7 @@ class BuildStore(object):
     
     chunk_size = 16 * 1024
     
-    def __init__(self, temp_build_dir, artifact_root, gc_roots_dir, logger, mirrors=(), create_dirs=False):
+    def __init__(self, temp_build_dir, artifact_root, gc_roots_dir, logger, local_mirrors=(), mirrors=(), create_dirs=False):
         self.temp_build_dir = os.path.realpath(temp_build_dir)
         self.artifact_root = os.path.realpath(artifact_root)
         self.gc_roots_dir = gc_roots_dir
@@ -278,6 +278,7 @@ class BuildStore(object):
         if create_dirs:
             for d in [self.temp_build_dir, self.artifact_root]:
                 silent_makedirs(d)
+        self.local_mirrors = local_mirrors
         self.mirrors = mirrors
 
     def _log_artifact_collision(self, path, artifact_id):
@@ -299,16 +300,21 @@ class BuildStore(object):
         if 'dir' not in config['build_stores'][0]:
             logger.error('First build store needs to be a local directory')
             raise NotImplementedError()
+        local_mirrors = []
         mirrors = []
         for entry in config['build_stores'][1:]:
-            if 'url' not in entry:
-                logger.error('All but first source cache currently needs to be remote')
+            if 'url' in entry:
+                mirrors.append(entry['url'])
+            elif 'dir' in entry:
+                local_mirrors.append(entry['dir'])
+            else:
+                logger.error('Unrecognized build store mirror entry = '+`entry`)
                 raise NotImplementedError()
-            mirrors.append(entry['url'])
         return BuildStore(config['build_temp'],
                           config['build_stores'][0]['dir'],
                           config['gc_roots'],
-                          logger, 
+                          logger,
+                          local_mirrors,
                           mirrors,
                           **kw)
 
@@ -405,7 +411,7 @@ class BuildStore(object):
         """
         name, digest = artifact_id.split('/')
         path = self._get_artifact_path(name, digest)
-        if not os.path.exists(path) and not self.fetch_from_mirrors(name,digest[:SHORT_ARTIFACT_ID_LEN],path):
+        if not os.path.exists(path) and not self.fetch_from_local_mirrors(name,digest[:SHORT_ARTIFACT_ID_LEN],path) and not self.fetch_from_mirrors(name,digest[:SHORT_ARTIFACT_ID_LEN],path):
             return None
         else:
             try:
@@ -427,6 +433,22 @@ class BuildStore(object):
                     self.logger.error('Please get in touch with the HashDist developer mailing list.')
                     raise IllegalBuildStoreError('Hashes collide in first 12 chars: %s and %s' % (present_id, artifact_id))
             return path
+    
+    def fetch_from_local_mirrors(self, name,digest,path):
+        for mirror in self.local_mirrors:
+            path_mirror = '%s/%s/%s' % (mirror, name, digest)
+            try:
+                shutil.copytree(path_mirror,path)
+            except StoreNotFoundError:
+                continue
+            except RemoteBuildStoreFetchError:
+                msg = "Could not fetch existing build, continuing"
+                self.logger.warning(msg)
+                continue
+            else:
+                return True # found it
+        return False
+        
     def fetch_from_mirrors(self, name,digest,path):
         for mirror in self.mirrors:
             url = '%s/%s/%s.tar.gz' % (mirror, name, digest)

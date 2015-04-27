@@ -197,7 +197,7 @@ class SourceCache(object):
     """
     """
 
-    def __init__(self, cache_path, logger, mirrors=(), create_dirs=False):
+    def __init__(self, cache_path, logger, local_mirrors=(), mirrors=(), create_dirs=False):
         if not os.path.isdir(cache_path):
             if create_dirs:
                 silent_makedirs(cache_path)
@@ -205,6 +205,7 @@ class SourceCache(object):
                 raise ValueError('"%s" is not an existing directory' % cache_path)
         self.cache_path = os.path.realpath(cache_path)
         self.logger = logger
+        self.local_mirrors = local_mirrors
         self.mirrors = mirrors
 
     def _ensure_subdir(self, name):
@@ -223,13 +224,17 @@ class SourceCache(object):
         if 'dir' not in config['source_caches'][0]:
             logger.error('First source cache need to be a local directory')
             raise NotImplementedError()
+        local_mirrors = []
         mirrors = []
         for entry in config['source_caches'][1:]:
-            if 'url' not in entry:
-                logger.error('All but first source cache currently needs to be remote')
+            if 'url' in entry:
+                mirrors.append(entry['url'])
+            elif 'dir' in entry:
+                local_mirrors.append(entry['dir'])
+            else:
+                logger.error('Unrecognized source cache mirror entry = '+`entry`)
                 raise NotImplementedError()
-            mirrors.append(entry['url'])
-        return SourceCache(config['source_caches'][0]['dir'], logger, mirrors, create_dirs)
+        return SourceCache(config['source_caches'][0]['dir'], logger, local_mirrors, mirrors, create_dirs)
 
     def fetch_git(self, repository, rev, repo_name):
         """Fetches source code from git repository
@@ -648,6 +653,7 @@ class ArchiveSourceCache(object):
         self.source_cache = source_cache
         self.files_path = source_cache.cache_path
         self.packs_path = source_cache._ensure_subdir(PACKS_DIRNAME)
+        self.local_mirrors = source_cache.local_mirrors
         self.mirrors = source_cache.mirrors
         self.logger = self.source_cache.logger
 
@@ -739,6 +745,17 @@ class ArchiveSourceCache(object):
     def contains(self, type, hash):
         return os.path.exists(self.get_pack_filename(type, hash))
 
+    def fetch_from_local_mirrors(self, type, hash):
+        for mirror in self.local_mirrors:
+            local_pack = '%s/%s/%s/%s' % (mirror, PACKS_DIRNAME, type, hash)
+            try:
+                shutil.copy(local_pack,self.get_pack_filename(type, hash))
+            except SourceNotFoundError:
+                continue
+            else:
+                return True # found it
+        return False
+
     def fetch_from_mirrors(self, type, hash):
         for mirror in self.mirrors:
             url = '%s/%s/%s/%s' % (mirror, PACKS_DIRNAME, type, hash)
@@ -759,6 +776,8 @@ class ArchiveSourceCache(object):
     def fetch_archive(self, url, type, expected_hash):
         if expected_hash is not None:
             found = self.contains(type, expected_hash)
+            if not found:
+                found = self.fetch_from_local_mirrors(type, expected_hash)
             if not found:
                 found = self.fetch_from_mirrors(type, expected_hash)
             if found:

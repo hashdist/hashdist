@@ -139,7 +139,9 @@ class Remote(object):
         ap.add_argument('--appName', default="hashdist_PLATFORM",help='Name of app you set up via web interface')
         ap.add_argument('--appId', default=None,help='ID assigned to app by pcs')
         ap.add_argument('--appSecret',default=None,help='secret assigned to app by pcs')
-
+        ap.add_argument('--fetch-only',action='store_true',help='only fetch from this remote, never push to it')
+        ap.add_argument('--remote-type',default="build_and_source",help="what kind of objects are on the remote 'build','source', or 'build_and_source'")
+    
     @staticmethod
     def run(ctx, args):
         from pcs_api.credentials.app_info_file_repo import AppInfoFileRepository
