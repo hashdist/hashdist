@@ -388,7 +388,8 @@ class GitSourceCache(object):
     def __init__(self, source_cache):
         self.repo_path = pjoin(source_cache.cache_path, GIT_DIRNAME)
         self.logger = source_cache.logger
-
+        self.local_mirrors = source_cache.local_mirrors
+    
     def git(self, repo_name, *args):
         # Inherit stdin/stdout in order to interact with user about any passwords
         # required to connect to any servers and so on
@@ -496,6 +497,15 @@ class GitSourceCache(object):
                 repo, branch = terms
             else:
                 raise ValueError('Please specify git repository as "git://repo/url [branchname]"')
+            for mirror in self.local_mirrors:
+                try:
+                    self.logger.warning("trying local mirror git repository")
+                    self.logger.warning(pjoin(mirror,'git',repo_name))
+                    self.fetch_git(pjoin(mirror,'git',repo_name), branch, repo_name, commit)
+                    self.logger.warning("succeded local mirror git repository")
+                except:
+                    self.logger.warning("failed local mirror git repository")
+                    pass
             self.fetch_git(repo, branch, repo_name, commit)
 
     def _has_commit(self, repo_name, commit):
