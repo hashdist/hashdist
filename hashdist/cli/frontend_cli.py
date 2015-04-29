@@ -258,13 +258,13 @@ class ListProfiles(object):
     Example:
 
         $ hit list-profiles
-        List of installed profiles (profile_name@profile_hash):
-        basis@_L2hvbWUvY2VydGlrL3JlcG9zL2hhc2hzdGFjay9iYXNpcw--
-        py32@_L2hvbWUvY2VydGlrL3JlcG9zL2hhc2hzdGFjay9weTMy
-        py3@_L2hvbWUvY2VydGlrL3JlcG9zL2hhc2hzdGFjay9weTM-
-        py34@_L2hvbWUvY2VydGlrL3JlcG9zL2hhc2hzdGFjay9weTM0
-        xx@_L2hvbWUvY2VydGlrL3JlcG9zL2hhc2hzdGFjay94eA--
-        hd_base@_L2hvbWUvY2VydGlrL3JlcG9zL2hhc2hzdGFjay9oZF9iYXNl
+        List of installed profiles (profile_name/profile_hash):
+        basis/_L2hvbWUvY2VydGlrL3JlcG9zL2hhc2hzdGFjay9iYXNpcw--
+        py32/_L2hvbWUvY2VydGlrL3JlcG9zL2hhc2hzdGFjay9weTMy
+        py3/_L2hvbWUvY2VydGlrL3JlcG9zL2hhc2hzdGFjay9weTM-
+        py34/_L2hvbWUvY2VydGlrL3JlcG9zL2hhc2hzdGFjay9weTM0
+        xx/_L2hvbWUvY2VydGlrL3JlcG9zL2hhc2hzdGFjay94eA--
+        hd_base/_L2hvbWUvY2VydGlrL3JlcG9zL2hhc2hzdGFjay9oZF9iYXNl
 
     """
 
@@ -279,21 +279,21 @@ class ListProfiles(object):
         from ..core import BuildStore
         gc_roots_dir = ctx.get_config()['gc_roots']
         sys.stdout.write("List of installed profiles (profile_name{}):\n" \
-                .format(color.turquoise("@profile_hash")))
+                .format(color.turquoise("/profile_hash")))
         for gc_root in os.listdir(gc_roots_dir):
             profile_name = os.path.basename(os.readlink(pjoin(gc_roots_dir,
                 gc_root)))
             try:
                 profile_hash = os.path.basename(os.readlink(os.readlink(pjoin(gc_roots_dir, gc_root))))
                 sys.stdout.write("    " + profile_name \
-                    + color.turquoise("@" + profile_hash) + "\n")
+                    + color.turquoise("/" + profile_hash) + "\n")
             except OSError:
                 # FIXME: This happens if the user deletes the symlink from the
                 # hashstack repository. The fix is to not go into the
                 # repository at all, but rather query our runtime database
                 # directly. Until then, we just print DELETED in red.
                 sys.stdout.write("    " + profile_name \
-                    + color.red("@DELETED") + "\n")
+                    + color.red("/DELETED") + "\n")
 
 @register_subcommand
 class LoadProfile(object):
@@ -337,8 +337,8 @@ class LoadProfile(object):
             # FIXME: query our runtime database instead, it should be there
             raise Exception("Profile '%s' was deleted" % args.profile)
         profile_hash = os.path.basename(profile_path)
-        profile_name_ui = profile_name + "@" + profile_hash
-        profile_name_ui_color = profile_name + color.turquoise("@" + \
+        profile_name_ui = profile_name + "/" + profile_hash
+        profile_name_ui_color = profile_name + color.turquoise("/" + \
                 profile_hash)
 
         sys.stdout.write('export HASHSTACK="%s"\n' % profile_path)
@@ -359,33 +359,33 @@ class ShowProfile(object):
     Example:
 
         $ hit show py32
-        Information about the py32@loglud5apymb profile:
+        Information about the py32/loglud5apymb profile:
         Path: /local/certik/bld/profile/loglud5apymb
         Full profile hash: loglud5apymbhz3esdvq5tvb4js26hqq
         List of packages:
-        berkeleydb-5@ezpn7nogtzm4rt7hdhujxhn3o7nyhlaq
-        blas@xsvwemqbi4dtutp326zzjpoldt62lqpa
-        bzip2@yhn7t7sdxdfdkhyie6hg36hqvgccj7rj
-        cmake@ugrko5ribtzlnijeygdngjxzk774ea6w
-        gdbm@xqni5hcjx43andearscwqprb54wxnopq
-        lapack@enbo6mjc6pkeoaoxnykphtro67cnqwqe
-        launcher@wvmh5uvayzv3bxqk5kirztzn3rckjyv7
-        mpi@hbd47qrzmwyecvdbonfalbn5xtqurzi3
-        ncurses@viognkgus4njgat77hcakdedqccl3wjy
-        nose@v7xodqh7kz4drb45ylswzazeqgem4hel
-        numpy@oomyf2lggbc3bpl3bpdkp3teh5nfqyxc
-        openssl@m6pttxckahscjt6jdev5acigozwa6ths
-        patchelf@k3rloj265ogtl4dmmmbmyt34dnffryka
-        pcre@2dpe5reczy3rt2jpx33hs2v675tofarr
-        perl@xskj3irapqvxclfj5vnb4kgqcygpbpmt
-        python@3dy43mxwqukrufgdrrlf3jng3ik7yaml
-        readline@5tdfuoei3z6ektgh7v7lh3ra36s32ssp
-        scipy@2mbg5u5xdskh2iezre6vewrsbalnfyci
-        setuptools@4cd55p423ojcptjk5wugz7kiakxhcour
-        sqlite@m5jo67qgu6zfrjydvg3fj3c5zvguflsx
-        swig@qlr7obcxibc6erl74unyuactjlta7pec
-        sympy@zglxlpatnl6e4omr22rj65spkm6u7vfg
-        zlib@3el5ccejre7bcjqgld5gp6iym4ccd5oe
+        berkeleydb-5/ezpn7nogtzm4rt7hdhujxhn3o7nyhlaq
+        blas/xsvwemqbi4dtutp326zzjpoldt62lqpa
+        bzip2/yhn7t7sdxdfdkhyie6hg36hqvgccj7rj
+        cmake/ugrko5ribtzlnijeygdngjxzk774ea6w
+        gdbm/xqni5hcjx43andearscwqprb54wxnopq
+        lapack/enbo6mjc6pkeoaoxnykphtro67cnqwqe
+        launcher/wvmh5uvayzv3bxqk5kirztzn3rckjyv7
+        mpi/hbd47qrzmwyecvdbonfalbn5xtqurzi3
+        ncurses/viognkgus4njgat77hcakdedqccl3wjy
+        nose/v7xodqh7kz4drb45ylswzazeqgem4hel
+        numpy/oomyf2lggbc3bpl3bpdkp3teh5nfqyxc
+        openssl/m6pttxckahscjt6jdev5acigozwa6ths
+        patchelf/k3rloj265ogtl4dmmmbmyt34dnffryka
+        pcre/2dpe5reczy3rt2jpx33hs2v675tofarr
+        perl/xskj3irapqvxclfj5vnb4kgqcygpbpmt
+        python/3dy43mxwqukrufgdrrlf3jng3ik7yaml
+        readline/5tdfuoei3z6ektgh7v7lh3ra36s32ssp
+        scipy/2mbg5u5xdskh2iezre6vewrsbalnfyci
+        setuptools/4cd55p423ojcptjk5wugz7kiakxhcour
+        sqlite/m5jo67qgu6zfrjydvg3fj3c5zvguflsx
+        swig/qlr7obcxibc6erl74unyuactjlta7pec
+        sympy/zglxlpatnl6e4omr22rj65spkm6u7vfg
+        zlib/3el5ccejre7bcjqgld5gp6iym4ccd5oe
 
 
     """
@@ -413,8 +413,8 @@ class ShowProfile(object):
             # FIXME: query our runtime database instead, it should be there
             raise Exception("Profile '%s' was deleted" % args.profile)
         profile_hash = os.path.basename(profile_path)
-        profile_name_ui = profile_name + "@" + profile_hash
-        profile_name_ui_color = profile_name + color.turquoise("@" + \
+        profile_name_ui = profile_name + "/" + profile_hash
+        profile_name_ui_color = profile_name + color.turquoise("/" + \
                 profile_hash)
 
         import json
@@ -429,7 +429,7 @@ class ShowProfile(object):
         sys.stdout.write('List of packages:\n')
         for dep in d["dependencies"]:
             package_name, package_hash = dep.split("/")
-            sys.stdout.write('    %s\n' % (package_name + color.turquoise("@" +\
+            sys.stdout.write('    %s\n' % (package_name + color.turquoise("/" +\
                     package_hash)))
 
 @register_subcommand
@@ -439,7 +439,7 @@ class ShowPackage(object):
 
     Example:
 
-        $ hit show-package python@3dy43mxwqukrufgdrrlf3jng3ik7yaml
+        $ hit show-package python/3dy43mxwqukrufgdrrlf3jng3ik7yaml
 
 
     """
@@ -454,10 +454,10 @@ class ShowPackage(object):
     def run(ctx, args):
         from ..core import BuildStore
         build_store_dir = ctx.get_config()['build_stores'][0]["dir"]
-        package_name, package_hash_full = args.package.split("@")
+        package_name, package_hash_full = args.package.split("/")
         package_hash = package_hash_full[:12] # FIXME -- use the right length
         package_path = pjoin(build_store_dir, package_name, package_hash)
-        package_name_ui_color = package_name + color.turquoise("@" + \
+        package_name_ui_color = package_name + color.turquoise("/" + \
                 package_hash)
         import json
         d = json.load(open(pjoin(package_path, "artifact.json")))
@@ -474,7 +474,7 @@ class ShowPackage(object):
         sys.stdout.write('List of dependencies:\n')
         for dep in d["dependencies"]:
             package_name, package_hash = dep.split("/")
-            sys.stdout.write('    %s\n' % (package_name + color.turquoise("@" + \
+            sys.stdout.write('    %s\n' % (package_name + color.turquoise("/" + \
                     package_hash)))
 
 
