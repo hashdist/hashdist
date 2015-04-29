@@ -71,9 +71,9 @@ or branches of your software profile repository, and then instantly switch to
 pre-built versions. [TODO: ``hit commit``, ``hit checkout`` commands.]
 
 If you want to have, e.g., release and debug profiles,
-you can create ``release.yaml`` and ``debug.yaml``, and use the
-``-p`` flag to ``hit`` to select another profile than ``default.yaml``
-to build.
+you can create ``release.yaml`` and ``debug.yaml``, and use 
+``hit build release.yaml`` or ``hit build debug.yaml`` 
+to select another profile than ``default.yaml`` to build.
 
 Garbage collection
 ------------------

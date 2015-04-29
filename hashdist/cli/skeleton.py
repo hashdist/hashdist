@@ -22,8 +22,8 @@ dependencies:
   run: [{run_dependencies}]
 
 sources:
- - url: {url}
-   key: {key}
+ - key: {key}
+   url: {url}
 """
 
 @register_subcommand
