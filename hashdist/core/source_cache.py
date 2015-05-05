@@ -920,13 +920,19 @@ class TarXzHandler(TarballHandler):
     # XXX: so we use lzma module for Python 2 compatibility.
 
     def tarfileobj_from_name(self, filename):
-        import lzma
+        try:
+            import lzma
+        except ImportError:
+            self.logger.error("Please install pyliblzma")
         return lzma.LZMAFile(filename)
 
     def tarfileobj_from_data(self, archive_data):
         # XXX: tarfile has built-in 'r:xz' support only in Python 3, so we use lzma module
         # XXX: lzma.open() and lzma.LZMAFile() accept only file names, so we uncompress in memory
-        import lzma
+        try:
+            import lzma
+        except ImportError:
+            self.logger.error("Please install pyliblzma")
         from StringIO import StringIO
         return StringIO(lzma.LZMADecompressor().decompress(archive_data))
 
