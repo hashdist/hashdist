@@ -5,12 +5,11 @@
 # Otherwise it just forwards the arguments to the 'hit' program.
 
 function hit {
-    _hit_subcommand=$1; shift
-    _hit_args="$@"
+    _hit_subcommand=$1;
 
     case $_hit_subcommand in
         "load"|"unload")
-            hit_commands="$(command hit $_hit_subcommand --print-bash-commands $_hit_args)"
+            hit_commands="$(command hit "$@" --print-bash-commands)"
             if [ $? -eq 0 ]; then
                 # Evaluate the commands that hit supplied using Bash
                 eval "$hit_commands"
@@ -20,7 +19,7 @@ function hit {
             fi
             ;;
         *)
-            command hit $_hit_subcommand $_hit_args
+            command hit "$@"
             ;;
     esac
 }
