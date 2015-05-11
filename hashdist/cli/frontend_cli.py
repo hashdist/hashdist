@@ -8,6 +8,7 @@ from .main import register_subcommand, DEFAULT_CONFIG_FILENAME_REPR
 import errno
 from .utils import parameter_pair
 from ..util.ansi_color import color
+from .. import hashdist_share_dir
 
 def add_build_args(ap):
     ap.add_argument('-j', metavar='CPUCOUNT', default=1, type=int, help='number of CPU cores to utilize')
@@ -300,17 +301,20 @@ class LoadProfile(object):
     __doc__ = """
     Loads a given profile.
 
-    Execute the output of this command in a Bash shell to load the profile:
+    Example:
 
-        $ . <(hit load py32)
+        $ hit load py32
 
     This sets the HASHSTACK environemnt variable to point to the root of the
     profile (you can then use it when building other code by hand, e.g. 'gcc
     -I$HASHSTACK/include') and adds $HASHSTACK/bin into your PATH.
 
+    This command requires the hit's shell commands to be initialized (it will
+    print instructions how to do so if they are not).
+
     You can examine the Bash commands that are being executed by:
 
-        $ hit load py32
+        $ hit load --print-bash-commands py32
 
     """
 
@@ -318,38 +322,41 @@ class LoadProfile(object):
 
     @staticmethod
     def setup(ap):
-        ap.add_argument('profile', nargs='?', default='default', help='profile to load (default: default)')
+        ap.add_argument('profile', help='profile to load')
+        ap.add_argument('--print-bash-commands', action='store_true', help='print Bash commands to load the profile')
 
     @staticmethod
     def run(ctx, args):
-        from ..core import BuildStore
-        gc_roots_dir = ctx.get_config()['gc_roots']
-        for gc_root in os.listdir(gc_roots_dir):
-            profile_name = os.path.basename(os.readlink(pjoin(gc_roots_dir,
-                gc_root)))
-            if profile_name == args.profile:
-                break
-        else:
-            raise Exception("Profile '%s' not installed" % args.profile)
-        try:
-            profile_path = os.readlink(os.readlink(pjoin(gc_roots_dir, gc_root)))
-        except OSError:
-            # FIXME: query our runtime database instead, it should be there
-            raise Exception("Profile '%s' was deleted" % args.profile)
-        profile_hash = os.path.basename(profile_path)
-        profile_name_ui = profile_name + "/" + profile_hash
-        profile_name_ui_color = profile_name + color.turquoise("/" + \
-                profile_hash)
+        if args.print_bash_commands:
+            from ..core import BuildStore
+            gc_roots_dir = ctx.get_config()['gc_roots']
+            for gc_root in os.listdir(gc_roots_dir):
+                profile_name = os.path.basename(os.readlink(pjoin(gc_roots_dir,
+                    gc_root)))
+                if profile_name == args.profile:
+                    break
+            else:
+                raise Exception("Profile '%s' not installed" % args.profile)
+            try:
+                profile_path = os.readlink(os.readlink(pjoin(gc_roots_dir, gc_root)))
+            except OSError:
+                # FIXME: query our runtime database instead, it should be there
+                raise Exception("Profile '%s' was deleted" % args.profile)
+            profile_hash = os.path.basename(profile_path)
+            profile_name_ui = profile_name + "/" + profile_hash
+            profile_name_ui_color = profile_name + color.turquoise("/" + \
+                    profile_hash)
 
-        sys.stdout.write('export HASHSTACK="%s"\n' % profile_path)
-        sys.stdout.write('export PATH="${HASHSTACK}/bin":${PATH}\n')
-        sys.stdout.write('echo "Exporting HASHSTACK=$HASHSTACK"\n')
-        sys.stdout.write("""echo "Adding \\${HASHSTACK}/bin to PATH"\n""")
-        sys.stdout.write('echo "Profile %s loaded."\n' % profile_name_ui)
-        sys.stdout.write('\n')
-        sys.stdout.write('# To load the %s profile, execute in Bash:\n' % \
-                profile_name_ui_color)
-        sys.stdout.write('# . <(hit load %s)\n' % profile_name)
+            sys.stdout.write('export HASHSTACK="%s"\n' % profile_path)
+            sys.stdout.write('export PATH="${HASHSTACK}/bin":${PATH}\n')
+            sys.stdout.write('echo "Exporting HASHSTACK=$HASHSTACK"\n')
+            sys.stdout.write("""echo "Adding \\${HASHSTACK}/bin to PATH"\n""")
+            sys.stdout.write('echo "Profile %s loaded."\n' % profile_name_ui)
+        else:
+            sys.stdout.write("This command requires hit's shell integration.\n\n")
+            sys.stdout.write("To initialize hit's shell commands, you must run in Bash:\n\n")
+            sys.stdout.write('    . %s/setup-env.sh\n\n' % hashdist_share_dir)
+            sys.stdout.write("You can execute this line by hand or add it to your '.bashrc'. After that,\nrerun your last command.\n")
 
 @register_subcommand
 class ShowProfile(object):
