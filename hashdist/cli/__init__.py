@@ -4,4 +4,5 @@ from . import manage_store_cli
 from . import build_tools_cli
 from . import skeleton
 from . import ipy_shell
+from . import remote_cli
 from .main import command_line_entry_point
