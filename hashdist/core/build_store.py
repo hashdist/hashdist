@@ -405,15 +405,24 @@ class BuildStore(object):
             raise RemoteBuildStoreFetchError(msg)
         os.chmod(temp_path, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
         os.system('cd %s; tar xzvf %s; rm -f %s' % (self.artifact_root,temp_path,temp_path))
-    def resolve(self, artifact_id):
+    def resolve(self, artifact_id,build_store_only=False):
         """Given an artifact_id, resolve the short path for it, or return
         None if the artifact isn't built.
         """
         name, digest = artifact_id.split('/')
         path = self._get_artifact_path(name, digest)
-        if not os.path.exists(path) and not self.fetch_from_local_mirrors(name,digest[:SHORT_ARTIFACT_ID_LEN],path) and not self.fetch_from_mirrors(name,digest[:SHORT_ARTIFACT_ID_LEN],path):
+        if build_store_only and not os.path.exists(path):
+            return None
+        elif (not build_store_only and 
+              not os.path.exists(path) and
+              not self.fetch_from_local_mirrors(name,digest[:SHORT_ARTIFACT_ID_LEN],path) and 
+              not self.fetch_from_mirrors(name,digest[:SHORT_ARTIFACT_ID_LEN],path)):
+            msg = "No existing artifact in store or on mirrors for %s" % path
+            self.logger.debug(msg)
             return None
         else:
+            msg = "Examining existing artifact for %s" % path
+            self.logger.debug(msg)
             try:
                 f = open(pjoin(path, 'id'))
             except IOError:
@@ -439,14 +448,16 @@ class BuildStore(object):
             path_mirror = '%s/%s/%s' % (mirror, name, digest)
             try:
                 shutil.copytree(path_mirror,path)
-            except StoreNotFoundError:
-                continue
-            except RemoteBuildStoreFetchError:
-                msg = "Could not fetch existing build, continuing"
-                self.logger.warning(msg)
+            except:
+                msg = "Could not fetch existing build from local mirror, continuing."
+                self.logger.debug(msg)
                 continue
             else:
+                msg = "Fetched build from local mirror."
+                self.logger.debug(msg)
                 return True # found it
+        msg = "Could not find build on any local mirrors for %s" % path
+        self.logger.debug(msg)
         return False
         
     def fetch_from_mirrors(self, name,digest,path):
@@ -455,18 +466,24 @@ class BuildStore(object):
             try:
                 self._download_artifact(url,path)
             except StoreNotFoundError:
+                msg = "Could not find remote build store mirror, continuing"
+                self.logger.debug(msg)
                 continue
             except RemoteBuildStoreFetchError:
-                msg = "Could not fetch existing build, continuing"
-                self.logger.warning(msg)
+                msg = "Could not fetch existing build from remote mirror, continuing"
+                self.logger.debug(msg)
                 continue
             else:
+                msg = "Fetched build from remote mirror"
+                self.logger.debug(msg)
                 return True # found it
+        msg = "Could not find build on any remote mirrors for %s" % path
+        self.logger.debug(msg)
         return False
         
     def is_present(self, build_spec):
         build_spec = as_build_spec(build_spec)
-        return self.resolve(build_spec.artifact_id) is not None
+        return self.resolve(build_spec.artifact_id,build_store_only=True) is not None
 
     def ensure_present(self, build_spec, config, extra_env=None, virtuals=None, keep_build='never',
                        debug=False):
@@ -484,7 +501,6 @@ class BuildStore(object):
             raise ValueError("invalid keep_build value")
         build_spec = as_build_spec(build_spec)
         artifact_dir = self.resolve(build_spec.artifact_id)
-
 
         if artifact_dir is None:
             builder = ArtifactBuilder(self, build_spec, extra_env, virtuals, debug=debug)
