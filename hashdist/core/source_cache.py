@@ -751,9 +751,15 @@ class ArchiveSourceCache(object):
             try:
                 shutil.copy(local_pack,self.get_pack_filename(type, hash))
             except SourceNotFoundError:
+                msg = "Could not fetch source from local mirror, continuing"
+                self.logger.debug(msg)
                 continue
             else:
+                msg = "Fetched source from local mirror"
+                self.logger.debug(msg)
                 return True # found it
+        msg = "Could not fetch source from any local mirrors for %s/%s" % (type,hash) 
+        self.logger.debug(msg)
         return False
 
     def fetch_from_mirrors(self, type, hash):
@@ -762,9 +768,19 @@ class ArchiveSourceCache(object):
             try:
                 self._download_archive(url, type, hash)
             except SourceNotFoundError:
+                msg = "Could not fetch source from remote mirror, continuing"
+                self.logger.debug(msg)
+                continue
+            except RemoteFetchError:
+                msg = "Could not fetch source pack on mirror, continuing"
+                self.logger.debug(msg)
                 continue
             else:
+                msg = "Found source on remote mirror"
+                self.logger.debug(msg)
                 return True # found it
+        msg = "Could not fetch source from any remote mirrors for %s/%s" % (type,hash)
+        self.logger.debug(msg)
         return False
 
     def fetch(self, url, type, hash, repo_name):
