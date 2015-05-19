@@ -1,9 +1,348 @@
+import pprint
+import os
+from os.path import join as pjoin
 import sys
 from collections import defaultdict
 
+from ..formats.marked_yaml import load_yaml_from_file, is_null, marked_yaml_load
 from .utils import substitute_profile_parameters, to_env_var
 from .. import core
-from .exceptions import ProfileError
+from .exceptions import ProfileError, PackageError
+
+
+class PackageType(object):
+    """
+    Instances are used as the type of parameters of various package types
+    """
+    def __init__(self, contract):
+        self.contract = contract
+
+    def __eq__(self, other):
+        return type(self) is type(other) and self.contract == other.contract
+
+    def __ne__(self, other):
+        return not self == other
+
+    def __repr__(self):
+        return 'package(%s)' % self.contract
+
+
+def parse_deps(doc, when='True'):
+    """
+    Parses the ``dependencies`` section of `doc` into a list of `Parameter` instances
+    and constraints. Note that we don't distinguish run-deps and build-deps here.
+    """
+    deps_section = doc.get('dependencies', {})
+    build_deps = deps_section.get('build', [])
+    run_deps = deps_section.get('run', [])
+
+    # Produce { dep_name : is_required }
+    deps = {}
+    for section_lst in [build_deps, run_deps]:
+        section_deps = {}  # name -> required
+        for x in section_lst:
+            required = not x.endswith('?')
+            if not required:
+                x = x[:-1]
+            if x in section_deps:
+                raise PackageError(x, 'dependency %s repeated' % x)
+            section_deps[x] = required
+        for x, required in section_deps.items():
+            deps[x] = deps.get(x, False) or required
+    # Turn that into Parameter instances and constraints
+    dep_params = dict([(name, Parameter(name=name, type=PackageType(name), declared_when=when, doc=name))
+                       for name in deps.keys()])
+    constraints = ['not (%s) or (%s is not None)' % (when, x) for x, required in deps.items() if required]
+    return dep_params, constraints
+
+
+class DictRepr(object):
+    def _repr_dict(self):
+        return self.__dict__
+
+    def __repr__(self):
+        d = '\n'.join(['  ' + line for line in pprint.pformat(self._repr_dict()).split('\n')])
+        return '<%s\n%s\n>' % (self.__class__.__name__, d)
+
+
+class Parameter(DictRepr):
+    """
+    Declaration of a parameter in a package.
+    """
+    TYPENAME_TO_TYPE = {'bool': bool, 'str': str, 'int': int}
+    def __init__(self, name, type, default=None, declared_when='True', doc=None):
+        """
+        doc: only used for exceptions
+        """
+        self.name = name
+        self.type = type
+        self.default = default
+        self.declared_when = declared_when
+        self._doc = doc
+
+    def _check_package_value(self, value):
+        return isinstance(value, Package) and value.name == self.type.contract
+
+    def check_type(self, value, node=None):
+        if isinstance(self.type, PackageType):
+            if not self._check_package_value(value):
+                raise PackageError(node, 'Parameter %s must be a package' % self.name)
+        elif not isinstance(value, self.type):
+            raise PackageError(node, 'Parameter %s has value %r which is not of type %r' % (
+                self.name, value, self.type))
+
+    @staticmethod
+    def parse_from_yaml(doc, when='True'):
+        if 'when' in doc:
+            when = '(%s) and (%s)' % (when, doc['when'])
+        type = Parameter.TYPENAME_TO_TYPE[doc.get('type', 'str')]
+        return Parameter(name=doc['name'],
+                         type=type,
+                         default=doc.get('default', None),
+                         declared_when=when,
+                         doc=doc)
+
+    def merge_with(self, other_param):
+        """
+        Merges together two parameter declarations (from different YAML files
+        with different with-clauses).
+
+        For now we require 'type' and 'default' to be the same; these should
+        be refactored into constraints eventually at which point we can merge
+        them better.
+        """
+        if self.name != other_param.name:
+            raise ValueError()
+        for attr in ('type', 'default'):
+            a = getattr(self, attr)
+            b = getattr(other_param, attr)
+            if a != b:
+                raise PackageError(self._doc, 'Parameter %s declared with conflicting %s: %s and %s' % (
+                    self.name, attr, a, b))
+
+        declared_when = '(%s) or (%s)' % (self.declared_when, other_param.declared_when)
+        return Parameter(name=self.name, type=self.type, default=self.default, declared_when=declared_when,
+                         doc=self._doc)
+
+
+
+class Package(DictRepr):
+    """
+    Represents the package on an abstract level: Which name does it have,
+    which parameters and dependencies does it have. Also allows to instantiate
+    it with a given selection of parameters; returning a PackageSpec.
+
+    """
+    def __init__(self, name, parameters, constraints, condition_to_yaml_file):
+        """
+        Parameters
+        ----------
+        name:
+            Name of package.
+
+        parameters: dict { str: Parameter }
+            Parameters this package takes
+
+        constraints: list of str
+            Constraints on parameters that must be satisfied to use package
+
+        condition_to_yaml_file : dict { str/None: PackageYAML}
+            Dict of when-clause the PackageYAML instance containing the
+            definition. The default to fall back for for no matching
+            clause has key `None`.
+        """
+        self.name = name
+        self.parameters = parameters
+        self.constraints = constraints
+        self.condition_to_yaml_file = condition_to_yaml_file
+
+    @staticmethod
+    def create_from_yaml_files(yaml_files):
+        """
+        Construct the Package from a set of PackageYAML instances.
+        Parameters and dependencies-as-parameters are extracted from the
+        full set of YAML files.
+        """
+        parameters = {}
+        constraints = []
+
+        def add_param(param):
+            if param.name in parameters:
+                param = parameters[param.name].merge_with(param)
+            parameters[param.name] = param
+
+        if len(yaml_files) == 0:
+            raise ValueError('Need at least one PackageYaml')
+        name = yaml_files[0].used_name
+        # Sanity checks
+        for f in yaml_files:
+            if f.used_name != name:
+                raise ValueError('Inconsistent PackageYAML passed')
+            if not f.primary and 'when' not in f.doc:
+                raise PackageError(f.doc, 'Two specs found for package %s without a when-clause' % name)
+
+        primary_lst = [f for f in yaml_files if f.primary]
+        if len(primary_lst) != 1:
+            raise ValueError('Exactly one PackageYAML should be primary')
+
+        # Find the explicit expression for the 'primary when'
+        otherwise = 'not %s' % ' and not '.join(
+            '(%s)' % f.doc['when'] for f in yaml_files if 'when' in f.doc)
+
+        constraints = []
+        for f in yaml_files:
+            when = f.doc.get('when', otherwise)
+            # Add explicit parameters
+            for x in f.doc.get('parameters', []):
+                add_param(Parameter.parse_from_yaml(x, when))
+                required = x.get('required', 'default' not in x)
+                if required:
+                    constraints.append('not (%s) or (%s is not None)' % (when, x['name']))
+
+            # Add deps parameters
+            dep_params, dep_constraints = parse_deps(f.doc, when=when)
+            for p in dep_params.values():
+                add_param(p)
+            constraints.extend(dep_constraints)
+
+        condition_to_yaml_file = dict([(x.doc.get('when', None), x) for x in yaml_files])
+        return Package(name, parameters, constraints, condition_to_yaml_file)
+
+    def typecheck_parameter_set(self, param_values, node=None):
+        """
+        Type-checks the given parameters, and also checks that enough parameters
+        are provided. Raises PackageError if there is a problem.
+        """
+        declared = self.get_declared(param_values, node)
+        for param_name, value in declared.items():
+            self.parameters[param_name].check_type(value, node=node)
+
+    def get_failing_constraints(self, param_values, node=None):
+        """
+        In constraints, all parameters are always available regardless of declared_when,
+        because most constraints have been combined with other constraints across
+        YAML files.
+
+        Raises NameError if a required parameter is not available.
+
+        node: for exception location
+        """
+        result = []
+        for constraint in self.constraints:
+            if not eval(constraint, {}, param_values):
+                result.append(constraint)
+        return result
+
+    def get_declared(self, param_values, node=None):
+        declared = {}  # the subset of param_values for parameters that have been declared, with defaults filled in
+        for param in self.parameters.values():
+            try:
+                is_declared = eval(param.declared_when, {}, dict(param_values))
+            except NameError as e:
+                raise PackageError(node, 'Lacking a parameter needed to determine if %s should '
+                                   'be declared: %r' % (param.name, e))
+            if is_declared:
+                declared[param.name] = param_values.get(param.name, param.default)
+        return declared
+
+    def instantiate(self, parameter_values):
+        pass
+
+
+
+class PackageYAML(object):
+    """
+    Holds content of a package yaml file
+
+    The content is unmodified except for `{{VAR}}` variable expansion.
+
+    Attributes
+    ----------
+
+    doc : dict
+        The deserialized yaml source
+
+    used_name : str
+        See constructor
+
+    in_directory : bool
+        Whether the yaml file is in its private package directory that
+        may contain other files.
+
+    primary : bool
+        Whether this is the primary YAML file allowed to have a `parameters`
+        section.
+
+    filename : str
+        Full qualified name of the package yaml file
+
+    hook_filename : str or ``None``
+        Full qualified name of the package ``.py`` hook file, if it
+        exists.
+    """
+
+    def __init__(self, used_name, filename, primary, in_directory):
+        """
+        Constructor
+
+        Parameters
+        ----------
+
+        used_name : str
+            The actual package name (as overridden by ``use:``, if
+            present. E.g. ``mpich``, and not the virtual package
+            name``mpi``).
+
+        filename : str
+            Full qualified name of the package yaml file
+
+        primary : str
+            Whether this is the primary YAML file allowed to have a
+            `parameters` section.
+
+        in_directory : boolean
+            Whether the package yaml file is in its own directory.
+        """
+        print filename, primary
+        self.used_name = used_name
+        self.filename = filename
+        self.primary = primary
+        self._init_load(filename)
+        self.in_directory = in_directory
+        hook = os.path.abspath(pjoin(os.path.dirname(filename), used_name + '.py'))
+        self.hook_filename = hook if os.path.exists(hook) else None
+
+    def _init_load(self, filename):
+        doc = load_yaml_from_file(filename)
+        # YAML-level pre-processing
+        doc = preprocess_default_to_parameters(doc)
+        # End pre-precessing
+        self.doc = doc
+
+    def __repr__(self):
+        return self.filename
+
+    @property
+    def dirname(self):
+        """
+        Name of the package directory.
+
+        Returns
+        -------
+
+        String, full qualified name of the directory containing the
+        yaml file.
+
+        Raises
+        ------
+
+        A ``ValueError`` is raised if the package is a stand-alone
+        yaml file, that is, there is no package directory.
+        """
+        if self.in_directory:
+            return os.path.dirname(self.filename)
+        else:
+            raise ValueError('stand-alone package yaml file')
 
 
 class PackageSpec(object):
@@ -52,7 +391,7 @@ class PackageSpec(object):
         package_parameters['package'] = name
         from package_loader import PackageLoader
         loader = PackageLoader(name, package_parameters,
-                               load_yaml=profile.load_package_yaml)
+                               load_yaml=profile.load_package)
         return PackageSpec(name, loader.stages_topo_ordered(),
                            loader.get_hook_files(), loader.parameters)
 
@@ -257,3 +596,26 @@ class PackageSpec(object):
         if len(hit_args) == 0:
             return []
         return [{'hit': ['build-postprocess'] + hit_args}]
+
+
+def preprocess_default_to_parameters(doc):
+    def guess_type(value):
+        if value in ('true', 'false'):
+            return bool
+        else:
+            try:
+                int(value)
+            except ValueError:
+                return str
+            else:
+                return int
+
+    if 'defaults' not in doc:
+        return doc
+    doc = dict(doc)  # copy
+    parameters = doc['parameters'] = []
+    defaults = doc.pop('defaults')
+    parameters = []
+    for key, value in defaults.items():
+        parameters.append({'name': key, 'default': value, 'type': guess_type(value)})
+    return doc

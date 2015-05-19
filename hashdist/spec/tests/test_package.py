@@ -1,3 +1,4 @@
+import mock
 import logging
 from pprint import pprint
 from os.path import join as pjoin
@@ -8,10 +9,13 @@ from .. import profile
 from .. import package
 from .. import package_loader
 from .. import hook_api
-from ..profile import PackageYAML
+from ..package import PackageYAML
 from ...formats.marked_yaml import marked_yaml_load, yaml_dump
 from ..exceptions import ProfileError, PackageError
 from nose import SkipTest
+
+
+null_logger = logging.getLogger('null_logger')
 
 
 def test_topological_stage_sort():
@@ -397,7 +401,6 @@ def test_files_glob(d):
         package_dirs:
         - pkgs
     """)
-    null_logger = logging.getLogger('null_logger')
     with profile.TemporarySourceCheckouts(None) as checkouts:
         doc = profile.load_and_inherit_profile(checkouts, "profile.yaml")
         prof = profile.Profile(null_logger, doc, checkouts)
@@ -418,3 +421,113 @@ def test_files_glob(d):
         when_build_dependency: []
     """))
 
+@temp_working_dir_fixture
+def test_parameter_decl_load(d):
+    # Test parsing of the parameters and dependencies clauses
+
+    # The 'when' clause on parameters is mostly useless, but allows testing,
+    # and must be implemented anyway due to when clauses on package builds.
+    # So since we don't expect these used independently, we require anything
+    # going into them to be 'globally present' parameters
+    dump('pkgs/bar/bar-positive-int-parameter.yaml', """
+        when: int_parameter > 0
+        dependencies:
+          build: [adep, bdep]
+          run: [rdep]
+        parameters:
+        - name: str_parameter
+          type: str
+          when: bool_parameter == True and int_parameter == 3
+          default: foovalue
+
+        - name: bool_parameter
+          type: bool
+
+        - name: int_parameter
+          type: int
+    """)
+    dump('pkgs/bar/bar.yaml', """
+        dependencies:
+          build: [bdep, cdep]
+        parameters:
+        - name: bool_parameter
+          type: bool
+
+        - name: other_parameter
+          type: int
+
+        - name: str_parameter
+          type: str
+          when: not bool_parameter
+          default: foovalue
+    """)
+    dump('profile.yaml', """
+        package_dirs:
+        - pkgs
+        packages:
+          bar:
+    """)
+    with profile.TemporarySourceCheckouts(None) as checkouts:
+        prof = profile.load_profile(null_logger, checkouts, "profile.yaml")
+        pkg = prof.load_package('bar')
+
+    mock_package = object()
+
+    # Check resulting declared_when and constraints
+    eq_(pkg.parameters['str_parameter'].declared_when,
+        '((int_parameter > 0) and (bool_parameter == True and int_parameter == 3)) or '
+        '((not (int_parameter > 0)) and (not bool_parameter))')
+
+    eq_(sorted(pkg.constraints), [
+        'not (int_parameter > 0) or (adep is not None)',
+        'not (int_parameter > 0) or (bdep is not None)',
+        'not (int_parameter > 0) or (bool_parameter is not None)',
+        'not (int_parameter > 0) or (int_parameter is not None)',
+        'not (int_parameter > 0) or (rdep is not None)',
+        'not (not (int_parameter > 0)) or (bdep is not None)',
+        'not (not (int_parameter > 0)) or (bool_parameter is not None)',
+        'not (not (int_parameter > 0)) or (cdep is not None)',
+        'not (not (int_parameter > 0)) or (other_parameter is not None)'])
+
+    # get_failing_constraints method
+    eq_(pkg.get_failing_constraints({'int_parameter': 3, 'adep': None, 'bool_parameter': True,
+                                     'bdep': mock_package, 'rdep': mock_package}),
+        ['not (int_parameter > 0) or (adep is not None)'])
+
+    with assert_raises(NameError):
+        # other_parameter not present
+        pkg.get_failing_constraints({'int_parameter': -13, 'adep': None, 'bool_parameter': True,
+                                     'bdep': mock_package, 'rdep': mock_package})
+
+    params = {'int_parameter': -13, 'cdep': mock_package, 'bool_parameter': True,
+              'bdep': mock_package, 'rdep': mock_package, 'other_parameter': 4}
+    eq_([], pkg.get_failing_constraints(params))
+
+    # typecheck_parameter_set method
+    def check_package(self, value):
+        eq_(value, mock_package)
+        return True
+
+    with mock.patch('hashdist.spec.package.Parameter._check_package_value', check_package):
+        with assert_raises(PackageError) as e:
+            pkg.typecheck_parameter_set({'int_parameter': 3})
+        assert 'Lacking a parameter' in str(e.exc_val) and 'bool_parameter' in str(e.exc_val)
+
+        pkg.typecheck_parameter_set(params)
+        params['int_parameter'] = 'a'
+        with assert_raises(PackageError) as e:
+            pkg.typecheck_parameter_set(params)
+        eq_(str(e.exc_val), "<unknown location>: Parameter int_parameter has value 'a' which is not of type <type 'int'>")
+
+def test_parse_deps_repeated():
+    with assert_raises(PackageError):
+        package.parse_deps({'dependencies': {'build': ['a', 'a?']}})
+    with assert_raises(PackageError):
+        package.parse_deps({'dependencies': {'run': ['a', 'a?']}})
+    # But this is OK:
+    package.parse_deps({'dependencies': {'run': ['a'], 'build': ['a']}})
+
+def test_parse_deps():
+    params, constraints = package.parse_deps({'dependencies': {'build': ['a', 'b'], 'run': ['b?', 'c?']}})
+    eq_(sorted(params.keys()), ['a', 'b', 'c'])
+    eq_(sorted(constraints), ['a is not None', 'b is not None'])

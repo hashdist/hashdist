@@ -35,99 +35,6 @@ def eval_condition(expr, parameters):
         raise ProfileError(expr, "parameter not defined: %s" % e)
 
 
-class PackageYAML(object):
-    """
-    Holds content of a package yaml file
-
-    The content is unmodified except for `{{VAR}}` variable expansion.
-
-    Attributes
-    ----------
-
-    doc : dict
-        The deserialized yaml source
-
-    in_directory : boolean
-        Whether the yaml file is in its private package directory that
-        may contain other files.
-
-    parameters : dict of str
-        Parameters with the defaults from the package yaml file applied
-
-    filename : str
-        Full qualified name of the package yaml file
-
-    hook_filename : str or ``None``
-        Full qualified name of the package ``.py`` hook file, if it
-        exists.
-    """
-
-    def __init__(self, used_name, filename, parameters, in_directory):
-        """
-        Constructor
-
-        Parameters
-        ----------
-
-        used_name : str
-            The actual package name (as overridden by ``use:``, if
-            present. E.g. ``mpich``, and not the virtual package
-            name``mpi``).
-
-        filename : str
-            Full qualified name of the package yaml file
-
-        parameters : dict
-            The parameters to use for `{{VAR}}` variable
-            expansion. Will be supplemented by the ``defaults:`
-            section in the package yaml.
-
-        in_directory : boolean
-            Whether the package yaml file is in its own directory.
-        """
-        self.filename = filename
-        self._init_load(filename, parameters)
-        self.in_directory = in_directory
-        hook = os.path.abspath(pjoin(os.path.dirname(filename), used_name + '.py'))
-        self.hook_filename = hook if os.path.exists(hook) else None
-
-    def _init_load(self, filename, parameters):
-        # To support the defaults section we first load the file, read defaults,
-        # then load file again (since parameter expansion is currently done on
-        # stream level not AST level).
-        doc = load_yaml_from_file(filename, collections.defaultdict(str))
-        defaults = doc.get('defaults', {})
-        all_parameters = collections.defaultdict(str, defaults)
-        all_parameters.update(parameters)
-        self.parameters = all_parameters
-        self.doc = load_yaml_from_file(filename, all_parameters)
-
-    def __repr__(self):
-        return self.filename
-
-    @property
-    def dirname(self):
-        """
-        Name of the package directory.
-
-        Returns
-        -------
-
-        String, full qualified name of the directory containing the
-        yaml file.
-
-        Raises
-        ------
-
-        A ``ValueError`` is raised if the package is a stand-alone
-        yaml file, that is, there is no package directory.
-        """
-        if self.in_directory:
-            return os.path.dirname(self.filename)
-        else:
-            raise ValueError('stand-alone package yaml file')
-
-
 class Profile(object):
     """
     Profiles acts as nodes in a tree, with `extends` containing the
@@ -169,9 +76,10 @@ class Profile(object):
         except KeyError:
             return pkgname
 
-    def load_package_yaml(self, pkgname, parameters):
+    def load_package(self, pkgname):
         """
-        Search for the yaml source and load it.
+        Search for the yaml sources and load them, resulting in an 'abstract
+        package' (Package instance).
 
         Load the source for ``pkgname`` (after substitution by a
         ``use:`` profile section, if any) from either
@@ -186,10 +94,15 @@ class Profile(object):
         ``$pkgs/foo/foo.yaml`` overrides ``$pkgs/foo.yaml``. And
         ``$pkgs/foo/foo-bar.yaml`` is returned in addition.
 
-        In case of many matches, any when'-clause is evaluated on
-        `parameters` and a single document should result, otherwise an
-        exception is raised. A document without a when-clause is
-        overridden by those with a when-clause.
+        In case of many matches:
+
+        - The ``parameters`` section can only be present in the basename
+          file, i.e., in ``pkgname.yaml``. This must declare any parameters
+          required of any versions of the package.
+
+        - The returned Package will pick the appropriate one to use
+          during Package.instantiate, when parameters are available,
+          going by the when clause.
 
         Parameters
         ----------
@@ -197,13 +110,12 @@ class Profile(object):
         pkgname : string
             Name of the package (excluding ``.yaml``).
 
-        parameters : dict
-            The profile parameters.
-
         Returns
         -------
 
-        A :class:`PackageYAML` instance if successfull.
+        A :class:`~hashdist.spec.package.Package` instance if successfull,
+        which references ~hashdist.spec.package.PackageYAML instances with
+        the package contents. 
 
         Raises
         ------
@@ -214,6 +126,8 @@ class Profile(object):
         * class:`~hashdist.spec.exceptions.PackageError`` is raised if
           a package conflicts with a previous one.
         """
+        from .package import Package, PackageYAML
+
         use = self._use_for_package(pkgname)
         yaml_files = self._yaml_cache.get(('package', use), None)
         if yaml_files is None:
@@ -223,29 +137,16 @@ class Profile(object):
                                                      pjoin(use, use + '-*.yaml')],
                                                     match_basename=True)
             self._yaml_cache['package', use] = yaml_files = [
-                PackageYAML(use, filename, parameters, pattern != yaml_filename)
+                PackageYAML(use, filename,
+                            primary=os.path.basename(filename) == yaml_filename,
+                            in_directory=(pattern != yaml_filename))
                 for match, (pattern, filename) in matches.items()]
             self.logger.info('Resolved package %s to %s', pkgname,
                              [filename for match, (pattern, filename) in matches.items()])
-        no_when_file = None
-        with_when_file = None
-        for pkg in yaml_files:
-            if 'when' not in pkg.doc:
-                if no_when_file is not None:
-                    raise PackageError(pkg.doc, "Two specs found for package %s without"
-                                       " a when-clause to discriminate" % use)
-                no_when_file = pkg
-                continue
-            doc_when = pkg.doc['when']
-            if eval_condition(doc_when, parameters):
-                if with_when_file is not None:
-                    raise PackageError(doc_when, "Selected parameters for package %s matches both '%s' and '%s'" %
-                                       (use, doc_when, with_when_file))
-                with_when_file = pkg
-        result = with_when_file if with_when_file is not None else no_when_file
-        if result is None:
+
+        if len(yaml_files) == 0:
             raise ProfileError(use, 'No yaml file for package "{0}" found'.format(use))
-        return result
+        return Package.create_from_yaml_files(yaml_files)
 
     def find_package_file(self, pkgname, filename):
         """

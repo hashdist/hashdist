@@ -34,10 +34,10 @@ class PackageLoaderBase(object):
     The sections to merge, see :meth:`merge_stages` and meth:`topo_order`
     """
 
-    def __init__(self, name, parameters, load_yaml):
+    def __init__(self, name, parameters, profile):
         self.name = name
         self.parameters = parameters
-        self.load_yaml = load_yaml
+        self.profile = profile
         self.load_documents()
         self.apply_defaults()
         self.process_conditionals()
@@ -53,10 +53,7 @@ class PackageLoaderBase(object):
         Python hooks to load; max. one per package/proto-package involved
         """
         name = self.name
-        # Note: the 'defaults' section can not take effect for the when clause
-        # selecting a YAML file to load
-        self.package_file = self.load_yaml(name, self.parameters)
-        self.doc = dict(self.package_file.doc)
+        self.package = profile.load_package(name)
 
     def apply_defaults(self):
         """
