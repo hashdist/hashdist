@@ -123,7 +123,16 @@ class Develop(ProfileFrontendBase):
     """
     Builds a development profile in the HashDist YAML profile spec
     format, at the same location as the profile yaml file, but without
-    the .yaml suffix.
+    the .yaml suffix. You can use the 'target' argument to name it differently
+    than your profile yaml file.
+
+    Example:
+
+        hit develop default.yaml xx
+
+    This creates a throw away developmet profile 'xx', into which you can
+    install things (e.g. you can do 'xx/bin/pip install numpy') and once you
+    are done, you can safely delete it (e.g. 'rm -rf xx').
 
     Note that Develop uses absolute symlinks by default, but supports
     relative symlinks and copying as well.
