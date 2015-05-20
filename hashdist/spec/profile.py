@@ -129,6 +129,7 @@ class Profile(object):
         from .package import Package, PackageYAML
 
         use = self._use_for_package(pkgname)
+        assert use == pkgname  # TODO must deprecate _use_for_package..
         yaml_files = self._yaml_cache.get(('package', use), None)
         if yaml_files is None:
             yaml_filename = use + '.yaml'

@@ -1,3 +1,4 @@
+import mock
 from pprint import pprint
 import os
 import shutil
@@ -12,6 +13,10 @@ from ...core.test.utils import *
 from ...core.test.test_build_store import fixture as build_store_fixture
 from .. import profile
 from .. import builder
+
+
+null_logger = logging.getLogger('null_logger')
+
 
 def setup():
     global mock_tarball_tmpdir, mock_tarball,  mock_tarball_hash
@@ -99,3 +104,71 @@ def test_basic_build(tmpdir, sc, bldr, config):
     pb = builder.ProfileBuilder(logger, sc, bldr, p)
     pb.build('the_dependency', config, 1, "never", False)
     pb.build('copy_readme', config, 1, "never", False)
+
+
+@mock.patch('hashdist.spec.builder.ProfileBuilder._init', lambda self: None)
+@temp_working_dir_fixture
+def test_profile_packages_section(d):
+    # Test inclusion of packages and resolution of package parameters
+
+    # TODO:
+    # We test that "defaults-for-packages" works correctly.
+
+    # - a and b are two different leaf packages that can be interchanged to some degree.
+    # - c has b as a dependency, but we pass in a instead
+    # - e depends on d which is a "virtual package", we assign it to c
+    # - a has a hard dependency on x and an optional on y; so x should be pulled in
+    #   and y not
+    #
+
+
+    dump(pjoin(d, 'profile.yaml'), """\
+        package_dirs: [pkgs]
+        parameters:
+          barparam: 'fromprofile'
+        packages:
+           a:
+           b:
+           c:
+             b: a  # pass a as the b package...
+           d:
+             use: c  # really just assigns d as alias for c
+           e:
+    """)
+
+    dump(pjoin(d, 'pkgs/a.yaml'), dedent("""\
+        dependencies: {build: [x, 'y?']}
+        parameters:
+          - name: fooparam  # default value filled in
+            type: int
+            default: 3
+          - name: barparam  # set by profile.yaml
+            type: str
+            default: 'fromdefault'
+    """))
+    dump(pjoin(d, 'pkgs/b.yaml'), "")
+    dump(pjoin(d, 'pkgs/c.yaml'), "dependencies: {build: [b]}")
+    dump(pjoin(d, 'pkgs/e.yaml'), "dependencies: {build: [d]}")
+    dump(pjoin(d, 'pkgs/x.yaml'), "")
+    dump(pjoin(d, 'pkgs/y.yaml'), "")
+
+    p = profile.load_profile(null_logger, profile.TemporarySourceCheckouts(None),
+                             pjoin(d, "profile.yaml"))
+    pb = builder.ProfileBuilder(logger, None, None, p)
+    pb._load_packages()
+    pkgs = pb._packages
+
+    # Check that each package loaded the right YAML file
+    for x in ['a', 'b', 'c', 'e', 'x', 'y']:
+        eq_(pkgs[x]._spec.name, x)
+        package_yaml = pkgs[x]._spec.condition_to_yaml_file.values()[0]
+        ok_(package_yaml.filename.endswith('/%s.yaml' % x))
+
+    # Package e depends on 'd', and 'd' uses the 'use:'-construct so that c satisfies dependency
+    eq_(pkgs['e'].d._spec.name, 'c')
+    # Package c was [assed a instead of b...
+    eq_(pkgs['c'].b._spec.name, 'a')
+    # Should have found default value for fooparam
+    eq_(pkgs['a'].fooparam, 3)
+    # barparam should be inherited from profile
+    eq_(pkgs['a'].barparam, 'fromprofile')

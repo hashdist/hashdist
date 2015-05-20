@@ -519,6 +519,7 @@ def test_parameter_decl_load(d):
             pkg.typecheck_parameter_set(params)
         eq_(str(e.exc_val), "<unknown location>: Parameter int_parameter has value 'a' which is not of type <type 'int'>")
 
+
 def test_parse_deps_repeated():
     with assert_raises(PackageError):
         package.parse_deps({'dependencies': {'build': ['a', 'a?']}})
@@ -526,6 +527,7 @@ def test_parse_deps_repeated():
         package.parse_deps({'dependencies': {'run': ['a', 'a?']}})
     # But this is OK:
     package.parse_deps({'dependencies': {'run': ['a'], 'build': ['a']}})
+
 
 def test_parse_deps():
     params, constraints = package.parse_deps({'dependencies': {'build': ['a', 'b'], 'run': ['b?', 'c?']}})

@@ -1,3 +1,4 @@
+import copy
 from pprint import pprint
 from . import package
 from . import utils
@@ -23,28 +24,65 @@ class ProfileBuilder(object):
         self._built = set()  # cache for build_store
         self._in_progress = set()
         self._build_specs = {} # { pkgname : BuildSpec }
+        self._init()
 
+    def _init(self):
         self._load_packages()
         self._compute_specs()
 
-
     def _load_packages(self):
-        self._package_specs = {}
+        self._packages = {}  # name : PackageInstance
         visiting = set()
 
         def visit(pkgname):
-            if pkgname not in self._package_specs:
-                if pkgname in visiting:
-                    raise ProfileError(pkgname, 'dependency cycle between packages, '
-                                       'including package "%s"' % pkgname)
-                visiting.add(pkgname)
-                spec = package.PackageSpec.load(self.profile, pkgname)
-                self._package_specs[pkgname] = spec
-                for dep in spec.build_deps + spec.run_deps:
-                    visit(dep)
-                visiting.remove(pkgname)
+            pkgname = str(pkgname)
+            if pkgname in visiting:
+                raise ProfileError(pkgname, 'dependency cycle between packages, '
+                                   'including package "%s"' % pkgname)
+            if pkgname in self._packages:
+                return self._packages[pkgname]
+            # Get the declaration in profile. This does not always exist, in which case
+            # an empty dict represents the defaults.
+            param_doc = self.profile.packages.get(pkgname, {})
+            if 'use' in param_doc:
+                if len(param_doc) != 1:
+                    raise ProfileError(param_doc, 'If "use:" is provided, no other parameters should be provided')
+                pkgname = param_doc['use']
+                return visit(pkgname)
 
-        for pkgname in self.profile.packages.keys():
+            visiting.add(pkgname)
+
+            pkg_spec = self.profile.load_package(pkgname)
+
+            # Now we want to complete the information in param_doc.
+
+            # Step 1: Fill in default fallback values
+            param_values = dict(param_doc)
+            for param in pkg_spec.parameters.values():
+                if param.has_package_type():
+                    # Package parameters default to other packages of the same
+                    # name as the parameter in the profile. At this point we recurse
+                    # to make sure that package is resolved, and a PackageInstance
+                    # is present instead of str in param_values.
+                    param_values[param.name] = visit(param_values.get(param.name, param.name))
+                elif param.name not in param_values:
+                    if param.name in self.profile.parameters:
+                        # Inherit from global profile parameters
+                        param_values[param.name] = self.profile.parameters[param.name]
+                    else:
+                        # Use default value. If it is a required parameter, then default will
+                        # be None and there will be a constraint that it is not None that will
+                        # fail later.
+                        param_values[param.name] = param.default
+
+            # Step 3: Type-check and remove parameters that are not declared
+            # (also according to when-conditions)
+            param_values = pkg_spec.typecheck_parameter_set(param_values, node=param_doc)
+            self._packages[pkgname] = result = package.PackageInstance(pkg_spec, param_values)
+            visiting.remove(pkgname)
+            return result
+
+        for pkgname, args in self.profile.packages.items():
             visit(pkgname)
 
 

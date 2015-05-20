@@ -10,6 +10,21 @@ from .. import core
 from .exceptions import ProfileError, PackageError
 
 
+class PackageInstance(object):
+    def __init__(self, spec, param_values):
+        self._spec = spec
+        self._param_values = param_values
+
+    def __getattr__(self, key):
+        try:
+            return self._param_values[key]
+        except KeyError:
+            raise AttributeError("package has no property '%s'" % key)
+
+    def __repr__(self):
+        return "%s(%r)" % (self._spec.name, self._param_values)
+
+
 class PackageType(object):
     """
     Instances are used as the type of parameters of various package types
@@ -69,7 +84,7 @@ class Parameter(DictRepr):
     """
     Declaration of a parameter in a package.
     """
-    TYPENAME_TO_TYPE = {'bool': bool, 'str': str, 'int': int}
+    TYPENAME_TO_TYPE = {'bool': bool, 'str': basestring, 'int': int}
     def __init__(self, name, type, default=None, declared_when='True', doc=None):
         """
         doc: only used for exceptions
@@ -80,13 +95,17 @@ class Parameter(DictRepr):
         self.declared_when = declared_when
         self._doc = doc
 
+    def has_package_type(self):
+        return isinstance(self.type, PackageType)
+
     def _check_package_value(self, value):
-        return isinstance(value, Package) and value.name == self.type.contract
+        return isinstance(value, PackageInstance)
 
     def check_type(self, value, node=None):
-        if isinstance(self.type, PackageType):
+        if self.has_package_type():
             if not self._check_package_value(value):
-                raise PackageError(node, 'Parameter %s must be a package' % self.name)
+                raise PackageError(node, 'Parameter %s must be a package of type "%s", not %r' % (
+                    self.name, self.type.contract, value))
         elif not isinstance(value, self.type):
             raise PackageError(node, 'Parameter %s has value %r which is not of type %r' % (
                 self.name, value, self.type))
@@ -186,7 +205,7 @@ class Package(DictRepr):
             raise ValueError('Exactly one PackageYAML should be primary')
 
         # Find the explicit expression for the 'primary when'
-        otherwise = 'not %s' % ' and not '.join(
+        otherwise = 'True' if len(yaml_files) == 1 else 'not %s' % ' and not '.join(
             '(%s)' % f.doc['when'] for f in yaml_files if 'when' in f.doc)
 
         constraints = []
@@ -210,12 +229,14 @@ class Package(DictRepr):
 
     def typecheck_parameter_set(self, param_values, node=None):
         """
-        Type-checks the given parameters, and also checks that enough parameters
-        are provided. Raises PackageError if there is a problem.
+        Type-checks the given parameter values, and also checks that enough parameters
+        are provided, and returns the subset that is declared.
+        Raises PackageError if there is a problem.
         """
         declared = self.get_declared(param_values, node)
-        for param_name, value in declared.items():
+        for param_name, value in param_values.items():
             self.parameters[param_name].check_type(value, node=node)
+        return declared
 
     def get_failing_constraints(self, param_values, node=None):
         """
@@ -303,7 +324,6 @@ class PackageYAML(object):
         in_directory : boolean
             Whether the package yaml file is in its own directory.
         """
-        print filename, primary
         self.used_name = used_name
         self.filename = filename
         self.primary = primary
@@ -314,6 +334,8 @@ class PackageYAML(object):
 
     def _init_load(self, filename):
         doc = load_yaml_from_file(filename)
+        if doc is None:
+            doc = {}
         # YAML-level pre-processing
         doc = preprocess_default_to_parameters(doc)
         # End pre-precessing
