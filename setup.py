@@ -38,10 +38,11 @@ setup(
 	      'hashdist.test',
           'hashdist.util',
           ],
-    package_data={"hashdist.formats":
-		  ["config.example.yaml"],
-		  "hashdist.deps.jsonschema":
-		  ["schemas/*.json"]},
+    package_data={
+        "hashdist.formats": ["config.example.yaml"],
+		"hashdist.deps.jsonschema": ["schemas/*.json"],
+        "hashdist.util": ["logging_config.yaml"],
+        },
     long_description=short_desc,
     classifiers=[
 	"Development Status :: 3 - Alpha",
