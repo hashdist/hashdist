@@ -19,7 +19,8 @@ setup(
     keywords = "package management openscience hpc",
     url = "http://hashdist.github.io/",
     scripts=['bin/hit', 'bin/hit-check-libs'],
-    packages=['hashdist',
+    packages=[
+          'hashdist',
 	      'hashdist.cli',
 	      'hashdist.cli.test',
 	      'hashdist.core',
@@ -33,7 +34,9 @@ setup(
 	      'hashdist.host.test',
 	      'hashdist.spec',
 	      'hashdist.spec.tests',
-	      'hashdist.test'],
+	      'hashdist.test',
+          'hashdist.util',
+          ],
     package_data={"hashdist.formats":
 		  ["config.example.yaml"],
 		  "hashdist.deps.jsonschema":
