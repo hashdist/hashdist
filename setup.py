@@ -26,6 +26,7 @@ setup(
 	      'hashdist.core',
 	      'hashdist.core.test',
 	      'hashdist.deps',
+	      'hashdist.deps.distlib',
 	      'hashdist.deps.jsonschema',
 	      'hashdist.deps.yaml',
 	      'hashdist.formats',
