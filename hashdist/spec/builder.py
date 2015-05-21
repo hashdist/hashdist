@@ -110,7 +110,8 @@ class ProfileBuilder(object):
                       for pkgname, build_spec in self._build_specs.iteritems())
         return report
 
-    def get_profile_build_spec(self, link_type='relative', write_protect=True):
+    def get_profile_build_spec(self, profile_name, link_type='relative',
+            write_protect=True):
         profile_list = [{"id": build_spec.artifact_id} for build_spec in self._build_specs.values()]
 
         # Topologically sort by run-time dependencies
@@ -136,6 +137,7 @@ class ProfileBuilder(object):
 
         return BuildSpec({
             "name": "profile",
+            "profile_name": profile_name,
             "version": "n",
             "build": {
                 "import": imports,
@@ -150,8 +152,8 @@ class ProfileBuilder(object):
                                         keep_build=keep_build, debug=debug)
         self._built.add(pkgname)
 
-    def build_profile(self, config):
-        profile_build_spec = self.get_profile_build_spec()
+    def build_profile(self, config, profile_name):
+        profile_build_spec = self.get_profile_build_spec(profile_name=profile_name)
         return self.build_store.ensure_present(profile_build_spec, config)
 
     def build_profile_out(self, target, config, link_type, debug=False):

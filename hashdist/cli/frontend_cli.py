@@ -107,7 +107,7 @@ class Build(ProfileFrontendBase):
                 self.builder.build(ready[0], self.ctx.get_config(), self.args.j,
                                    self.args.k, self.args.debug)
                 ready = self.builder.get_ready_list()
-            artifact_id, artifact_dir = self.builder.build_profile(self.ctx.get_config())
+            artifact_id, artifact_dir = self.builder.build_profile(self.ctx.get_config(), profile_symlink)
             self.build_store.create_symlink_to_artifact(artifact_id, profile_symlink)
             if was_done:
                 sys.stdout.write('Up to date, link at: %s\n' % profile_symlink)
