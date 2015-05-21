@@ -8,6 +8,7 @@ Note that pypi is case sensitive.
 """
 import json
 import os
+import ssl
 import urllib2
 
 from .main import register_subcommand
@@ -48,14 +49,24 @@ class SkeletonPypi(object):
         ap.add_argument('project', help='name of the pipy project')
         ap.add_argument(
             '--overwrite-existing', default=False, action='store_true',
-            help='Set to true if you want to replace an existing yaml file.'
+            help='Replace an existing yaml file.'
+        )
+        ap.add_argument(
+            '-N', '--no-check-certificate', default=False, action='store_true',
+            help='Skip SSL certification verification for downloading over HTTPS.'
         )
 
     @staticmethod
     def run(ctx, args):
+        c = ssl.create_default_context()
+        if args.no_check_certificate:
+            # Skip SSL certificate verification
+            c.check_hostname = False
+            c.verify_mode = ssl.CERT_NONE
         try:
             response = urllib2.urlopen(
-                'https://pypi.python.org/pypi/{}/json'.format(args.project))
+                'https://pypi.python.org/pypi/{}/json'.format(args.project),
+                context=c)
         except IOError as e:
             ctx.logger.error('Error retrieving metadata: %s', e)
             return 2

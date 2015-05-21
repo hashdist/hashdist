@@ -15,6 +15,10 @@ def add_build_args(ap):
     ap.add_argument('-k', metavar='KEEP_BUILD', default="error", type=str,
             help='keep build directory: always, never, error (default: error)')
     ap.add_argument('--debug', action='store_true', help='enter interactive debug mode')
+    ap.add_argument(
+        '-N', '--no-check-certificate', default=False, action='store_true',
+        help='Skip SSL certification verification for downloading over HTTPS.'
+    )
 
 def add_profile_args(ap):
     ap.add_argument('profile', nargs='?', default='default.yaml', help='yaml file describing profile to build (default: default.yaml)')
@@ -61,7 +65,8 @@ class ProfileFrontendBase(object):
         else:
             while len(ready) != 0:
                 self.builder.build(ready[0], self.ctx.get_config(),
-                        self.args.j, self.args.k)
+                        self.args.j, self.args.k, self.args.debug,
+                        self.args.no_check_certificate)
                 ready = self.builder.get_ready_list()
             sys.stdout.write('[Profile dependency build successful]\n')
 
@@ -107,7 +112,8 @@ class Build(ProfileFrontendBase):
             was_done = len(ready) == 0
             while len(ready) != 0:
                 self.builder.build(ready[0], self.ctx.get_config(), self.args.j,
-                                   self.args.k, self.args.debug)
+                        self.args.k, self.args.debug,
+                        self.args.no_check_certificate)
                 ready = self.builder.get_ready_list()
             artifact_id, artifact_dir = self.builder.build_profile(self.ctx.get_config())
             self.build_store.create_symlink_to_artifact(artifact_id, profile_symlink)

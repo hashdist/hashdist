@@ -56,9 +56,10 @@ class PackageSpec(object):
         return PackageSpec(name, loader.stages_topo_ordered(),
                            loader.get_hook_files(), loader.parameters)
 
-    def fetch_sources(self, source_cache):
+    def fetch_sources(self, source_cache, no_check_certificate):
         for source_clause in self.doc.get('sources', []):
-            source_cache.fetch(source_clause['url'], source_clause['key'], self.name)
+            source_cache.fetch(source_clause['url'], source_clause['key'],
+                    self.name, no_check_certificate)
 
     def assemble_build_script(self, ctx):
         """
