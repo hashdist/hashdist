@@ -10,7 +10,7 @@ import inspect
 from textwrap import dedent
 from contextlib import closing
 
-from nose.tools import eq_
+from nose.tools import eq_, ok_
 
 from ..fileutils import silent_makedirs
 

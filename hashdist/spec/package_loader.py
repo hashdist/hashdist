@@ -5,17 +5,16 @@ The loader is responsible for loading a package yaml file and
 postprocessing it. Only the postprocessed document is stored, the
 loader is discarded immediately.
 """
-
 import re
 import os
 import collections
 from os.path import join as pjoin
-from .profile import eval_condition
+from .when import eval_condition
 from ..formats.marked_yaml import yaml_dump, copy_dict_node, dict_like, list_node
 from .utils import topological_sort
 from .. import core
 from .exceptions import ProfileError, PackageError
-
+from . import when
 
 
 class PackageLoaderBase(object):
@@ -34,41 +33,14 @@ class PackageLoaderBase(object):
     The sections to merge, see :meth:`merge_stages` and meth:`topo_order`
     """
 
-    def __init__(self, name, parameters, profile):
-        self.name = name
-        self.parameters = parameters
-        self.profile = profile
-        self.load_documents()
-        self.apply_defaults()
+    def __init__(self, spec, param_values):
+        self.spec = spec
+        self.param_values = param_values
+        self.package_file = self.spec.get_yaml(param_values)
+        self.doc = dict(self.package_file.doc)
         self.process_conditionals()
         self.load_parents()
         self.merge_stages()
-        self.merge_dependencies()
-
-    def load_documents(self):
-        """
-        Loads a package from the given profile.
-
-        Returns ``(spec_doc, hook_files)``. `hook_files` is a list of
-        Python hooks to load; max. one per package/proto-package involved
-        """
-        name = self.name
-        self.package = profile.load_package(name)
-
-    def apply_defaults(self):
-        """
-        Apply parameter defaults.
-
-        The package may contain a `defaults:` key. Its value is a
-        dictionary of default values for the parameters (the
-        ``parameters`` attribute).
-
-        The ``'defaults'`` section then removed.
-        """
-        defaults = self.doc.pop('defaults', {})
-        all_parameters = collections.defaultdict(str, defaults)
-        all_parameters.update(self.parameters)
-        self.parameters = all_parameters
 
     def process_conditionals(self):
         """
@@ -77,10 +49,7 @@ class PackageLoaderBase(object):
         Clauses that do not apply are removed. For those that do
         apply, the "when" conditional is removed.
         """
-        #The top-level when to select the doc already done by
-        # profile.load_package_yaml.
-        self.doc.pop('when', None)
-        self.doc = recursive_process_conditionals(self.doc, self.parameters)
+        self.doc = when.recursive_process_conditionals(self.doc, self.param_values)
 
     def load_parents(self):
         """
@@ -96,24 +65,10 @@ class PackageLoaderBase(object):
         """
         self.all_parents = []
         self.direct_parents = []
-        if 'extends' not in self.doc:
-            return
-        for parent_name in sorted(self.doc['extends']):
-            self._load_parent(parent_name)
-        del self.doc['extends']
-
-    def _load_parent(self, parent_name):
-        """Helper for :meth:`load_parents` """
-        parent = PackageLoaderBase(parent_name, self.parameters, self.load_yaml)
-        all_names = set(p.name for p in self.all_parents)
-        new_names = set(p.name for p in parent.all_parents)
-        if all_names.intersection(new_names):
-            raise PackageError(parent_name,
-                               'Diamond-pattern inheritance not yet supported, package "%s" shows up '
-                               'twice when traversing parents' % parent_name)
-        self.all_parents[0:0] = parent.all_parents + [parent]
-        self.direct_parents[0:0] = [parent]
-        return parent
+        for parent_package_spec in self.spec.parents:
+            parent_loader = PackageLoaderBase(parent_package_spec, self.param_values)
+            self.all_parents[0:0] = parent_loader.all_parents + [parent_loader]
+            self.direct_parents[0:0] = [parent_loader]
 
     def merge_stages(self):
         """
@@ -199,49 +154,30 @@ class PackageLoader(PackageLoaderBase):
 
     doc : dict
         The loaded and post-processed yaml document.
-
-    direct_parents : list of :class:`PackageLoader`
-        Direct parents only
-
-    all_parents : list of :class:`PackageLoader`
-        All parents, direct and indirect
     """
 
-    def __init__(self, name, parameters, load_yaml):
+    def __init__(self, package_spec, param_values):
         """
         Load package yaml and postprocess it.
-
-        Parameters:
-        -----------
-        name : str
-            The name of the package
-
-        parameters : dict
-            Parameters specified in the profile (merge of default
-            parameters and package-specific parameters in the
-            profile).
-
-        load_yaml : function
-            Callable to load the yaml, see
-            :meth:`hashdist.spec.profile.load_package_yaml`.
         """
-        super(PackageLoader, self).__init__(name, parameters, load_yaml)
+        super(PackageLoader, self).__init__(package_spec, param_values)
         self.override_requested_sources()
         self.expand_globs_in_build_stages_files()
+        self.topo_order_stages()
 
     def override_requested_sources(self):
         """
         Allow profile to override sources in the package
 
-        Supports "sources" and "github" parameters.
+        Supports "sources" and "github" param_values.
         """
-        if 'sources' in self.parameters:
-            self.doc['sources'] = self.parameters['sources']
-        elif 'github' in self.parameters:
+        if 'sources' in self.param_values:
+            self.doc['sources'] = self.param_values['sources']
+        elif 'github' in self.param_values:
             # profile has requested a specific commit, overriding package defaults
             from urlparse import urlsplit
             import posixpath
-            target_url = self.parameters['github']
+            target_url = self.param_values['github']
             split_url = urlsplit(target_url)
             git_id = posixpath.split(split_url.path)[1]
             git_repo = target_url.rsplit('/commit/')[0] + '.git'
@@ -281,7 +217,7 @@ class PackageLoader(PackageLoaderBase):
                     expanded.extend(sorted(map(strip_pkg_root, matches)))
             stage['files'] = expanded
 
-    def stages_topo_ordered(self):
+    def topo_order_stages(self):
         """
         List of stages in topo order.
 
@@ -306,7 +242,7 @@ class PackageLoader(PackageLoaderBase):
 
         for key in self._STAGE_SECTIONS:
             doc[key] = topological_stage_sort(doc.get(key, []))
-        return doc
+        self.doc = doc
 
     def get_hook_files(self):
         """
@@ -442,59 +378,3 @@ def inherit_stages(descendant_stages, ancestors):
 
 
 
-CONDITIONAL_RE = re.compile(r'^when (.*)$')
-
-def recursive_process_conditional_dict(doc, parameters):
-    result = dict_like(doc)
-
-    for key, value in doc.items():
-        m = CONDITIONAL_RE.match(key)
-        if m:
-            if eval_condition(m.group(1), parameters):
-                if not isinstance(value, dict):
-                    raise PackageError(value, "'when' dict entry must contain another dict")
-                to_merge = recursive_process_conditional_dict(value, parameters)
-                for k, v in to_merge.items():
-                    if k in result:
-                        raise PackageError(k, "key '%s' conflicts with another key of the same name "
-                                           "in another when-clause" % k)
-                    result[k] = v
-        else:
-            result[key] = recursive_process_conditionals(value, parameters)
-    return result
-
-def recursive_process_conditional_list(lst, parameters):
-    if hasattr(lst, 'start_mark'):
-        result = list_node([], lst.start_mark, lst.end_mark)
-    else:
-        result = []
-    for item in lst:
-        if isinstance(item, dict) and len(item) == 1:
-            # lst the form [..., {'when EXPR': BODY}, ...]
-            key, value = item.items()[0]
-            m = CONDITIONAL_RE.match(key)
-            if m:
-                if eval_condition(m.group(1), parameters):
-                    if not isinstance(value, list):
-                        raise PackageError(value, "'when' clause within list must contain another list")
-                    to_extend = recursive_process_conditional_list(value, parameters)
-                    result.extend(to_extend)
-            else:
-                result.append(recursive_process_conditionals(item, parameters))
-        elif isinstance(item, dict) and 'when' in item:
-            # lst has the form [..., {'when': EXPR, 'sibling_key': 'value'}, ...]
-            if eval_condition(item['when'], parameters):
-                item_copy = copy_dict_node(item)
-                del item_copy['when']
-                result.append(recursive_process_conditionals(item_copy, parameters))
-        else:
-            result.append(recursive_process_conditionals(item, parameters))
-    return result
-
-def recursive_process_conditionals(doc, parameters):
-    if isinstance(doc, dict):
-        return recursive_process_conditional_dict(doc, parameters)
-    elif isinstance(doc, list):
-        return recursive_process_conditional_list(doc, parameters)
-    else:
-        return doc

@@ -1,4 +1,4 @@
-import pprint
+from pprint import pprint, pformat
 import os
 from os.path import join as pjoin
 import sys
@@ -8,21 +8,7 @@ from ..formats.marked_yaml import load_yaml_from_file, is_null, marked_yaml_load
 from .utils import substitute_profile_parameters, to_env_var
 from .. import core
 from .exceptions import ProfileError, PackageError
-
-
-class PackageInstance(object):
-    def __init__(self, spec, param_values):
-        self._spec = spec
-        self._param_values = param_values
-
-    def __getattr__(self, key):
-        try:
-            return self._param_values[key]
-        except KeyError:
-            raise AttributeError("package has no property '%s'" % key)
-
-    def __repr__(self):
-        return "%s(%r)" % (self._spec.name, self._param_values)
+from .when import when_transform_yaml, sexpr_and, check_no_sub_conditions, eval_condition
 
 
 class PackageType(object):
@@ -42,33 +28,45 @@ class PackageType(object):
         return 'package(%s)' % self.contract
 
 
-def parse_deps(doc, when='True'):
+def parse_deps(doc, when=None):
     """
     Parses the ``dependencies`` section of `doc` into a list of `Parameter` instances
-    and constraints. Note that we don't distinguish run-deps and build-deps here.
+    and constraints.
+
+    The build deps are turned into parameters with the same name, as they are referenced
+    in build scripts etc. The run deps are turned into parameters with names ``_run_<name>``.
     """
     deps_section = doc.get('dependencies', {})
     build_deps = deps_section.get('build', [])
     run_deps = deps_section.get('run', [])
 
-    # Produce { dep_name : is_required }
-    deps = {}
-    for section_lst in [build_deps, run_deps]:
-        section_deps = {}  # name -> required
-        for x in section_lst:
-            required = not x.endswith('?')
-            if not required:
-                x = x[:-1]
-            if x in section_deps:
+    parameters = {}
+    constraints = []
+    for name_pattern, section_lst in [('%s', build_deps), ('_run_%s', run_deps)]:
+        for node in section_lst:
+            required = not node.endswith('?')
+            pkg_name = node[:-1] if not required else node
+            param_name = name_pattern % pkg_name
+            if param_name in parameters:
                 raise PackageError(x, 'dependency %s repeated' % x)
-            section_deps[x] = required
-        for x, required in section_deps.items():
-            deps[x] = deps.get(x, False) or required
-    # Turn that into Parameter instances and constraints
-    dep_params = dict([(name, Parameter(name=name, type=PackageType(name), declared_when=when, doc=name))
-                       for name in deps.keys()])
-    constraints = ['not (%s) or (%s is not None)' % (when, x) for x, required in deps.items() if required]
-    return dep_params, constraints
+
+            # An optional run-dep is sort of a contradiction in terms at the moment,
+            # filter them out
+            if param_name.startswith('_run_') and not required:
+                continue
+
+            dep_when = sexpr_and(when, node.when)
+            parameters[param_name] = Parameter(
+                name=param_name,
+                type=PackageType(pkg_name),
+                declared_when=dep_when,
+                doc=node)
+            if required:
+                constraints.append(
+                    ('not (%s) or (%s is not None)' % (dep_when, param_name)
+                     if dep_when is not None else
+                     '%s is not None' % param_name))
+    return parameters, constraints
 
 
 class DictRepr(object):
@@ -76,7 +74,7 @@ class DictRepr(object):
         return self.__dict__
 
     def __repr__(self):
-        d = '\n'.join(['  ' + line for line in pprint.pformat(self._repr_dict()).split('\n')])
+        d = '\n'.join(['  ' + line for line in pformat(self._repr_dict()).split('\n')])
         return '<%s\n%s\n>' % (self.__class__.__name__, d)
 
 
@@ -95,13 +93,21 @@ class Parameter(DictRepr):
         self.declared_when = declared_when
         self._doc = doc
 
+    def copy_with(self, declared_when=None):
+        declared_when = declared_when if declared_when is not None else self.declared_when
+        return Parameter(self.name, self.type, self.default, declared_when, self._doc)
+
     def has_package_type(self):
         return isinstance(self.type, PackageType)
 
     def _check_package_value(self, value):
-        return isinstance(value, PackageInstance)
+        return isinstance(value, PackageInstance) or value is None
 
     def check_type(self, value, node=None):
+        if value is None:
+            # non-present parameter is handled by constraints system, not type system,
+            # primarily because we want the type to be unified across all when-clauses.
+            return
         if self.has_package_type():
             if not self._check_package_value(value):
                 raise PackageError(node, 'Parameter %s must be a package of type "%s", not %r' % (
@@ -111,9 +117,7 @@ class Parameter(DictRepr):
                 self.name, value, self.type))
 
     @staticmethod
-    def parse_from_yaml(doc, when='True'):
-        if 'when' in doc:
-            when = '(%s) and (%s)' % (when, doc['when'])
+    def parse_from_yaml(doc, when=None):
         type = Parameter.TYPENAME_TO_TYPE[doc.get('type', 'str')]
         return Parameter(name=doc['name'],
                          type=type,
@@ -139,6 +143,7 @@ class Parameter(DictRepr):
                 raise PackageError(self._doc, 'Parameter %s declared with conflicting %s: %s and %s' % (
                     self.name, attr, a, b))
 
+        assert self.declared_when is not None and other_param.declared_when is not None
         declared_when = '(%s) or (%s)' % (self.declared_when, other_param.declared_when)
         return Parameter(name=self.name, type=self.type, default=self.default, declared_when=declared_when,
                          doc=self._doc)
@@ -148,16 +153,26 @@ class Parameter(DictRepr):
 class Package(DictRepr):
     """
     Represents the package on an abstract level: Which name does it have,
-    which parameters and dependencies does it have. Also allows to instantiate
-    it with a given selection of parameters; returning a PackageSpec.
+    which parameters and constraints does it have, and its ancestors. The
+    parameters and constraints of its ancestors are copied over.
 
+    Also allows to instantiate it with a given selection of parameters;
+    returning a PackageInstance.
     """
-    def __init__(self, name, parameters, constraints, condition_to_yaml_file):
+    GLOBAL_PARAMETERS = [
+        Parameter('BASH', basestring)
+        ]
+
+    def __init__(self, name, parameters, constraints, condition_to_yaml_file,
+                 parents=()):
         """
+        Call create_from_yaml_files instead of calling constructor directly.
+
         Parameters
         ----------
         name:
-            Name of package.
+            Name of an abstract package specification. This should be globally
+            unique within context of a profile.
 
         parameters: dict { str: Parameter }
             Parameters this package takes
@@ -169,18 +184,78 @@ class Package(DictRepr):
             Dict of when-clause the PackageYAML instance containing the
             definition. The default to fall back for for no matching
             clause has key `None`.
+
+        parents : list of (when, Package)
+            Note: The parameters and constraints of parents have already
+            been included in `self`
         """
         self.name = name
-        self.parameters = parameters
+        self.parameters = dict(parameters)
+        self.parameters.update(dict([(p.name, p) for p in self.GLOBAL_PARAMETERS]))
         self.constraints = constraints
         self.condition_to_yaml_file = condition_to_yaml_file
+        self.parents = parents
+        # Prevent diamond inheritance to keep things simpler
+        self.ancestor_names = set()
+        for when, parent in parents:
+            common = self.ancestor_names.intersection(parent.ancestor_names)
+            if common:
+                raise PackageError(None, 'Package %s has diamond inheritance (not supported) on: %r' %
+                                   (self.name, list(common)))
+            self.ancestor_names.update(parent.ancestor_names)
+            self.ancestor_names.add(parent.name)
+
+    def get_yaml(self, param_values, node=None):
+        candidates = []
+        for cond, doc in self.condition_to_yaml_file.items():
+            if cond is None:
+                continue
+            if eval_condition(cond, param_values):
+                candidates.append(doc)
+        if len(candidates) > 1:
+            raise ProfileError(node, 'More than one candidate YAML file '
+                               'for package %s (when clauses not specific enough)' % self.name)
+        elif len(candidates) == 0:
+            try:
+                return self.condition_to_yaml_file[None]
+            except KeyError:
+                raise ProfileError(node, 'No candidate YAML files for package %s (no when clause matches parameters)'
+                                   % self.name)
+        else:
+            return candidates[0]
+
+    def get_yaml_tree(self, param_values, node=None):
+        """
+        Pass in chosen parameter values, get back a tree of available PackageYAML files.
+        The tree is (PackageYAML, {parent_name: <...>}), where <...> repeats the structure.
+        """
+        candidates = []
+        for cond, doc in self.condition_to_yaml_file.items():
+            if cond is None:
+                continue
+            if eval_condition(cond, param_values):
+                candidates.append(doc)
+        if len(candidates) > 1:
+            raise ProfileError(node, 'More than one candidate YAML file '
+                               'for package %s (when clauses not specific enough)' % self.name)
+        elif len(candidates) == 0:
+            try:
+                package_yaml = self.condition_to_yaml_file[None]
+            except KeyError:
+                raise ProfileError(node, 'No candidate YAML files for package %s (no when clause matches parameters)'
+                                   % self.name)
+        else:
+            package_yaml = candidates[0]
+        return package_yaml, dict([(parent.name, parent.get_yaml_tree(param_values, node)) for parent in parents])
 
     @staticmethod
-    def create_from_yaml_files(yaml_files):
+    def create_from_yaml_files(profile, yaml_files):
         """
         Construct the Package from a set of PackageYAML instances.
         Parameters and dependencies-as-parameters are extracted from the
         full set of YAML files.
+
+        profile is used to load any ancestors
         """
         parameters = {}
         constraints = []
@@ -205,27 +280,66 @@ class Package(DictRepr):
             raise ValueError('Exactly one PackageYAML should be primary')
 
         # Find the explicit expression for the 'primary when'
-        otherwise = 'True' if len(yaml_files) == 1 else 'not %s' % ' and not '.join(
+        otherwise = None if len(yaml_files) == 1 else 'not %s' % ' and not '.join(
             '(%s)' % f.doc['when'] for f in yaml_files if 'when' in f.doc)
 
-        constraints = []
+        # when-transform each document. For now this is only used to parse the extends
+        # section, with interpreter-style parsing for the rest
+        tdocs = []
         for f in yaml_files:
-            when = f.doc.get('when', otherwise)
+            tdoc = when_transform_yaml(f.doc)
+            tdoc.when = tdoc.pop('when', None)
+            tdocs.append(tdoc)
+
+        constraints = []
+        parents = []
+        for doc in tdocs:
+            when = doc.when if doc.when is not None else otherwise
+
+            for parent_name in doc.get('extends', []):
+                parent_when = sexpr_and(when, parent_name.when)
+                parent = profile.load_package(parent_name)
+                for param in parent.parameters.values():
+                    add_param(param.copy_with(declared_when=sexpr_and(parent_when, param.declared_when)))
+                for constraint in parent.constraints:
+                    if parent_when is None:
+                        constraints.append(constraint)
+                    else:
+                        constraints.append('not (%s) or (%s)' % (parent_when, constraint))
+                parents.append((parent_when, parent))
+
             # Add explicit parameters
-            for x in f.doc.get('parameters', []):
-                add_param(Parameter.parse_from_yaml(x, when))
+            for x in doc.get('parameters', []):
+                param_when = sexpr_and(when, x.when)
+                check_no_sub_conditions(x)
+                add_param(Parameter.parse_from_yaml(x, param_when))
                 required = x.get('required', 'default' not in x)
                 if required:
-                    constraints.append('not (%s) or (%s is not None)' % (when, x['name']))
+                    assert param_when is not None
+                    constraints.append('not (%s) or (%s is not None)' % (param_when, x['name']))
 
             # Add deps parameters
-            dep_params, dep_constraints = parse_deps(f.doc, when=when)
+            dep_params, dep_constraints = parse_deps(doc, when=when)
             for p in dep_params.values():
                 add_param(p)
             constraints.extend(dep_constraints)
+        #
+        # End of using when-transformed docs, we revert to f.doc below
+        #
 
-        condition_to_yaml_file = dict([(x.doc.get('when', None), x) for x in yaml_files])
-        return Package(name, parameters, constraints, condition_to_yaml_file)
+        # Attach the YAML files too, we just transform them first to remove the sections
+        # parsed above. Group them by their 'when' clause and take the 'when' clause out
+        # of document too.
+        condition_to_yaml_file = {}
+        for f in yaml_files:
+            doc = dict(f.doc)
+            when = doc.pop('when', None)
+            for section in ['dependencies', 'parameters', 'extends']:
+                doc.pop(section, None)
+            condition_to_yaml_file[when] = PackageYAML(used_name=f.used_name, filename=f.filename,
+                                                       primary=f.primary, in_directory=f.in_directory, doc=doc)
+
+        return Package(name, parameters, constraints, condition_to_yaml_file, parents=parents)
 
     def typecheck_parameter_set(self, param_values, node=None):
         """
@@ -250,7 +364,7 @@ class Package(DictRepr):
         """
         result = []
         for constraint in self.constraints:
-            if not eval(constraint, {}, param_values):
+            if not eval_condition(constraint, param_values):
                 result.append(constraint)
         return result
 
@@ -258,7 +372,7 @@ class Package(DictRepr):
         declared = {}  # the subset of param_values for parameters that have been declared, with defaults filled in
         for param in self.parameters.values():
             try:
-                is_declared = eval(param.declared_when, {}, dict(param_values))
+                is_declared = eval_condition(param.declared_when, dict(param_values))
             except NameError as e:
                 raise PackageError(node, 'Lacking a parameter needed to determine if %s should '
                                    'be declared: %r' % (param.name, e))
@@ -266,8 +380,8 @@ class Package(DictRepr):
                 declared[param.name] = param_values.get(param.name, param.default)
         return declared
 
-    def instantiate(self, parameter_values):
-        pass
+    def instantiate(self, param_values):
+        return PackageInstance(self, param_values)
 
 
 
@@ -302,7 +416,7 @@ class PackageYAML(object):
         exists.
     """
 
-    def __init__(self, used_name, filename, primary, in_directory):
+    def __init__(self, used_name, filename, primary, in_directory, doc=None):
         """
         Constructor
 
@@ -323,11 +437,17 @@ class PackageYAML(object):
 
         in_directory : boolean
             Whether the package yaml file is in its own directory.
+
+        doc : document
+            Parsed YAML file, possibly post-processed, assumed to be present
+            in the given location. If None it will be loaded.
         """
         self.used_name = used_name
         self.filename = filename
         self.primary = primary
-        self._init_load(filename)
+        if doc is None:
+            doc = self._init_load(filename)
+        self.doc = doc
         self.in_directory = in_directory
         hook = os.path.abspath(pjoin(os.path.dirname(filename), used_name + '.py'))
         self.hook_filename = hook if os.path.exists(hook) else None
@@ -339,7 +459,7 @@ class PackageYAML(object):
         # YAML-level pre-processing
         doc = preprocess_default_to_parameters(doc)
         # End pre-precessing
-        self.doc = doc
+        return doc
 
     def __repr__(self):
         return self.filename
@@ -367,59 +487,53 @@ class PackageYAML(object):
             raise ValueError('stand-alone package yaml file')
 
 
-class PackageSpec(object):
+class PackageInstance(object):
     """
-    Wraps a package spec document to provide some facilities (act on it/understand it).
+    Binds a PackageSpec to a set of parameter values.
 
-    The document provided to the constructor should be a complete stand-alone
-    specification. The `load` staticmethod is available to load a package spec
-    from a profile, this includes pre-preprocessing to assemble together the
-    package spec with its ancestor specifications (given in the `extends` clause).
+    This object is made available to template expansion in templates.
+    Therefore a lot of the internal routines that belong to a PackageInstance
+    are, as a namespace issue, hidden away in the PackageInstanceImpl
+    class/`_impl` attribute.
     """
-    def __init__(self, name, doc, hook_files, parameters):
-        self.name = name
-        self.doc = doc
-        self.hook_files = hook_files
-        deps = doc.get('dependencies', {})
-        self.build_deps = deps.get('build', [])
-        self.run_deps = deps.get('run', [])
-        self.parameters = parameters
-        if not isinstance(self.build_deps, list) or not isinstance(self.run_deps, list):
-            raise TypeError('dependencies must be a list')
+    def __init__(self, spec, param_values):
+        self._spec = spec
+        self._param_values = param_values
+        self._impl = PackageInstanceImpl(self)
 
-    @staticmethod
-    def load(profile, name):
-        """
-        Loads a single package from a profile.
+    def __getattr__(self, key):
+        try:
+            return self._param_values[key]
+        except KeyError:
+            raise AttributeError("package has no property '%s'" % key)
 
-        Includes ancestors, which are merged in as appropriate. This
-        involves a transform pipeline to put the spec on a simple
-        format where all information in ancestors is inlined, and
-        stages are ordered.
+    def __repr__(self):
+        return "%s(%r)" % (self._spec.name, self._param_values)
 
-        Parameters
-        ----------
 
-        profile : :class:`~hashdist.spec.profile.Profile`
-            The profile, which defines parameters to be used.
+class PackageInstanceImpl(object):
+    """
+    Combination of PackageSpec with given parameter values, so that it is ready
+    for build script generation and hashing. This contains the part of PackageInstance
+    that should only be available to hashdist.spec, not in spec file API.
+    """
+    def __init__(self, api_part):
+        from .package_loader import PackageLoader
 
-        name : str
-            The package name. This may be different from the name of
-            the yaml file if you override ``pkg_name: {use:
-            alternate_name}`` in the profile.
-        """
-        package_parameters = defaultdict(str, profile.parameters)
-        package_parameters.update(profile.packages.get(name, {}))
-        package_parameters['package'] = name
-        from package_loader import PackageLoader
-        loader = PackageLoader(name, package_parameters,
-                               load_yaml=profile.load_package)
-        return PackageSpec(name, loader.stages_topo_ordered(),
-                           loader.get_hook_files(), loader.parameters)
+        self._spec = api_part._spec
+        self._param_values = api_part._param_values
+
+        loader = PackageLoader(self._spec, self._param_values)
+        self.doc = loader.doc
+        self.hook_files = loader.get_hook_files()
+
+        pprint(self._param_values)
+        self.build_deps = dict([(key, value) for key, value in self._param_values.items()
+                                if not key.startswith('_run_') and isinstance(value, PackageInstance)])
 
     def fetch_sources(self, source_cache):
         for source_clause in self.doc.get('sources', []):
-            source_cache.fetch(source_clause['url'], source_clause['key'], self.name)
+            source_cache.fetch(source_clause['url'], source_clause['key'], self._spec.name)
 
     def assemble_build_script(self, ctx):
         """
@@ -438,7 +552,7 @@ class PackageSpec(object):
             lines += ctx.dispatch_build_stage(stage)
         return '\n'.join(lines) + '\n'
 
-    def assemble_build_spec(self, source_cache, ctx, dependency_id_map, dependency_packages, profile):
+    def assemble_build_spec(self, source_cache, ctx, dependency_id_map, profile):
         """
         Return the ``build.json`` buildspec.
 
@@ -460,19 +574,14 @@ class PackageSpec(object):
 
         The ``build.json`` for building the package.
         """
-        assert ctx.parameters == self.parameters  # TODO: why duplicate the parameters?
-
         if isinstance(dependency_id_map, dict):
             dependency_id_map = dependency_id_map.__getitem__
-        imports = []
-        build_deps = self.doc.get('dependencies', {}).get('build', [])
-        for dep_name in build_deps:
-            imports.append({'ref': '%s' % to_env_var(dep_name), 'id': dependency_id_map(dep_name)})
 
+        imports = []
         dependency_commands = []
-        for dep_name in self.build_deps:
-            dep_pkg = dependency_packages[dep_name]
-            dependency_commands += dep_pkg.assemble_build_import_commands()
+        for key, value in self.build_deps.items():
+            imports.append({'ref': '%s' % to_env_var(key), 'id': dependency_id_map(value)})
+            dependency_commands += value._impl.assemble_build_import_commands(key)
 
         build_script_key = self._store_files(source_cache, ctx, profile)
         build_spec = self._create_build_spec(imports,
@@ -526,7 +635,7 @@ class PackageSpec(object):
         rules = []
         for in_stage in self.doc['profile_links']:
             if 'link' in in_stage:
-                select = substitute_profile_parameters(in_stage["link"], self.parameters)
+                select = substitute_profile_parameters(in_stage["link"], self._param_values)
                 rules.append({
                     "action": link_action_map[link_type],
                     "select": "${%s_DIR}/%s" % (ref, select),
@@ -534,18 +643,18 @@ class PackageSpec(object):
                     "target": target,
                     "dirs": in_stage.get("dirs", False)})
             elif 'exclude' in in_stage:
-                select = substitute_profile_parameters(in_stage["exclude"], self.parameters)
+                select = substitute_profile_parameters(in_stage["exclude"], self._param_values)
                 rules.append({"action": "exclude",
                               "select": select})
             elif 'launcher' in in_stage:
-                select = substitute_profile_parameters(in_stage["launcher"], self.parameters)
+                select = substitute_profile_parameters(in_stage["launcher"], self._param_values)
                 if link_type != 'copy':
                     rules.append({"action": "launcher",
                                   "select": "${%s_DIR}/%s" % (ref, select),
                                   "prefix": "${%s_DIR}" % ref,
                                   "target": target})
             elif 'copy' in in_stage:
-                select = substitute_profile_parameters(in_stage["copy"], self.parameters)
+                select = substitute_profile_parameters(in_stage["copy"], self._param_values)
                 rules.append({"action": "copy",
                     "select": "${%s_DIR}/%s" % (ref, select),
                     "prefix": "${%s_DIR}" % ref,
@@ -556,21 +665,21 @@ class PackageSpec(object):
                                  'key in profile_links entries')
         return rules
 
-    def assemble_build_import_commands(self):
+    def assemble_build_import_commands(self, name_in_using):
         """
         Return the ``when_build_dependency`` commands from dependencies.
         """
-        cmds = [self._process_when_build_dependency(env_action)
+        cmds = [self._process_when_build_dependency(env_action, name_in_using)
                 for env_action in self.doc.get('when_build_dependency', [])]
         return cmds
 
-    def _process_when_build_dependency(self, action):
+    def _process_when_build_dependency(self, action, name_in_using):
         action = dict(action)
         if not ('prepend_path' in action or 'append_path' in action or 'set' in action):
             raise ValueError('when_build_dependency action must be one of '
                              'prepend_path, append_path, set')
-        value = substitute_profile_parameters(action['value'], self.parameters)
-        value = value.replace('${ARTIFACT}', '${%s_DIR}' % to_env_var(self.name))
+        value = substitute_profile_parameters(action['value'], self._param_values)
+        value = value.replace('${ARTIFACT}', '${%s_DIR}' % to_env_var(name_in_using))
         if '$' in value.replace('${', ''):
             # a bit crude, but works for now -- should properly disallow non-${}-variables,
             # in order to prevent $ARTIFACT from cropping up
@@ -581,7 +690,7 @@ class PackageSpec(object):
     def _create_build_spec(self, imports,
                           dependency_commands, postprocess_commands,
                            extra_sources=()):
-        parameters = self.parameters
+        parameters = self._param_values
         if 'BASH' not in parameters:
             raise ProfileError(self.doc, 'BASH must be provided in profile parameters')
 
@@ -601,7 +710,7 @@ class PackageSpec(object):
 
         # assemble
         build_spec = {
-            "name": self.name,
+            "name": self._spec.name,
             "build": {
                 "import": imports,
                 "commands": commands,

@@ -120,14 +120,23 @@ class MockProfile(object):
         return filename if filename in self.files else None
 
 
-def test_prevent_diamond():
-    files = {
-        'a.yaml': 'extends: [b, c]',
-        'b.yaml': 'extends: [d]',
-        'c.yaml': 'extends: [d]',
-        'd.yaml': '{}'}
-    with assert_raises(PackageError):
-        package.PackageSpec.load(MockProfile(files), 'a')
+@temp_working_dir_fixture
+def test_prevent_diamond(d):
+    dump('pkgs/a.yaml', 'extends: [b, c]')
+    dump('pkgs/b.yaml', 'extends: [d]')
+    dump('pkgs/c.yaml', 'extends: [d]')
+    dump('pkgs/d.yaml', '{}')
+    dump('profile.yaml', """
+        package_dirs:
+        - pkgs
+        packages:
+          a:
+    """)
+    with profile.TemporarySourceCheckouts(None) as checkouts:
+        prof = profile.load_profile(null_logger, checkouts, "profile.yaml")
+        with assert_raises(PackageError) as e:
+            prof.load_package('a')
+        assert 'diamond' in str(e.exc_val)
 
 def test_inheritance_collision():
     files = {
@@ -422,18 +431,42 @@ def test_files_glob(d):
     """))
 
 @temp_working_dir_fixture
-def test_parameter_decl_load(d):
-    # Test parsing of the parameters and dependencies clauses
+def test_package_spec(d):
+    # Test parsing and construction of PackageSpec, i.e. YAML files loaded
+    # and the interface to other packages parsed.
 
     # The 'when' clause on parameters is mostly useless, but allows testing,
     # and must be implemented anyway due to when clauses on package builds.
     # So since we don't expect these used independently, we require anything
     # going into them to be 'globally present' parameters
+
+    # First create two alternatives for "middlebase" (default and -alt), with a parameter choosing
+    # between them in "base". middlebase-alt declares the y parameter, middlebase declares
+    # the x parameter. To add to the fun, only bar-positive-int-parameter extends from
+    # middlebase, the default bar doesn't extend anything.
+    dump('pkgs/base.yaml', """
+        parameters:
+        - name: use_middlebase_alt
+          type: bool
+          default: true
+    """)
+    dump('pkgs/middlebase/middlebase.yaml', """
+        extends: [base]
+        parameters: [{name: y, type: int}]
+    """)
+    dump('pkgs/middlebase/middlebase-alt.yaml', """
+        extends: [base]
+        when: use_middlebase_alt
+        parameters: [{name: x, type: int}]
+    """)
+
     dump('pkgs/bar/bar-positive-int-parameter.yaml', """
+        when bool_parameter:
+          extends: [middlebase]  # extend conditional on a parameter..
         when: int_parameter > 0
         dependencies:
-          build: [adep, bdep]
-          run: [rdep]
+          build: [adep, {'when bool_parameter': [bdep]}]
+          run: [adep, rdep]
         parameters:
         - name: str_parameter
           type: str
@@ -456,10 +489,10 @@ def test_parameter_decl_load(d):
         - name: other_parameter
           type: int
 
-        - name: str_parameter
-          type: str
-          when: not bool_parameter
-          default: foovalue
+        - when not bool_parameter:
+            - name: str_parameter
+              type: str
+              default: foovalue
     """)
     dump('profile.yaml', """
         package_dirs:
@@ -473,34 +506,55 @@ def test_parameter_decl_load(d):
 
     mock_package = object()
 
+    eq_(set(pkg.parameters.keys()),
+        set(['_run_adep', 'adep', 'bool_parameter', 'cdep', '_run_rdep',
+             'other_parameter', 'str_parameter',
+             'int_parameter', 'y', 'x', 'use_middlebase_alt', 'bdep', 'BASH']))
+
     # Check resulting declared_when and constraints
     eq_(pkg.parameters['str_parameter'].declared_when,
         '((int_parameter > 0) and (bool_parameter == True and int_parameter == 3)) or '
         '((not (int_parameter > 0)) and (not bool_parameter))')
 
-    eq_(sorted(pkg.constraints), [
+    eq_(pkg.parameters['bdep'].declared_when,
+        '((int_parameter > 0) and (bool_parameter)) or (not (int_parameter > 0))')
+
+    # x and y depedns on use_middlebase_alt..
+    eq_(pkg.parameters['x'].declared_when, '((int_parameter > 0) and (bool_parameter)) and (use_middlebase_alt)')
+    eq_(pkg.parameters['y'].declared_when, '((int_parameter > 0) and (bool_parameter)) and (not (use_middlebase_alt))')
+
+    pprint(sorted(pkg.constraints))
+    eq_(set(pkg.constraints), set([
+        'not ((int_parameter > 0) and (bool_parameter)) or (bdep is not None)',
+        'not ((int_parameter > 0) and (bool_parameter)) or (not (use_middlebase_alt) or (x is not None))',
+        'not ((int_parameter > 0) and (bool_parameter)) or (not (not (use_middlebase_alt)) or (y is not None))',
         'not (int_parameter > 0) or (adep is not None)',
-        'not (int_parameter > 0) or (bdep is not None)',
         'not (int_parameter > 0) or (bool_parameter is not None)',
         'not (int_parameter > 0) or (int_parameter is not None)',
-        'not (int_parameter > 0) or (rdep is not None)',
+        'not (int_parameter > 0) or (_run_adep is not None)',
+        'not (int_parameter > 0) or (_run_rdep is not None)',
         'not (not (int_parameter > 0)) or (bdep is not None)',
         'not (not (int_parameter > 0)) or (bool_parameter is not None)',
         'not (not (int_parameter > 0)) or (cdep is not None)',
-        'not (not (int_parameter > 0)) or (other_parameter is not None)'])
+        'not (not (int_parameter > 0)) or (other_parameter is not None)',
+        ]))
 
     # get_failing_constraints method
     eq_(pkg.get_failing_constraints({'int_parameter': 3, 'adep': None, 'bool_parameter': True,
-                                     'bdep': mock_package, 'rdep': mock_package}),
+                                     'bdep': mock_package, '_run_rdep': mock_package, '_run_adep': mock_package,
+                                     'use_middlebase_alt': False, 'y': 3}),
         ['not (int_parameter > 0) or (adep is not None)'])
 
-    with assert_raises(NameError):
+    with assert_raises(ProfileError) as e:
         # other_parameter not present
         pkg.get_failing_constraints({'int_parameter': -13, 'adep': None, 'bool_parameter': True,
-                                     'bdep': mock_package, 'rdep': mock_package})
+                                     'bdep': mock_package, '_run_rdep': mock_package,
+                                     '_run_adep': mock_package})
+    assert "'other_parameter' is not defined" in str(e.exc_val)
 
     params = {'int_parameter': -13, 'cdep': mock_package, 'bool_parameter': True,
-              'bdep': mock_package, 'rdep': mock_package, 'other_parameter': 4}
+              'bdep': mock_package, '_run_rdep': mock_package, '_run_adep': mock_package,
+              'other_parameter': 4, 'use_middlebase_alt': True}
     eq_([], pkg.get_failing_constraints(params))
 
     # typecheck_parameter_set method
@@ -509,9 +563,9 @@ def test_parameter_decl_load(d):
         return True
 
     with mock.patch('hashdist.spec.package.Parameter._check_package_value', check_package):
-        with assert_raises(PackageError) as e:
+        with assert_raises(ProfileError) as e:
             pkg.typecheck_parameter_set({'int_parameter': 3})
-        assert 'Lacking a parameter' in str(e.exc_val) and 'bool_parameter' in str(e.exc_val)
+        assert "'bool_parameter' is not defined" in str(e.exc_val)
 
         pkg.typecheck_parameter_set(params)
         params['int_parameter'] = 'a'

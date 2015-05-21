@@ -13,6 +13,7 @@ from ...core.test.utils import *
 from ...core.test.test_build_store import fixture as build_store_fixture
 from .. import profile
 from .. import builder
+from ..package import PackageInstance
 
 
 null_logger = logging.getLogger('null_logger')
@@ -51,20 +52,23 @@ def test_ready(d):
     p = profile.load_profile(null_logger, profile.TemporarySourceCheckouts(None),
                              pjoin(d, "profile.yaml"))
     pb = ProfileBuilderSubclass(None, MockSourceCache(), None, p)
-    assert ['d'] == pb.get_ready_list()
-    pb._built.add('d')
-    assert ['b', 'c'] == sorted(pb.get_ready_list())
-    pb._built.add('b')
-    pb._built.add('c')
-    assert ['a'] == pb.get_ready_list()
+    assert ['d'] == pb.get_ready_dict().keys()
+    pb._built.update(pb.get_ready_dict().values())
+    assert ['b', 'c'] == sorted(pb.get_ready_dict().keys())
+    pb._built.update(pb.get_ready_dict().values())
+    assert ['a'] == pb.get_ready_dict().keys()
 
 
 @build_store_fixture()
 def test_basic_build(tmpdir, sc, bldr, config):
+    # Tests that we can assemble build specs and build packages.
+    # Incl testing that the correct names are used for environment variables
     d = pjoin(tmpdir, 'tmp', 'profile')
     dump(pjoin(d, 'profile.yaml'), """\
         package_dirs: [pkgs]
-        packages: {copy_readme:, the_dependency:}
+        packages:
+          copy_readme:
+            the_dependency_renamed: the_dependency
         parameters:
           BASH: /bin/bash
     """)
@@ -74,12 +78,12 @@ def test_basic_build(tmpdir, sc, bldr, config):
           - url: file:%(tar_file)s
             key: %(tar_hash)s
         dependencies:
-          build: [the_dependency]
+          build: [the_dependency_renamed]
         build_stages:
           - name: the_copy_readme_file_stage
             handler: bash
             bash: |
-              /bin/cat ${THE_DEPENDENCY_DIR}/README_IN_DEPENDENCY
+              /bin/cat ${THE_DEPENDENCY_RENAMED_DIR}/README_IN_DEPENDENCY
               /bin/cp README ${ARTIFACT}
     """ % dict(tar_file=mock_tarball, tar_hash=mock_tarball_hash))
 
@@ -102,8 +106,8 @@ def test_basic_build(tmpdir, sc, bldr, config):
     p = profile.load_profile(null_logger, profile.TemporarySourceCheckouts(None),
                              pjoin(d, "profile.yaml"))
     pb = builder.ProfileBuilder(logger, sc, bldr, p)
-    pb.build('the_dependency', config, 1, "never", False)
-    pb.build('copy_readme', config, 1, "never", False)
+    pb.build('the_dependency', config, 1, "always", False)
+    pb.build('copy_readme', config, 1, "always", False)
 
 
 @mock.patch('hashdist.spec.builder.ProfileBuilder._init', lambda self: None)
@@ -111,16 +115,12 @@ def test_basic_build(tmpdir, sc, bldr, config):
 def test_profile_packages_section(d):
     # Test inclusion of packages and resolution of package parameters
 
-    # TODO:
-    # We test that "defaults-for-packages" works correctly.
-
     # - a and b are two different leaf packages that can be interchanged to some degree.
     # - c has b as a dependency, but we pass in a instead
     # - e depends on d which is a "virtual package", we assign it to c
     # - a has a hard dependency on x and an optional on y; so x should be pulled in
     #   and y not
     #
-
 
     dump(pjoin(d, 'profile.yaml'), """\
         package_dirs: [pkgs]
@@ -134,10 +134,11 @@ def test_profile_packages_section(d):
            d:
              use: c  # really just assigns d as alias for c
            e:
+           y:
     """)
 
     dump(pjoin(d, 'pkgs/a.yaml'), dedent("""\
-        dependencies: {build: [x, 'y?']}
+        dependencies: {build: [x, 'y?', 'z?'], run: [x, 'w?']}
         parameters:
           - name: fooparam  # default value filled in
             type: int
@@ -151,6 +152,7 @@ def test_profile_packages_section(d):
     dump(pjoin(d, 'pkgs/e.yaml'), "dependencies: {build: [d]}")
     dump(pjoin(d, 'pkgs/x.yaml'), "")
     dump(pjoin(d, 'pkgs/y.yaml'), "")
+    dump(pjoin(d, 'pkgs/z.yaml'), "")
 
     p = profile.load_profile(null_logger, profile.TemporarySourceCheckouts(None),
                              pjoin(d, "profile.yaml"))
@@ -158,8 +160,22 @@ def test_profile_packages_section(d):
     pb._load_packages()
     pkgs = pb._packages
 
+    # x: required package not specified in profile, auto-pulled in
+    assert 'x' in pkgs
+    assert '_run_x' not in pkgs
+    assert isinstance(pkgs['a'].x, PackageInstance)
+    assert pkgs['a']._run_x is pkgs['a'].x
+    # y: optional package specified in profile
+    assert 'y' in pkgs
+    assert isinstance(pkgs['a'].y, PackageInstance)
+    # z: optional package not specified, NOT pulled in
+    assert 'z' not in pkgs
+    assert pkgs['a'].z is None
+    # w: optional run-dep is simply ignored
+    assert not hasattr(pkgs['a'], '_run_w')
+
     # Check that each package loaded the right YAML file
-    for x in ['a', 'b', 'c', 'e', 'x', 'y']:
+    for x in ['a', 'b', 'c', 'e', 'x']:
         eq_(pkgs[x]._spec.name, x)
         package_yaml = pkgs[x]._spec.condition_to_yaml_file.values()[0]
         ok_(package_yaml.filename.endswith('/%s.yaml' % x))

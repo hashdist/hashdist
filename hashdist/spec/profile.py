@@ -25,16 +25,6 @@ from .. import core
 from .exceptions import ProfileError, PackageError
 
 
-GLOBALS_LST = [len]
-GLOBALS = dict((entry.__name__, entry) for entry in GLOBALS_LST)
-
-def eval_condition(expr, parameters):
-    try:
-        return bool(eval(expr, GLOBALS, parameters))
-    except NameError as e:
-        raise ProfileError(expr, "parameter not defined: %s" % e)
-
-
 class Profile(object):
     """
     Profiles acts as nodes in a tree, with `extends` containing the
@@ -147,7 +137,7 @@ class Profile(object):
 
         if len(yaml_files) == 0:
             raise ProfileError(use, 'No yaml file for package "{0}" found'.format(use))
-        return Package.create_from_yaml_files(yaml_files)
+        return Package.create_from_yaml_files(self, yaml_files)
 
     def find_package_file(self, pkgname, filename):
         """

@@ -3,8 +3,23 @@ Tools for dealing with YAML documents with the 'when (expr):' construct.
 """
 import re
 
+from .exceptions import ProfileError, PackageError
 from ..formats import marked_yaml
-from .profile import eval_condition
+
+
+GLOBALS_LST = [len]
+GLOBALS = dict((entry.__name__, entry) for entry in GLOBALS_LST)
+
+
+def eval_condition(expr, parameters):
+    if expr is None:  # A NoneType argument means no condition, evaluates to True, while 'None' as a str will evaluate False
+        return True
+    try:
+        return bool(eval(expr, GLOBALS, parameters))
+    except NameError as e:
+        raise ProfileError(expr, "parameter not defined: %s" % e)
+    except SyntaxError as e:
+        raise ProfileError(expr, "syntax error in expression '%s'" % expr)
 
 
 CONDITIONAL_RE = re.compile(r'^when (.*)$')
@@ -48,6 +63,9 @@ def when_transform_yaml(doc, when=None):
     Takes the YAML-like document `doc` (dicts, lists, primitive types) and
     transforms it into Node, under the condition `when`.
     """
+    if type(doc) is dict and len(doc) == 0:
+        # Special case, it's so convenient to do foo.get(key, {})...
+        return dict_node(marked_yaml.dict_node({}, None, None), when)
     mapping = {
         marked_yaml.dict_node: _transform_dict,
         marked_yaml.list_node: _transform_list,
@@ -127,11 +145,11 @@ def check_no_sub_conditions(doc):
 
 
 #
-# Immediate evaluation given parameter values
+# Immediate evaluation given parameter values, keeping the marked_yaml ast..
 #
 
 def recursive_process_conditional_dict(doc, parameters):
-    result = dict_like(doc)
+    result = marked_yaml.dict_like(doc)
 
     for key, value in doc.items():
         m = CONDITIONAL_RE.match(key)
@@ -151,7 +169,7 @@ def recursive_process_conditional_dict(doc, parameters):
 
 def recursive_process_conditional_list(lst, parameters):
     if hasattr(lst, 'start_mark'):
-        result = list_node([], lst.start_mark, lst.end_mark)
+        result = marked_yaml.list_node([], lst.start_mark, lst.end_mark)
     else:
         result = []
     for item in lst:

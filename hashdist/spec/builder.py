@@ -8,6 +8,7 @@ from ..formats.marked_yaml import load_yaml_from_file
 from ..core import BuildSpec, ArtifactBuilder
 from .utils import to_env_var
 from .exceptions import PackageError, ProfileError
+from .package import PackageInstance
 
 
 class ProfileBuilder(object):
@@ -31,10 +32,15 @@ class ProfileBuilder(object):
         self._compute_specs()
 
     def _load_packages(self):
+        # Loads PacakageSpec from YAML, resolves parameters to pass, and turns PackageSpec
+        # into PackageInstance (binding the spec with chosen parameter values). The result
+        # is put in self._packages.
+
         self._packages = {}  # name : PackageInstance
         visiting = set()
 
         def visit(pkgname):
+            assert isinstance(pkgname, basestring)
             pkgname = str(pkgname)
             if pkgname in visiting:
                 raise ProfileError(pkgname, 'dependency cycle between packages, '
@@ -56,7 +62,8 @@ class ProfileBuilder(object):
 
             # Now we want to complete the information in param_doc.
 
-            # Step 1: Fill in default fallback values
+            # Step 1: Fill in default fallback values and replace string package params
+            # with values of type PackageInstance
             param_values = dict(param_doc)
             for param in pkg_spec.parameters.values():
                 if param.has_package_type():
@@ -64,7 +71,30 @@ class ProfileBuilder(object):
                     # name as the parameter in the profile. At this point we recurse
                     # to make sure that package is resolved, and a PackageInstance
                     # is present instead of str in param_values.
-                    param_values[param.name] = visit(param_values.get(param.name, param.name))
+
+                    # We will include the package if and only if include ends up True.
+                    # If not, we set it to None, and also it is never visited.
+                    # Note: If *another* package requires it, we don't include it,
+                    # only if it's explicitly listed, for now. Will write tests after
+                    # list has decided what we want.
+                    dep_name = param.name
+                    if dep_name.startswith('_run_'):
+                        dep_name = dep_name[len('_run_'):]
+                    include = False
+                    if dep_name in param_values:
+                        include = True
+                    # OK, not explicitly given. Is it present in profile though?
+                    elif dep_name in self.profile.packages:
+                        include = True
+                    else:
+                        # We do a tiny special case of constraint
+                        # solving here; if there is a constraint saying exactly that the
+                        # package must be included, we auto-include it. This constraint
+                        # is generated in package.parse_deps. Obviously this is in anticipation
+                        # of a better constraints system.
+                        include = '%s is not None' % param.name in pkg_spec.constraints
+                    inc_pkg = visit(param_doc.get(dep_name, dep_name)) if include else None
+                    param_values[param.name] = inc_pkg
                 elif param.name not in param_values:
                     if param.name in self.profile.parameters:
                         # Inherit from global profile parameters
@@ -75,10 +105,10 @@ class ProfileBuilder(object):
                         # fail later.
                         param_values[param.name] = param.default
 
-            # Step 3: Type-check and remove parameters that are not declared
+            # Step 2: Type-check and remove parameters that are not declared
             # (also according to when-conditions)
             param_values = pkg_spec.typecheck_parameter_set(param_values, node=param_doc)
-            self._packages[pkgname] = result = package.PackageInstance(pkg_spec, param_values)
+            self._packages[pkgname] = result = pkg_spec.instantiate(param_values)
             visiting.remove(pkgname)
             return result
 
@@ -96,39 +126,34 @@ class ProfileBuilder(object):
         """
         python_path = self.profile.hook_import_dirs
 
-        def process(pkgname, pkgspec):
+        def process(pkg):
             with hook.python_path_and_modules_sandbox(python_path):
-                ctx = self._load_package_build_context(pkgname, pkgspec)
-                self._build_specs[pkgname] = pkgspec.assemble_build_spec(
+                ctx = self._load_package_build_context(pkg)
+                self._build_specs[pkg] = pkg._impl.assemble_build_spec(
                     self.source_cache,
                     ctx,
-                    lambda dep_name: self._build_specs[dep_name].artifact_id,
-                    self._package_specs,
+                    lambda dep: self._build_specs[dep].artifact_id,
                     self.profile)
             # check whether package is already built, and update self._built
-            if self.build_store.is_present(self._build_specs[pkgname]):
-                self._built.add(pkgname)
+            if self.build_store.is_present(self._build_specs[pkg]):
+                self._built.add(pkg)
 
-        def traverse_depth_first(pkgname):
-            if pkgname not in self._build_specs:
-                try:
-                    pkgspec = self._package_specs[pkgname]
-                except:
-                    raise ProfileError(pkgname.start_mark, 'Package not found: %s' % pkgname)
-                for depname in pkgspec.build_deps:
-                    traverse_depth_first(depname)
-                process(pkgname, pkgspec)
+        def traverse_depth_first(pkg):
+            if pkg not in self._build_specs:
+                for dep in pkg._impl.build_deps.values():
+                    traverse_depth_first(dep)
+                process(pkg)
 
-        for pkgname in self._package_specs:
-            traverse_depth_first(pkgname)
+        for pkg in self._packages.values():
+            traverse_depth_first(pkg)
 
-    def get_ready_list(self):
-        ready = []
-        for name, pkg in self._package_specs.iteritems():
-            if name in self._built:
+    def get_ready_dict(self):
+        ready = {}
+        for pkgname, pkg in self._packages.items():
+            if pkg in self._built:
                 continue
-            if all(dep_name in self._built for dep_name in pkg.build_deps):
-                ready.append(name)
+            if all(dep in self._built for dep in pkg._impl.build_deps.values()):
+                ready[pkgname] = pkg
         return ready
 
     def get_build_spec(self, pkgname):
@@ -137,8 +162,8 @@ class ProfileBuilder(object):
     def get_build_script(self, pkgname):
         python_path = self.profile.hook_import_dirs
         with hook.python_path_and_modules_sandbox(python_path):
-            ctx = self._load_package_build_context(pkgname, self._package_specs[pkgname])
-            return self._package_specs[pkgname].assemble_build_script(ctx)
+            ctx = self._load_package_build_context(pkgname, self._packages[pkgname])
+            return self._packages[pkgname].assemble_build_script(ctx)
 
     def get_status_report(self):
         """
@@ -153,8 +178,8 @@ class ProfileBuilder(object):
 
         # Topologically sort by run-time dependencies
         def get_run_deps(pkgname):
-            return self._package_specs[pkgname].doc.get('dependencies', {}).get('run', [])
-        sorted_packages = utils.topological_sort(self._package_specs.keys(), get_run_deps)
+            return self._packages[pkgname].doc.get('dependencies', {}).get('run', [])
+        sorted_packages = utils.topological_sort(self._packages.keys(), get_run_deps)
 
         imports = []
         for pkgname in sorted_packages:
@@ -164,7 +189,7 @@ class ProfileBuilder(object):
         commands = []
         install_link_rules = []
         for pkgname in sorted_packages:
-            pkg = self._package_specs[pkgname]
+            pkg = self._packages[pkgname]
             commands += pkg.assemble_build_import_commands()
             install_link_rules += pkg.assemble_link_dsl('${ARTIFACT}', link_type)
         commands.extend([{"hit": ["create-links", "$in0"],
@@ -182,9 +207,10 @@ class ProfileBuilder(object):
             })
 
     def build(self, pkgname, config, worker_count, keep_build='never', debug=False):
-        self._package_specs[pkgname].fetch_sources(self.source_cache)
+        pkg = self._packages[pkgname]
+        pkg._impl.fetch_sources(self.source_cache)
         extra_env = {'HASHDIST_CPU_COUNT': str(worker_count)}
-        self.build_store.ensure_present(self._build_specs[pkgname], config, extra_env=extra_env,
+        self.build_store.ensure_present(self._build_specs[pkg], config, extra_env=extra_env,
                                         keep_build=keep_build, debug=debug)
         self._built.add(pkgname)
 
@@ -202,9 +228,18 @@ class ProfileBuilder(object):
         builder = ArtifactBuilder(self.build_store, profile_build_spec, extra_env, virtuals, debug)
         builder.build_out(target, config)
 
-    def _load_package_build_context(self, pkgname, pkgspec):
-        hook_files = [self.profile.resolve(fname) for fname in pkgspec.hook_files]
-        dep_vars = [to_env_var(x) for x in self._package_specs[pkgname].build_deps]
-        ctx = hook_api.PackageBuildContext(pkgname, dep_vars, pkgspec.parameters)
+    def _load_package_build_context(self, pkg):
+        hook_files = [self.profile.resolve(fname) for fname in pkg._impl.hook_files]
+
+        dep_vars = []
+        parameters = {}
+        for key, value in pkg._param_values.items():
+            if isinstance(value, PackageInstance):
+                if not key.startswith('_run_'):
+                    dep_vars.append(to_env_var(key))
+            else:
+                parameters[key] = value
+
+        ctx = hook_api.PackageBuildContext(pkg._spec.name, dep_vars, parameters)
         hook.load_hooks(ctx, hook_files)
         return ctx
