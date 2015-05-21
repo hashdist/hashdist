@@ -94,11 +94,35 @@ class unicode_node(unicode_node_base):
         return r
 
 class null_node(create_node_class(object, name='null_node')):
+    def __eq__(self, other):
+        return isinstance(other, null_node) or other is None
+
+    def __ne__(self, other):
+        return not self == other
+
     def __nonzero__(self):
         return False
 
     def __repr__(self):
         return "null"
+
+class bool_node(create_node_class(object, name='bool_node')):
+    def __init__(self, x, start_mark, end_mark):
+        self.value = bool(x)
+        super(bool_node, self).__init__(self.value, start_mark, end_mark)
+
+    def __nonzero__(self):
+        return self.value
+
+    def __eq__(self, other):
+        return self.value == other
+
+    def __ne__(self, other):
+        return self.value != other
+
+    def __repr__(self):
+        return repr(self.value)
+
 
 def is_null(x):
     return type(x) is null_node or x is None
@@ -155,6 +179,12 @@ class NodeConstructor(SafeConstructor):
     def construct_yaml_null(self, node):
         return null_node(None, node.start_mark, node.end_mark)
 
+    def construct_yaml_bool(self, node):
+        obj = super(NodeConstructor, self).construct_yaml_bool(node)
+        assert isinstance(obj, bool)
+        return bool_node(obj, node.start_mark, node.end_mark)
+
+
 NodeConstructor.add_constructor(
         u'tag:yaml.org,2002:map',
         NodeConstructor.construct_yaml_map)
@@ -174,6 +204,10 @@ NodeConstructor.add_constructor(
 NodeConstructor.add_constructor(
         u'tag:yaml.org,2002:null',
         NodeConstructor.construct_yaml_null)
+
+NodeConstructor.add_constructor(
+        u'tag:yaml.org,2002:bool',
+        NodeConstructor.construct_yaml_bool)
 
 
 class MarkedLoader(Reader, Scanner, Parser, Composer, NodeConstructor, Resolver):
@@ -212,7 +246,7 @@ def raw_tree(doc):
         return str(doc)
     elif isinstance(doc, int):
         return int(doc)
-    elif isinstance(doc, bool):
+    elif isinstance(doc, bool_node):
         return bool(doc)
     elif isinstance(doc, null_node):
         return None
