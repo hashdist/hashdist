@@ -58,8 +58,7 @@ def remote_pcs_test(remote,logger):
         exit(1)
     apps_repo = AppInfoFileRepository(app_info_path)
     if not os.path.exists(user_credentials_path):
-        msg = 'No user credentials found: ' \
-            + repr(user_credentials_path)
+        msg = 'No user credentials found: ' + repr(user_credentials_path)
         logger.critical(msg)
         msg = "Run 'hit remote add ...'"
         logger.critical(msg)
@@ -365,15 +364,15 @@ class Push(object):
                                     CDownloadRequest)
         # set up store and change to the artifact root  dir
         from ..core import BuildStore, SourceCache
+        remote_path = pjoin(DEFAULT_STORE_DIR, "remotes", args.name)
         if not args.dry_run:
             ctx.logger.info("Setting up cloud storage app")
-            remote_path = pjoin(DEFAULT_STORE_DIR, "remotes", arg.name)
             app_info_path = pjoin(remote_path, "app_info_data.txt")
             user_credentials_path = pjoin(remote_path,
                                           "user_credentials_data.txt")
             if not os.path.exists(app_info_path):
                 msg = 'No remote application information: ' \
-                    + repr(app_info_path)
+                      + repr(app_info_path)
                 ctx.logger.critical(msg)
                 msg = "Run 'hit remote add ...'"
                 ctx.logger.critical(msg)
@@ -407,7 +406,7 @@ class Push(object):
             os.chdir(store.artifact_root)
             # try loading the local copy of the remote manifest
             try:
-                with open(pjoin("..",
+                with open(pjoin(remote_path,
                                 "build_manifest.json"), "r") as manifest_file:
                     local_manifest = json.loads(manifest_file.read())
             except:
@@ -444,12 +443,12 @@ class Push(object):
                     manifest = json.loads(
                         str(remote_manifest_string.get_bytes()))
                 except:
-                    msg = "Failed to get remote manifest; \
-                    ALL PACKAGES WILL BE PUSHED"
+                    msg = "Failed to get remote manifest; " + \
+                          "ALL PACKAGES WILL BE PUSHED"
                     ctx.logger.warn(msg)
                     manifest = {}
                 ctx.logger.info("Writing local copy of remote  manifest")
-                with open(pjoin("..", "build_manifest.json"), "w") as f:
+                with open(pjoin(remote_path, "build_manifest.json"), "w") as f:
                     f.write(json.dumps(manifest))
                 ctx.logger.info("Calculating which packages to push")
                 push_manifest = {}
@@ -507,7 +506,7 @@ class Push(object):
                         upload_request.progress_listener(
                             StdoutProgressListener())
                         storage.upload(upload_request)
-                        with open(pjoin("..",
+                        with open(pjoin(remote_path,
                                         "build_manifest.json"), "w") as f:
                             f.write(new_manifest_string)
         if args.objects in ['source', 'build_and_source']:
@@ -516,12 +515,12 @@ class Push(object):
             os.chdir(cache.cache_path)
             # try loading the local copy of the remote manifest
             try:
-                with open(pjoin("..",
+                with open(pjoin(remote_path,
                                 "source_manifest.json"), "r") as manifest_file:
                     local_manifest = json.loads(manifest_file.read())
             except:
-                msg = "Using an empty local manifest because \
-                source_manifest.json could not be read"
+                msg = "Using an empty local manifest because " + \
+                      "source_manifest.json could not be read"
                 ctx.logger.warn(msg)
                 local_manifest = {}
             if args.dry_run:
@@ -556,12 +555,12 @@ class Push(object):
                     manifest = json.loads(
                         str(remote_manifest_string.get_bytes()))
                 except:
-                    msg = "Failed to get remote manifest; \
-                    all packages will be pushed"
+                    msg = "Failed to get remote manifest; " + \
+                          "all packages will be pushed"
                     ctx.logger.warn(msg)
                     manifest = {}
                 ctx.logger.info("Writing local copy of remote  manifest")
-                with open(pjoin("..", "source_manifest.json"), "w") as f:
+                with open(pjoin(remote_path, "source_manifest.json"), "w") as f:
                     f.write(json.dumps(manifest))
                 ctx.logger.info("Calculating which packages to push")
                 push_manifest = {}
@@ -608,6 +607,6 @@ class Push(object):
                         upload_request.progress_listener(
                             StdoutProgressListener())
                         storage.upload(upload_request)
-                        with open(pjoin("..",
+                        with open(pjoin(remote_path,
                                         "source_manifest.json"), "w") as f:
                             f.write(new_manifest_string)
