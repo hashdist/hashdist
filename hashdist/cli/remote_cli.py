@@ -20,19 +20,22 @@ from .main import register_subcommand
 class RemoteAddError(Exception):
     pass
 
+
 class RemoteRemoveError(Exception):
     pass
+
 
 class RemotePCSError(Exception):
     pass
 
-def remote_pcs_test(remote,logger):
+
+def remote_pcs_test(remote, logger):
     # Required for providers registration :
     from pcs_api.providers import (dropbox,
                                    googledrive)
     #
     from pcs_api.credentials.app_info_file_repo \
-    import AppInfoFileRepository
+        import AppInfoFileRepository
     from pcs_api.credentials.user_creds_file_repo \
         import UserCredentialsFileRepository
     from pcs_api.credentials.user_credentials import UserCredentials
@@ -83,7 +86,8 @@ def remote_pcs_test(remote,logger):
     bpath = fpath.add("test.txt")
     file_contents_uploaded = b"Test file contents"
     upload_request = CUploadRequest(
-        bpath, MemoryByteSource(file_contents_uploaded)).content_type('text/plain')
+        bpath,
+        MemoryByteSource(file_contents_uploaded)).content_type('text/plain')
     upload_request.progress_listener(StdoutProgressListener())
     storage.upload(upload_request)
     file_contents_downloaded = MemoryByteSink()
@@ -94,6 +98,7 @@ def remote_pcs_test(remote,logger):
     storage.delete(fpath)
     if file_contents_uploaded != file_contents_downloaded.get_bytes():
         raise RemotePCSError
+
 
 @register_subcommand
 class Remote(object):
@@ -131,6 +136,7 @@ class Remote(object):
                         help='Secret for the app on cloud service')
         ap.add_argument('--objects', default="build_and_source",
                         help="Work on 'build','source', or 'build_and_source'")
+
     @staticmethod
     def run(ctx, args):
         from pcs_api.credentials.app_info_file_repo \
@@ -149,9 +155,9 @@ class Remote(object):
             remote_bld = None
             remote_src = None
             if (args.name.startswith('http://') or
-                args.name.startswith('https://')):
+                    args.name.startswith('https://')):
                 config = ctx.get_config()
-                with open(ctx._config_filename,'r') as config_file:
+                with open(ctx._config_filename, 'r') as config_file:
                     config_lines = config_file.readlines()
                 if args.objects in ['build', 'build_and_source']:
                     for bld_dict in config['build_stores']:
@@ -159,13 +165,13 @@ class Remote(object):
                             ctx.logger.warning("Already has" + repr(args.name))
                             break
                     else:
-                        for line_no,line in enumerate(config_lines):
+                        for line_no, line in enumerate(config_lines):
                             if line.strip().startswith("build_stores:"):
-                                local_bld = config_lines[line_no+1].strip()
+                                local_bld = config_lines[line_no + 1].strip()
                                 assert local_bld.startswith('- dir:')
                                 remote_bld = ' - url: {0}/bld\n' \
                                     .format(args.name)
-                                config_lines.insert(line_no+2, remote_bld)
+                                config_lines.insert(line_no + 2, remote_bld)
                                 break
                 if args.objects in ['source', 'build_and_source']:
                     for src_dict in config['source_caches']:
@@ -173,35 +179,37 @@ class Remote(object):
                             ctx.logger.warning("Already has" + repr(args.name))
                             break
                     else:
-                        for line_no,line in enumerate(config_lines):
+                        for line_no, line in enumerate(config_lines):
                             if line.strip().startswith("source_caches:"):
-                                local_src = config_lines[line_no+1].strip()
+                                local_src = config_lines[line_no + 1].strip()
                                 assert local_src.startswith('- dir:')
                                 remote_src = ' - url: {0}/src\n' \
                                     .format(args.name)
-                                config_lines.insert(line_no+2, remote_src)
-                #write temporary config file and check for correctness
+                                config_lines.insert(line_no + 2, remote_src)
+                # write temporary config file and check for correctness
                 if remote_bld or remote_src:
-                    tmp_config_path = pjoin(DEFAULT_STORE_DIR, 'config_tmp.yaml')
+                    tmp_config_path = pjoin(
+                        DEFAULT_STORE_DIR,
+                        'config_tmp.yaml')
                     with open(tmp_config_path, 'w') as config_file:
                         config_file.writelines(config_lines)
                     new_config = load_config_file(tmp_config_path, ctx.logger)
                     if (remote_bld and
-                        args.objects in ['build', 'build_and_source'] and
-                        {'url':remote_bld.strip(' -url:').strip('\n')}
-                        not in new_config['build_stores']):
+                            args.objects in ['build', 'build_and_source'] and
+                            {'url': remote_bld.strip(' -url:').strip('\n')}
+                            not in new_config['build_stores']):
                         raise RemoteAddError
                     if (remote_src and
-                        args.objects in ['source', 'build_and_source'] and
-                        {'url': remote_src.strip(' -url:').strip('\n')}
-                        not in new_config['source_caches']):
+                            args.objects in ['source', 'build_and_source'] and
+                            {'url': remote_src.strip(' -url:').strip('\n')}
+                            not in new_config['source_caches']):
                         raise RemoteAddError
                     try:
                         shutil.copy(tmp_config_path, ctx._config_filename)
                     except:
                         raise RemoteAddError
                     else:
-                        ctx.logger.info("Wrote "+repr(ctx._config_filename))
+                        ctx.logger.info("Wrote " + repr(ctx._config_filename))
             elif args.pcs:
                 remote_path = pjoin(DEFAULT_STORE_DIR, "remotes", args.name)
                 try:
@@ -224,7 +232,7 @@ class Remote(object):
                 f = open(app_info_path, "w")
                 f.write(app_info_data)
                 f.close()
-                ctx.logger.info("Wrote "+repr(ctx._config_filename))
+                ctx.logger.info("Wrote " + repr(ctx._config_filename))
                 apps_repo = AppInfoFileRepository(app_info_path)
                 user_credentials_repo = UserCredentialsFileRepository(
                     user_credentials_path)
@@ -236,13 +244,13 @@ class Remote(object):
                 bootstrapper = OAuth2BootStrapper(storage)
                 bootstrapper.do_code_workflow()
                 if args.test_pcs:
-                    remote_pcs_test(args.name,ctx.logger)
+                    remote_pcs_test(args.name, ctx.logger)
         elif args.subcommand == 'remove':
             ctx.logger.info("Attempting to remove remote")
             if (args.name.startswith('http://') or
-                args.name.startswith('https://')):
+                    args.name.startswith('https://')):
                 config = ctx.get_config()
-                with open(ctx._config_filename,'r') as config_file:
+                with open(ctx._config_filename, 'r') as config_file:
                     config_lines = config_file.readlines()
                 if args.objects in ['build', 'build_and_source']:
                     remote_bld = ' - url: {0}/bld\n'.format(args.name)
@@ -257,21 +265,21 @@ class Remote(object):
                         config_lines.remove(remote_src)
                     except ValueError:
                         ctx.logger.warning("Not found in config")
-                #write temporary config file and check for correctness
+                # write temporary config file and check for correctness
                 tmp_config_path = pjoin(DEFAULT_STORE_DIR, 'config_tmp.yaml')
                 with open(tmp_config_path, 'w') as config_file:
                     config_file.writelines(config_lines)
                 new_config = load_config_file(tmp_config_path, ctx.logger)
-                if  args.name in config['build_stores']:
+                if args.name in config['build_stores']:
                     raise RemoteRemoveError
-                if  args.name in config['source_caches']:
+                if args.name in config['source_caches']:
                     raise RemoteRemoveError
                 try:
-                   shutil.copy(tmp_config_path, ctx._config_filename)
+                    shutil.copy(tmp_config_path, ctx._config_filename)
                 except:
-                   raise RemoteRemoveError
+                    raise RemoteRemoveError
                 else:
-                   ctx.logger.info("Wrote "+repr(ctx._config_filename))
+                    ctx.logger.info("Wrote " + repr(ctx._config_filename))
             else:
                 remote_path = pjoin(DEFAULT_STORE_DIR, "remotes", args.name)
                 print remote_path
@@ -279,7 +287,7 @@ class Remote(object):
                     robust_rmtree(remote_path, ctx.logger)
                 except:
                     raise RemoteRemoveError
-                ctx.logger.info("Removed remote: "+repr(args.name))
+                ctx.logger.info("Removed remote: " + repr(args.name))
         elif args.subcommand == 'show':
             config = ctx.get_config()
             for source_mirror in config['source_caches'][1:]:
@@ -312,7 +320,7 @@ class Remote(object):
                                 sys.stdout.write(app_user + " = \n")
                                 pp.pprint(json.loads(app_cred_dict))
                 if args.test_pcs:
-                    remote_pcs_test(remote_name,ctx.logger)
+                    remote_pcs_test(remote_name, ctx.logger)
         else:
             raise AssertionError()
 
@@ -560,7 +568,8 @@ class Push(object):
                     ctx.logger.warn(msg)
                     manifest = {}
                 ctx.logger.info("Writing local copy of remote  manifest")
-                with open(pjoin(remote_path, "source_manifest.json"), "w") as f:
+                with open(pjoin(remote_path,
+                                "source_manifest.json"), "w") as f:
                     f.write(json.dumps(manifest))
                 ctx.logger.info("Calculating which packages to push")
                 push_manifest = {}
