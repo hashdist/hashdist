@@ -71,6 +71,8 @@ def load_config_file(filename, logger):
     doc = load_yaml_from_file(filename)
     validate_yaml(doc, config_schema)
     for entry in doc['build_stores']:
+        if sum(['url' in entry, 'dir' in entry]) != 1:
+            raise ValidationError(entry.start_mark, 'Exactly one of "url" and "dir" must be specified')
         if entry.has_key('dir'):
             entry['dir'] = _ensure_dir(_make_abs(basedir, entry['dir']), logger)
 
