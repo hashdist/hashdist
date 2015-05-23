@@ -111,7 +111,9 @@ class Remote(object):
 
 
     Example:: **First**, create a dropbox app for your remote at
-    https://www.dropbox.com/developers/apps. Next, add the remote:
+    https://www.dropbox.com/developers/apps. See the wiki here for graphical
+    insructions https://github.com/hashdist/hashdist/wiki/How-to-add-remotes.
+    Next, add the remote:
 
         $ hit remote add --pcs="dropbox" --app-name="hd_osx" \\
           --app-id=x --app-secret=y
