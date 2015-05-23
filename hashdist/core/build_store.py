@@ -404,7 +404,8 @@ class BuildStore(object):
             self.logger.warning(msg)
             raise RemoteBuildStoreFetchError(msg)
         os.chmod(temp_path, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
-        os.system('cd %s; tar xzvf %s; rm -f %s' % (self.artifact_root,temp_path,temp_path))
+        subprocess.check_call(['tar', 'xzf', temp_path], cwd=self.artifact_root)
+        robust_rmtree(temp_path,self.logger)
     def resolve(self, artifact_id,build_store_only=False):
         """Given an artifact_id, resolve the short path for it, or return
         None if the artifact isn't built.
