@@ -26,8 +26,6 @@ from hashdist.deps.yaml.constructor import (Constructor, BaseConstructor, SafeCo
 from hashdist.deps.yaml import dump as _orig_yaml_dump
 from hashdist.deps import jsonschema
 
-from .templated_stream import TemplatedStream
-
 def _find_mark(doc):
     """Traverse a document to try to find a start_mark attribute"""
     if hasattr(doc, 'start_mark'):
@@ -223,13 +221,9 @@ def marked_yaml_load(stream, filecaption=None):
     return MarkedLoader(stream, filecaption).get_single_data()
 
 
-def load_yaml_from_file(filename, parameters=None, filecaption=None):
-    if parameters == None: parameters = {}
-
+def load_yaml_from_file(filename, filecaption=None):
     with open(filename) as file_stream:
-        expanded_stream = TemplatedStream(file_stream, parameters)
-        expanded_stream.name = filename
-        return marked_yaml_load(expanded_stream, filecaption)
+        return marked_yaml_load(file_stream, filecaption)
 
 def validate_yaml(doc, schema):
     try:

@@ -150,13 +150,17 @@ def test_profile_packages_section(d):
     dump(pjoin(d, 'pkgs/b.yaml'), "")
     dump(pjoin(d, 'pkgs/c.yaml'), "dependencies: {build: [b]}")
     dump(pjoin(d, 'pkgs/e.yaml'), "dependencies: {build: [d]}")
-    dump(pjoin(d, 'pkgs/x.yaml'), "")
+    dump(pjoin(d, 'pkgs/x.yaml'), "profile_links: [{link: '*/**/*'}]")
     dump(pjoin(d, 'pkgs/y.yaml'), "")
     dump(pjoin(d, 'pkgs/z.yaml'), "")
 
     p = profile.load_profile(null_logger, profile.TemporarySourceCheckouts(None),
                              pjoin(d, "profile.yaml"))
-    pb = builder.ProfileBuilder(logger, None, None, p)
+    mock_sc = mock.Mock()
+    mock_sc.put = lambda files: 'files:thekey'
+    mock_bs = mock.Mock()
+    mock_bs.is_present = lambda *args: True
+    pb = builder.ProfileBuilder(logger, mock_sc, mock_bs, p)
     pb._load_packages()
     pkgs = pb._packages
 
@@ -188,3 +192,27 @@ def test_profile_packages_section(d):
     eq_(pkgs['a'].fooparam, 3)
     # barparam should be inherited from profile
     eq_(pkgs['a'].barparam, 'fromprofile')
+
+    # Test the profile build spec
+    pb._compute_specs()
+    spec = pb.get_profile_build_spec()
+    eq_(spec.doc, {
+        'build': {
+            'commands': [
+                {'hit': ['create-links', '$in0'], 'inputs': [{'json': [
+                    {'action': 'relative_symlink',
+                     'dirs': False,
+                     'prefix': '${X_DIR}',
+                     'select': u'${X_DIR}/*/**/*',
+                     'target': '${ARTIFACT}'}]}
+                    ]},
+                {'hit': ['build-postprocess', '--write-protect']}],
+            'import': [
+                {'id': 'x/cye2gqdezpn343yduqzttawplswxdubw', 'ref': 'X'},
+                {'id': 'a/k3sdoxtwx2zezkncvqqllmpxvcgl4a33', 'ref': 'A'},
+                {'id': 'b/bvvvvxqihddfvpm6xv4kgiyrsphlmkhg', 'ref': 'B'},
+                {'id': 'c/bc7nfsonjqw6n4wqwoh532dot67tiiwf', 'ref': 'C'},
+                {'id': 'e/jkw7z7y364i57wxbnhyac324bd4ugms6', 'ref': 'E'},
+                {'id': 'y/66vt2inbxuodtn3jilnpkoajwtsb46kk', 'ref': 'Y'}]},
+        'name': 'profile',
+        'version': 'n'})

@@ -1,3 +1,4 @@
+import mock
 from pprint import pprint
 import os
 import shutil
@@ -13,6 +14,7 @@ from ...core.test.utils import *
 from ...core.test.test_source_cache import temp_source_cache
 from .. import profile
 from .. import package
+from .. import builder
 from ..exceptions import ProfileError
 
 def gitify(dir):
@@ -227,10 +229,6 @@ def test_resource_resolution(d):
         assert (pjoin(d, "level1", "base", "base1.txt") ==
                 os.path.realpath(p.find_package_file("whatever", "base1.txt")))
 
-        foo = p.load_package_yaml('foo', {})
-        assert {'my': 'document'} == foo.doc
-        assert foo is p.load_package_yaml('foo', {})  # caching
-
         os.unlink(pjoin(d, "level2", "pkgs", "foo", "foo.yaml"))
         assert pjoin(d, "level1", "pkgs", "foo.yaml") == p.find_package_file("foo", "foo.yaml")
 
@@ -320,8 +318,22 @@ def test_defaults_section_in_package(d):
         with profile.TemporarySourceCheckouts(None) as checkouts:
             doc = profile.load_and_inherit_profile(checkouts, pjoin(d, profile_file))
             prf = profile.Profile(null_logger, doc, checkouts)
-            pkg = package.PackageSpec.load(prf, 'mypkg')
-            return pkg.doc['build_stages']
+
+            # Test parameters present structurally
+            pkg = prf.load_package('mypkg')
+            assert 'foo' in pkg.parameters
+            assert 'exit_code' in pkg.parameters
+            assert pkg.parameters['foo'].default == True
+
+            # Use builder to resulve parameters
+            mock_sc = mock.Mock()
+            mock_sc.put = lambda files: 'files:thekey'
+            mock_bs = mock.Mock()
+            mock_bs.is_present = lambda *args: True
+            pb = builder.ProfileBuilder(null_logger, mock_sc, mock_bs, prf)
+            pb._load_packages()
+            pkginst = pb._packages['mypkg']
+            return pkginst._impl.doc['build_stages']
 
 
     assert get_build_stages_of_mypkg('without_override.yaml') == [

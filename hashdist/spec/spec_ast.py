@@ -1,5 +1,8 @@
 """
-Tools for dealing with YAML documents with the 'when (expr):' construct.
+Tools for dealing with the build spec YAML documents on a structural
+level:
+ - the 'when (expr):' construct
+ - the `{{var}}` expansion.
 """
 import re
 
@@ -19,7 +22,29 @@ def eval_condition(expr, parameters):
     except NameError as e:
         raise ProfileError(expr, "parameter not defined: %s" % e)
     except SyntaxError as e:
-        raise ProfileError(expr, "syntax error in expression '%s'" % expr)
+        raise PackageError(expr, "syntax error in expression '%s'" % expr)
+
+
+ALLOW_STRINGIFY = (basestring, int)
+DENY_STRINGIFY = (bool,)  # subclass of int..
+
+def eval_strexpr(expr, parameters, node=None):
+    """
+    We allow *some* stringification, but not most of them; having
+    bool turn into 'True' is generally not useful
+    """
+    node = node if node is not None else expr
+    try:
+        result = eval(expr, GLOBALS, parameters)
+        if not isinstance(result, ALLOW_STRINGIFY) or isinstance(result, DENY_STRINGIFY):
+            # We want to avoid bools turning into 'True' etc. without explicit
+            raise PackageError(expr, "expression must return a string: %s" % expr)
+        return str(result)
+    except NameError as e:
+        raise PackageError(expr, "parameter not defined: %s" % e)
+    except SyntaxError as e:
+        raise PackageError(expr, "syntax error in expression '%s'" % expr)
+
 
 
 CONDITIONAL_RE = re.compile(r'^when (.*)$')
@@ -47,6 +72,20 @@ int_node = create_node_class(marked_yaml.int_node)
 unicode_node = create_node_class(marked_yaml.unicode_node)
 null_node = create_node_class(marked_yaml.null_node)
 bool_node = create_node_class(marked_yaml.bool_node)
+
+class choose_value_node(object):
+    """
+    Contains a list of children, of which only one should be picked
+    (should have a true when clause).
+
+    self.when is really redundant, but present for consistency and
+    to mark the common part of the when clause of all children
+    """
+    def __init__(self, children, when):
+        self.children = children
+        self.start_mark = children[0].start_mark if children else None
+        self.end_mark = children[0].end_mark if children else None
+        self.when = when
 
 
 def sexpr_and(x, y):
@@ -76,6 +115,27 @@ def when_transform_yaml(doc, when=None):
     return mapping[type(doc)](doc, when)
 
 def _transform_dict(doc, when):
+    # Probe whether we should assume merge-in-dict or choose-a-scalar behaviour
+    if len(doc) > 0:
+        key, value = doc.items()[0]
+        if CONDITIONAL_RE.match(unicode(key)) and not isinstance(value, dict):
+            return _transform_choose_scalar(doc, when)
+    return _transform_dict_merge(doc, when)
+
+
+def _transform_choose_scalar(doc, when):
+    children = []
+    for key, value in doc.items():
+        m = CONDITIONAL_RE.match(unicode(key))
+        if not m:
+            raise PackageError(value, "all dict entries must be a 'when'-clause if a sibling when-clause "
+                                      "contains a scalar")
+        sub_when = sexpr_and(when, m.group(1))
+        children.append(when_transform_yaml(value, sub_when))
+    return choose_value_node(children, when)
+
+
+def _transform_dict_merge(doc, when):
     result = dict_node(marked_yaml.dict_like(doc), when)
 
     for key, value in doc.items():
@@ -147,58 +207,64 @@ def check_no_sub_conditions(doc):
 #
 # Immediate evaluation given parameter values, keeping the marked_yaml ast..
 #
+def evaluate_doc(doc, parameters):
+    """
+    Evaluates `doc`, which should be an AST of dict_node/list_node/...
 
-def recursive_process_conditional_dict(doc, parameters):
-    result = marked_yaml.dict_like(doc)
+    The result is using the marked_yaml node format.
+
+    Code flow:
+
+    The convention is that container classes evaluate the `when` attribute
+    of their children in order to figure out whether to include them. The
+    `doc` argument never has its when attribute examined in the scope of
+    the call.
+    """
+    if isinstance(doc, dict_node):
+        return evaluate_dict(doc, parameters)
+    elif isinstance(doc, list_node):
+        return evaluate_list(doc, parameters)
+    elif isinstance(doc, unicode_node):
+        return evaluate_unicode(doc, parameters)
+    elif isinstance(doc, choose_value_node):
+        return evaluate_choose(doc, parameters)
+    elif isinstance(doc, (int_node, null_node, bool_node)):
+        return doc
+    else:
+        raise ValueError('doc was not an AST node: %r of type %s' % (doc, type(doc)))
+
+DBRACE_RE = re.compile(r'\{\{([^}]+)\}\}')
+
+def evaluate_unicode(doc, parameters):
+    """
+    Evaluate anything in {{ }} using eval_strexpr in the context of parameters.
+    """
+    def dbrace_expand(match):
+        return eval_strexpr(match.group(1), parameters, node=doc)
+    return marked_yaml.unicode_node(DBRACE_RE.sub(dbrace_expand, doc), doc.start_mark, doc.end_mark)
+
+
+def evaluate_dict(doc, parameters):
+    result = marked_yaml.dict_node({}, doc.start_mark, doc.end_mark)
 
     for key, value in doc.items():
-        m = CONDITIONAL_RE.match(key)
-        if m:
-            if eval_condition(m.group(1), parameters):
-                if not isinstance(value, dict):
-                    raise PackageError(value, "'when' dict entry must contain another dict")
-                to_merge = recursive_process_conditional_dict(value, parameters)
-                for k, v in to_merge.items():
-                    if k in result:
-                        raise PackageError(k, "key '%s' conflicts with another key of the same name "
-                                           "in another when-clause" % k)
-                    result[k] = v
-        else:
-            result[key] = recursive_process_conditionals(value, parameters)
+        if eval_condition(value.when, parameters):
+            result[key] = evaluate_doc(value, parameters)
     return result
 
-def recursive_process_conditional_list(lst, parameters):
-    if hasattr(lst, 'start_mark'):
-        result = marked_yaml.list_node([], lst.start_mark, lst.end_mark)
-    else:
-        result = []
-    for item in lst:
-        if isinstance(item, dict) and len(item) == 1:
-            # lst the form [..., {'when EXPR': BODY}, ...]
-            key, value = item.items()[0]
-            m = CONDITIONAL_RE.match(key)
-            if m:
-                if eval_condition(m.group(1), parameters):
-                    if not isinstance(value, list):
-                        raise PackageError(value, "'when' clause within list must contain another list")
-                    to_extend = recursive_process_conditional_list(value, parameters)
-                    result.extend(to_extend)
-            else:
-                result.append(recursive_process_conditionals(item, parameters))
-        elif isinstance(item, dict) and 'when' in item:
-            # lst has the form [..., {'when': EXPR, 'sibling_key': 'value'}, ...]
-            if eval_condition(item['when'], parameters):
-                item_copy = copy_dict_node(item)
-                del item_copy['when']
-                result.append(recursive_process_conditionals(item_copy, parameters))
-        else:
-            result.append(recursive_process_conditionals(item, parameters))
+
+def evaluate_list(doc, parameters):
+    result = marked_yaml.list_node([], doc.start_mark, doc.end_mark)
+    for item in doc:
+        if eval_condition(item.when, parameters):
+            result.append(evaluate_doc(item, parameters))
     return result
 
-def recursive_process_conditionals(doc, parameters):
-    if isinstance(doc, dict):
-        return recursive_process_conditional_dict(doc, parameters)
-    elif isinstance(doc, list):
-        return recursive_process_conditional_list(doc, parameters)
-    else:
-        return doc
+
+def evaluate_choose(doc, parameters):
+    results = [evaluate_doc(x, parameters) for x in doc.children
+               if eval_condition(x.when, parameters)]
+    if len(results) != 1:
+        raise PackageError(doc, "Exactly one of the when-conditions should apply "
+                           "in every situation")
+    return results[0]

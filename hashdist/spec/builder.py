@@ -32,89 +32,7 @@ class ProfileBuilder(object):
         self._compute_specs()
 
     def _load_packages(self):
-        # Loads PacakageSpec from YAML, resolves parameters to pass, and turns PackageSpec
-        # into PackageInstance (binding the spec with chosen parameter values). The result
-        # is put in self._packages.
-
-        self._packages = {}  # name : PackageInstance
-        visiting = set()
-
-        def visit(pkgname):
-            assert isinstance(pkgname, basestring)
-            pkgname = str(pkgname)
-            if pkgname in visiting:
-                raise ProfileError(pkgname, 'dependency cycle between packages, '
-                                   'including package "%s"' % pkgname)
-            if pkgname in self._packages:
-                return self._packages[pkgname]
-            # Get the declaration in profile. This does not always exist, in which case
-            # an empty dict represents the defaults.
-            param_doc = self.profile.packages.get(pkgname, {})
-            if 'use' in param_doc:
-                if len(param_doc) != 1:
-                    raise ProfileError(param_doc, 'If "use:" is provided, no other parameters should be provided')
-                pkgname = param_doc['use']
-                return visit(pkgname)
-
-            visiting.add(pkgname)
-
-            pkg_spec = self.profile.load_package(pkgname)
-
-            # Now we want to complete the information in param_doc.
-
-            # Step 1: Fill in default fallback values and replace string package params
-            # with values of type PackageInstance
-            param_values = dict(param_doc)
-            for param in pkg_spec.parameters.values():
-                if param.has_package_type():
-                    # Package parameters default to other packages of the same
-                    # name as the parameter in the profile. At this point we recurse
-                    # to make sure that package is resolved, and a PackageInstance
-                    # is present instead of str in param_values.
-
-                    # We will include the package if and only if include ends up True.
-                    # If not, we set it to None, and also it is never visited.
-                    # Note: If *another* package requires it, we don't include it,
-                    # only if it's explicitly listed, for now. Will write tests after
-                    # list has decided what we want.
-                    dep_name = param.name
-                    if dep_name.startswith('_run_'):
-                        dep_name = dep_name[len('_run_'):]
-                    include = False
-                    if dep_name in param_values:
-                        include = True
-                    # OK, not explicitly given. Is it present in profile though?
-                    elif dep_name in self.profile.packages:
-                        include = True
-                    else:
-                        # We do a tiny special case of constraint
-                        # solving here; if there is a constraint saying exactly that the
-                        # package must be included, we auto-include it. This constraint
-                        # is generated in package.parse_deps. Obviously this is in anticipation
-                        # of a better constraints system.
-                        include = '%s is not None' % param.name in pkg_spec.constraints
-                    inc_pkg = visit(param_doc.get(dep_name, dep_name)) if include else None
-                    param_values[param.name] = inc_pkg
-                elif param.name not in param_values:
-                    if param.name in self.profile.parameters:
-                        # Inherit from global profile parameters
-                        param_values[param.name] = self.profile.parameters[param.name]
-                    else:
-                        # Use default value. If it is a required parameter, then default will
-                        # be None and there will be a constraint that it is not None that will
-                        # fail later.
-                        param_values[param.name] = param.default
-
-            # Step 2: Type-check and remove parameters that are not declared
-            # (also according to when-conditions)
-            param_values = pkg_spec.typecheck_parameter_set(param_values, node=param_doc)
-            self._packages[pkgname] = result = pkg_spec.instantiate(param_values)
-            visiting.remove(pkgname)
-            return result
-
-        for pkgname, args in self.profile.packages.items():
-            visit(pkgname)
-
+        self._packages = self.profile.resolve_parameters()
 
     def _compute_specs(self):
         """
@@ -156,6 +74,9 @@ class ProfileBuilder(object):
                 ready[pkgname] = pkg
         return ready
 
+    def get_ready_list(self):
+        return self.get_ready_dict().keys()
+
     def get_build_spec(self, pkgname):
         return self._build_specs[pkgname]
 
@@ -178,20 +99,21 @@ class ProfileBuilder(object):
 
         # Topologically sort by run-time dependencies
         def get_run_deps(pkgname):
-            return self._packages[pkgname].doc.get('dependencies', {}).get('run', [])
+            return [str(param_name[len('_run_'):]) for param_name, param_value in self._packages[pkgname]._param_values.items()
+                    if param_name.startswith('_run_') and param_value is not None]
         sorted_packages = utils.topological_sort(self._packages.keys(), get_run_deps)
 
         imports = []
         for pkgname in sorted_packages:
             imports.append({'ref': '%s' % to_env_var(pkgname),
-                            'id': self._build_specs[pkgname].artifact_id})
+                            'id': self._build_specs[self._packages[pkgname]].artifact_id})
 
         commands = []
         install_link_rules = []
         for pkgname in sorted_packages:
             pkg = self._packages[pkgname]
-            commands += pkg.assemble_build_import_commands()
-            install_link_rules += pkg.assemble_link_dsl('${ARTIFACT}', link_type)
+            commands += pkg._impl.assemble_build_import_commands(pkgname)
+            install_link_rules += pkg._impl.assemble_link_dsl(pkgname, '${ARTIFACT}', link_type)
         commands.extend([{"hit": ["create-links", "$in0"],
                           "inputs": [{"json": install_link_rules}]}])
         if write_protect:
@@ -214,9 +136,9 @@ class ProfileBuilder(object):
                                         keep_build=keep_build, debug=debug)
         self._built.add(pkgname)
 
-    def build_profile(self, config):
+    def build_profile(self, config, keep_build='never'):
         profile_build_spec = self.get_profile_build_spec()
-        return self.build_store.ensure_present(profile_build_spec, config)
+        return self.build_store.ensure_present(profile_build_spec, config, keep_build=keep_build)
 
     def build_profile_out(self, target, config, link_type, debug=False):
         """

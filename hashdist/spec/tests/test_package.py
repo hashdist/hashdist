@@ -38,10 +38,8 @@ def test_assemble_stages():
         - {handler: bash, bash: make}
         - {handler: bash, bash: make install}
     """)
-    p = package.PackageSpec("mypackage", doc, [], {'bar':'othervalue'})
-    ctx = hook_api.PackageBuildContext(p.name, {}, p.parameters)
-    ctx.parameters['foo'] = 'somevalue'
-    script = p.assemble_build_script(ctx)
+    ctx = hook_api.PackageBuildContext('mypackage', {}, {'bar': 'othervalue', 'foo': 'somevalue'})
+    script = package.assemble_build_script(doc, ctx)
     eq_(script, dedent("""\
         set -e
         export HDIST_IN_BUILD=yes
@@ -51,7 +49,7 @@ def test_assemble_stages():
     """))
 
 def test_create_build_spec():
-    package_spec = marked_yaml_load(dedent("""\
+    doc = marked_yaml_load(dedent("""\
         name: mylib
         sources:
           - git: git://foo
@@ -68,9 +66,8 @@ def test_create_build_spec():
             value: value-of-FOO
     """))
     parameters = {"X": "x", "BASH": "/bin/bash"}
-    p = package.PackageSpec("mylib", package_spec, [], parameters)
     imports = [{"ref": "OTHERLIB", "id": "otherlib/abcdefg"}]
-    build_spec = p._create_build_spec(imports, [], p._postprocess_commands(), {})
+    build_spec = package.create_build_spec('mylib', doc, parameters, imports, [])
     expected = {
         "name": "mylib",
         "build": {
@@ -95,6 +92,11 @@ class MockPackageYAML(PackageYAML):
         self.filename = filename
         self.in_directory = False
         self.hook_filename = hook_filename
+        self.used_name = filename.replace('.yaml', '')
+        self.primary = True
+
+    def copy_with_doc(self, doc):
+        return MockPackageYAML(self.filename, doc, self.hook_filename)
 
 
 class MockProfile(object):
@@ -115,6 +117,9 @@ class MockProfile(object):
             hook = None
         return MockPackageYAML(filename, doc, hook)
 
+    def load_package(self, name):
+        yaml = self.load_package_yaml(name, {})
+        return package.Package.create_from_yaml_files(self, [yaml])
 
     def find_package_file(self, name, filename):
         return filename if filename in self.files else None
@@ -143,15 +148,16 @@ def test_inheritance_collision():
         'child.yaml': 'extends: [base1, base2]',
         'base1.yaml': 'build_stages: [{name: stage1}]',
         'base2.yaml': 'build_stages: [{name: stage1}]'}
-    with assert_raises(PackageError):
-        package.PackageSpec.load(MockProfile(files), 'child')
+    prof = MockProfile(files)
+    pkg = prof.load_package('child')
+    with assert_raises(PackageError) as e:
+        pkg.instantiate({})
+    assert '"stage1" used as the name for a stage in two separate package ancestors' in str(e.exc_val)
 
 
 def test_load_and_inherit_package():
     files = {}
     files['mypackage.yaml'] = """\
-        defaults:
-          param2: from package defaults
         extends: [base1, base2]
         dependencies:
           build: [dep1]
@@ -188,8 +194,6 @@ def test_load_and_inherit_package():
     """
 
     files['base1.yaml'] = """\
-        defaults:
-          param3: not inherited
         extends: [grandparent]
         build_stages:
         - random: anonymous
@@ -226,15 +230,14 @@ def test_load_and_inherit_package():
 
     prof = MockProfile(files)
 
-    loader = package_loader.PackageLoader('mypackage', {'param1':'from profile'},
-                                          load_yaml=prof.load_package_yaml)
-    eq_(set(p.name for p in loader.all_parents), set(['base1', 'base2', 'grandparent']))
-    eq_(set(p.name for p in loader.direct_parents), set(['base1', 'base2']))
+    pkg = prof.load_package('mypackage')
+    with mock.patch('hashdist.spec.package_loader.PackageLoader.topo_order_stages', lambda self: None):
+        loader = package_loader.PackageLoader(pkg, {'param1':'from profile'})
+
+    eq_(set(p.spec.name for p in loader.all_parents), set(['base1', 'base2', 'grandparent']))
+    eq_(set(p.spec.name for p in loader.direct_parents), set(['base1', 'base2']))
     eq_(loader.get_hook_files(),
         ['grandparent.py', 'base1.py', 'mypackage.py'])
-
-    eq_(sorted(loader.parameters.items()),
-        [('param1', 'from profile'), ('param2', 'from package defaults')])
 
     # the below relies on an unstable ordering as the lists are not sorted, but
     # the parent traversal happens in an (unspecified) stable order
@@ -245,9 +248,6 @@ def test_load_and_inherit_package():
         - {a: 1, name: stage4_replace}
         - {a: 1, after: stage1_override, b: 3, name: stage3_override}
         - {a: 1, after: stage1_override, before: stage3_override, name: stage_2_inserted}
-        dependencies:
-          build: [dep1, dep_gp_1]
-          run: [dep1, dep_base2_1]
         post_process:
         - {hit: relative-rpath, name: post1}
         profile_links:
@@ -277,8 +277,9 @@ def test_update_mode():
       extra: ['--enable-framework=${ARTIFACT}']
     """
     prof = MockProfile(files)
-    loader = package_loader.PackageLoader('python', {}, load_yaml=prof.load_package_yaml)
-    expected = [{'name': 'configure',
+    pkg = prof.load_package('python')
+    loader = package_loader.PackageLoader(pkg, {})
+    expected = [{'handler': 'configure',
                  'append': {'LDFLAGS': '-Wl,-rpath,${ARTIFACT}/lib'},
                  'extra': ['--without-ensurepip', '--enable-shared', '--enable-framework=${ARTIFACT}']}]
     eq_(expected, loader.doc['build_stages'])
@@ -303,7 +304,8 @@ def test_order_stages():
     profile_links: []
     when_build_dependency: []
     """)
-    eq_(expected, loader.stages_topo_ordered())
+    loader.topo_order_stages()
+    eq_(expected, loader.doc)
 
 def test_extend_list():
 
@@ -347,46 +349,6 @@ def test_name_anonymous_stages():
     with assert_raises(PackageError):
         loader.get_stages_with_names('bad')
 
-def test_when_dictionary():
-    doc = marked_yaml_load("""\
-    dictionary:
-        when platform == 'linux':
-            when host:
-                one: 1
-            two: 2
-    """)
-    r = package_loader.recursive_process_conditionals(doc, {'platform': 'linux',
-                                           'host': True})
-    assert {'dictionary': {'one': 1, 'two': 2}} == r
-    r = package_loader.recursive_process_conditionals(doc, {'platform': 'linux',
-                                           'host': False})
-    assert {'dictionary': {'two': 2}} == r
-    r = package_loader.recursive_process_conditionals(doc, {'platform': 'windows',
-                                           'host': False})
-    assert {'dictionary': {}} == r
-
-def test_when_list():
-    doc = marked_yaml_load("""\
-    dictionary:
-    - when platform == 'linux':
-      - when host:
-        - 1
-      - 2
-    - 3
-    - {nested: dict} # dict of length 1
-    - am-on: host
-      when: host
-    """)
-    r = package_loader.recursive_process_conditionals(
-        doc, {'platform': 'linux', 'host': True})
-    assert {'dictionary': [1, 2, 3, {'nested': 'dict'}, {'am-on': 'host'}]} == r
-    r = package_loader.recursive_process_conditionals(
-        doc, {'platform': 'linux', 'host': False})
-    assert {'dictionary': [2, 3, {'nested': 'dict'}]} == r
-    r = package_loader.recursive_process_conditionals(
-        doc, {'platform': 'windows', 'host': False})
-    assert {'dictionary': [3, {'nested': 'dict'}]} == r
-
 @temp_working_dir_fixture
 def test_files_glob(d):
     dump('pkgs/bar/bar.yaml', """
@@ -413,11 +375,9 @@ def test_files_glob(d):
     with profile.TemporarySourceCheckouts(None) as checkouts:
         doc = profile.load_and_inherit_profile(checkouts, "profile.yaml")
         prof = profile.Profile(null_logger, doc, checkouts)
-        pkg = package.PackageSpec.load(prof, 'bar')
-    eq_(pkg.doc, marked_yaml_load("""
-        dependencies:
-          build: []
-          run: [dep]
+        pkg = prof.load_package('bar')
+        instance = pkg.instantiate({})
+    eq_(instance._impl.doc, marked_yaml_load("""
         post_process: []
         profile_links:
         - {link: '*/**/*'}
@@ -523,7 +483,7 @@ def test_package_spec(d):
     eq_(pkg.parameters['x'].declared_when, '((int_parameter > 0) and (bool_parameter)) and (use_middlebase_alt)')
     eq_(pkg.parameters['y'].declared_when, '((int_parameter > 0) and (bool_parameter)) and (not (use_middlebase_alt))')
 
-    pprint(sorted(pkg.constraints))
+    ##pprint(sorted(pkg.constraints))
     eq_(set(pkg.constraints), set([
         'not ((int_parameter > 0) and (bool_parameter)) or (bdep is not None)',
         'not ((int_parameter > 0) and (bool_parameter)) or (not (use_middlebase_alt) or (x is not None))',
@@ -575,15 +535,20 @@ def test_package_spec(d):
 
 
 def test_parse_deps_repeated():
+    from .test_spec_ast import load_when_doc_from_str as loads
+    with assert_raises(PackageError) as e:
+        package.parse_deps(loads("{'dependencies': {'build': ['a', 'a?']}}"))
+    assert 'dependency a repeated' in str(e.exc_val)
     with assert_raises(PackageError):
-        package.parse_deps({'dependencies': {'build': ['a', 'a?']}})
-    with assert_raises(PackageError):
-        package.parse_deps({'dependencies': {'run': ['a', 'a?']}})
+        package.parse_deps(loads("{'dependencies': {'run': ['a', 'a?']}}"))
+    assert 'dependency a repeated' in str(e.exc_val)
     # But this is OK:
-    package.parse_deps({'dependencies': {'run': ['a'], 'build': ['a']}})
+    package.parse_deps(loads("{'dependencies': {'run': ['a'], 'build': ['a']}}"))
 
 
 def test_parse_deps():
-    params, constraints = package.parse_deps({'dependencies': {'build': ['a', 'b'], 'run': ['b?', 'c?']}})
-    eq_(sorted(params.keys()), ['a', 'b', 'c'])
-    eq_(sorted(constraints), ['a is not None', 'b is not None'])
+    from .test_spec_ast import load_when_doc_from_str as loads
+    params, constraints = package.parse_deps(loads(
+        "{'dependencies': {'build': ['a', 'b'], 'run': ['x', 'b?', 'c?']}}"))
+    eq_(set(params.keys()), set(['a', 'b', '_run_x']))
+    eq_(set(constraints), set(['_run_x is not None', 'a is not None', 'b is not None']))

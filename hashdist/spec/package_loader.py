@@ -9,12 +9,12 @@ import re
 import os
 import collections
 from os.path import join as pjoin
-from .when import eval_condition
 from ..formats.marked_yaml import yaml_dump, copy_dict_node, dict_like, list_node
 from .utils import topological_sort
 from .. import core
 from .exceptions import ProfileError, PackageError
-from . import when
+from . import spec_ast
+from .spec_ast import eval_condition
 
 
 class PackageLoaderBase(object):
@@ -37,19 +37,17 @@ class PackageLoaderBase(object):
         self.spec = spec
         self.param_values = param_values
         self.package_file = self.spec.get_yaml(param_values)
-        self.doc = dict(self.package_file.doc)
-        self.process_conditionals()
+        self.doc = self.package_file.doc
+        assert type(self.doc) is spec_ast.dict_node
+        self.process_conditionals()  # this copies self.doc
         self.load_parents()
         self.merge_stages()
 
     def process_conditionals(self):
         """
-        Process "when" clauses.
-
-        Clauses that do not apply are removed. For those that do
-        apply, the "when" conditional is removed.
+        Process "when" clauses and does {{expr}}-substitution
         """
-        self.doc = when.recursive_process_conditionals(self.doc, self.param_values)
+        self.doc = spec_ast.evaluate_doc(self.doc, self.param_values)  # makes a copy
 
     def load_parents(self):
         """
@@ -65,10 +63,11 @@ class PackageLoaderBase(object):
         """
         self.all_parents = []
         self.direct_parents = []
-        for parent_package_spec in self.spec.parents:
-            parent_loader = PackageLoaderBase(parent_package_spec, self.param_values)
-            self.all_parents[0:0] = parent_loader.all_parents + [parent_loader]
-            self.direct_parents[0:0] = [parent_loader]
+        for condition, parent_package_spec in self.spec.parents:
+            if eval_condition(condition, self.param_values):
+                parent_loader = PackageLoaderBase(parent_package_spec, self.param_values)
+                self.all_parents[0:0] = parent_loader.all_parents + [parent_loader]
+                self.direct_parents[0:0] = [parent_loader]
 
     def merge_stages(self):
         """

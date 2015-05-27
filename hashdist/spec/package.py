@@ -4,11 +4,13 @@ from os.path import join as pjoin
 import sys
 from collections import defaultdict
 
+from ..formats import marked_yaml
 from ..formats.marked_yaml import load_yaml_from_file, is_null, marked_yaml_load
 from .utils import substitute_profile_parameters, to_env_var
 from .. import core
 from .exceptions import ProfileError, PackageError
-from .when import when_transform_yaml, sexpr_and, check_no_sub_conditions, eval_condition
+from .spec_ast import when_transform_yaml, sexpr_and, check_no_sub_conditions, eval_condition
+from . import spec_ast
 
 
 class PackageType(object):
@@ -48,7 +50,7 @@ def parse_deps(doc, when=None):
             pkg_name = node[:-1] if not required else node
             param_name = name_pattern % pkg_name
             if param_name in parameters:
-                raise PackageError(x, 'dependency %s repeated' % x)
+                raise PackageError(node, 'dependency %s repeated' % pkg_name)
 
             # An optional run-dep is sort of a contradiction in terms at the moment,
             # filter them out
@@ -112,7 +114,9 @@ class Parameter(DictRepr):
             if not self._check_package_value(value):
                 raise PackageError(node, 'Parameter %s must be a package of type "%s", not %r' % (
                     self.name, self.type.contract, value))
-        elif not isinstance(value, self.type):
+        elif (not isinstance(value, self.type)
+              and not (self.type is bool and isinstance(value, (spec_ast.bool_node, marked_yaml.bool_node)))):
+            # ^ second condition hacks around bool not being subclassable
             raise PackageError(node, 'Parameter %s has value %r which is not of type %r' % (
                 self.name, value, self.type))
 
@@ -224,30 +228,6 @@ class Package(DictRepr):
         else:
             return candidates[0]
 
-    def get_yaml_tree(self, param_values, node=None):
-        """
-        Pass in chosen parameter values, get back a tree of available PackageYAML files.
-        The tree is (PackageYAML, {parent_name: <...>}), where <...> repeats the structure.
-        """
-        candidates = []
-        for cond, doc in self.condition_to_yaml_file.items():
-            if cond is None:
-                continue
-            if eval_condition(cond, param_values):
-                candidates.append(doc)
-        if len(candidates) > 1:
-            raise ProfileError(node, 'More than one candidate YAML file '
-                               'for package %s (when clauses not specific enough)' % self.name)
-        elif len(candidates) == 0:
-            try:
-                package_yaml = self.condition_to_yaml_file[None]
-            except KeyError:
-                raise ProfileError(node, 'No candidate YAML files for package %s (no when clause matches parameters)'
-                                   % self.name)
-        else:
-            package_yaml = candidates[0]
-        return package_yaml, dict([(parent.name, parent.get_yaml_tree(param_values, node)) for parent in parents])
-
     @staticmethod
     def create_from_yaml_files(profile, yaml_files):
         """
@@ -315,29 +295,27 @@ class Package(DictRepr):
                 add_param(Parameter.parse_from_yaml(x, param_when))
                 required = x.get('required', 'default' not in x)
                 if required:
-                    assert param_when is not None
-                    constraints.append('not (%s) or (%s is not None)' % (param_when, x['name']))
+                    if param_when is None:
+                        constraints.append('%s is not None' % x['name'])
+                    else:
+                        constraints.append('not (%s) or (%s is not None)' % (param_when, x['name']))
 
             # Add deps parameters
             dep_params, dep_constraints = parse_deps(doc, when=when)
             for p in dep_params.values():
                 add_param(p)
             constraints.extend(dep_constraints)
-        #
-        # End of using when-transformed docs, we revert to f.doc below
-        #
 
         # Attach the YAML files too, we just transform them first to remove the sections
         # parsed above. Group them by their 'when' clause and take the 'when' clause out
-        # of document too.
+        # of document too. Also the document will now be using spec_ast nodes.
+        # (TODO: Get rid of PackageYAML in this context, make a new class..)
         condition_to_yaml_file = {}
-        for f in yaml_files:
-            doc = dict(f.doc)
+        for doc, f in zip(tdocs, yaml_files):
             when = doc.pop('when', None)
             for section in ['dependencies', 'parameters', 'extends']:
                 doc.pop(section, None)
-            condition_to_yaml_file[when] = PackageYAML(used_name=f.used_name, filename=f.filename,
-                                                       primary=f.primary, in_directory=f.in_directory, doc=doc)
+            condition_to_yaml_file[when] = f.copy_with_doc(doc)
 
         return Package(name, parameters, constraints, condition_to_yaml_file, parents=parents)
 
@@ -452,10 +430,14 @@ class PackageYAML(object):
         hook = os.path.abspath(pjoin(os.path.dirname(filename), used_name + '.py'))
         self.hook_filename = hook if os.path.exists(hook) else None
 
+    def copy_with_doc(self, doc):
+        return PackageYAML(used_name=self.used_name, filename=self.filename, primary=self.primary,
+                           in_directory=self.in_directory, doc=doc)
+
     def _init_load(self, filename):
         doc = load_yaml_from_file(filename)
         if doc is None:
-            doc = {}
+            doc = marked_yaml.dict_node({}, None, None)
         # YAML-level pre-processing
         doc = preprocess_default_to_parameters(doc)
         # End pre-precessing
@@ -527,7 +509,6 @@ class PackageInstanceImpl(object):
         self.doc = loader.doc
         self.hook_files = loader.get_hook_files()
 
-        pprint(self._param_values)
         self.build_deps = dict([(key, value) for key, value in self._param_values.items()
                                 if not key.startswith('_run_') and isinstance(value, PackageInstance)])
 
@@ -535,29 +516,12 @@ class PackageInstanceImpl(object):
         for source_clause in self.doc.get('sources', []):
             source_cache.fetch(source_clause['url'], source_clause['key'], self._spec.name)
 
-    def assemble_build_script(self, ctx):
-        """
-        Return the build script.
-
-        As a side effect, all referenced files are stored in the build
-        context.
-
-        Returns:
-        --------
-
-        String. A bash script that should be run to build the package.
-        """
-        lines = ['set -e', 'export HDIST_IN_BUILD=yes']
-        for stage in self.doc['build_stages']:
-            lines += ctx.dispatch_build_stage(stage)
-        return '\n'.join(lines) + '\n'
-
     def assemble_build_spec(self, source_cache, ctx, dependency_id_map, profile):
         """
         Return the ``build.json`` buildspec.
 
         As a side effect, the build script (see
-        :meth:`assemble_build_script`) that should be run to build the
+        :fimc:`assemble_build_script`) that should be run to build the
         package is uploaded to the given source cache.
 
         Arguments:
@@ -584,9 +548,13 @@ class PackageInstanceImpl(object):
             dependency_commands += value._impl.assemble_build_import_commands(key)
 
         build_script_key = self._store_files(source_cache, ctx, profile)
-        build_spec = self._create_build_spec(imports,
-            dependency_commands, self._postprocess_commands(),
-            [{'target': '.', 'key': build_script_key}])
+        build_spec = create_build_spec(
+            name=self._spec.name,
+            doc=self.doc,
+            parameters=self._param_values,
+            imports=imports,
+            dependency_commands=dependency_commands,
+            extra_sources=[{'target': '.', 'key': build_script_key}])
         return build_spec
 
     def _store_files(self, source_cache, ctx, profile):
@@ -611,7 +579,7 @@ class PackageInstanceImpl(object):
 
         The key associated to the files in the source cache.
         """
-        build_script = self.assemble_build_script(ctx)
+        build_script = assemble_build_script(self.doc, ctx)
         files = {}
         for to_name, from_name in ctx._bundled_files.iteritems():
             p = profile.find_package_file(self.name, from_name)
@@ -622,7 +590,7 @@ class PackageInstanceImpl(object):
         files['_hashdist/build.sh'] = build_script
         return source_cache.put(files)
 
-    def assemble_link_dsl(self, target, link_type='relative'):
+    def assemble_link_dsl(self, name_in_using, target, link_type='relative'):
         """
         Creates the input document to ``hit create-links`` from the information in a package
         description.
@@ -631,7 +599,7 @@ class PackageInstanceImpl(object):
                            'absolute':'absolute_symlink',
                            'copy':'copy'}
 
-        ref = to_env_var(self.name)
+        ref = to_env_var(name_in_using)
         rules = []
         for in_stage in self.doc['profile_links']:
             if 'link' in in_stage:
@@ -687,66 +655,99 @@ class PackageInstanceImpl(object):
         action['value'] = value
         return action
 
-    def _create_build_spec(self, imports,
-                          dependency_commands, postprocess_commands,
-                           extra_sources=()):
-        parameters = self._param_values
-        if 'BASH' not in parameters:
-            raise ProfileError(self.doc, 'BASH must be provided in profile parameters')
 
-        # sources
-        sources = list(extra_sources)
-        for source_clause in self.doc.get("sources", []):
-            target = source_clause.get("target", ".")
-            sources.append({"target": target, "key": source_clause["key"]})
+def assemble_build_script(doc, ctx):
+    """
+    Return the build script.
 
-        # build commands
-        commands = list(dependency_commands)
-        commands.append({"set": "BASH", "nohash_value": parameters['BASH']})
-        if 'PATH' in parameters:
-            commands.insert(0, {"set": "PATH", "nohash_value": parameters['PATH']})
-        commands.append({"cmd": ["$BASH", "_hashdist/build.sh"]})
-        commands.extend(postprocess_commands)
+    As a side effect, all referenced files are stored in the build
+    context.
 
-        # assemble
-        build_spec = {
-            "name": self._spec.name,
-            "build": {
-                "import": imports,
-                "commands": commands,
-                },
-            "sources": sources,
-            }
-        return core.BuildSpec(build_spec)
+    Parameters
+    ----------
+    doc: document
+      Processed to the point of being present in PackageImpl.doc (i.e.
+      past PackageLoader processing)
+    ctx: PackageBuildContext
+      context
 
-    def _postprocess_commands(self):
-        hit_args = []
-        for stage in self.doc.get('post_process', []):
-            for arg in stage.get('hit', []):
-                hit_args.append('--' + arg)
-        if len(hit_args) == 0:
-            return []
-        return [{'hit': ['build-postprocess'] + hit_args}]
+    Returns:
+    --------
+
+    String. A bash script that should be run to build the package.
+    """
+    lines = ['set -e', 'export HDIST_IN_BUILD=yes']
+    for stage in doc['build_stages']:
+        lines += ctx.dispatch_build_stage(stage)
+    return '\n'.join(lines) + '\n'
+
+
+def _postprocess_commands(doc):
+    hit_args = []
+    for stage in doc.get('post_process', []):
+        for arg in stage.get('hit', []):
+            hit_args.append('--' + arg)
+    if len(hit_args) == 0:
+        return []
+    return [{'hit': ['build-postprocess'] + hit_args}]
+
+
+def create_build_spec(name, doc, parameters, imports,
+                      dependency_commands,
+                      extra_sources=()):
+    if 'BASH' not in parameters:
+        raise ProfileError(doc, 'BASH must be provided in profile parameters')
+
+    # sources
+    sources = list(extra_sources)
+    for source_clause in doc.get("sources", []):
+        target = source_clause.get("target", ".")
+        sources.append({"target": target, "key": source_clause["key"]})
+
+    # build commands
+    commands = list(dependency_commands)
+    commands.append({"set": "BASH", "nohash_value": parameters['BASH']})
+    if 'PATH' in parameters:
+        commands.insert(0, {"set": "PATH", "nohash_value": parameters['PATH']})
+    commands.append({"cmd": ["$BASH", "_hashdist/build.sh"]})
+    commands.extend(_postprocess_commands(doc))
+
+    # assemble
+    build_spec = {
+        "name": name,
+        "build": {
+            "import": imports,
+            "commands": commands,
+            },
+        "sources": sources,
+        }
+    return core.BuildSpec(build_spec)
 
 
 def preprocess_default_to_parameters(doc):
     def guess_type(value):
-        if value in ('true', 'false'):
-            return bool
+        if isinstance(value, marked_yaml.bool_node):
+            return 'bool'
         else:
             try:
                 int(value)
             except ValueError:
-                return str
+                return 'str'
             else:
-                return int
+                return 'int'
 
     if 'defaults' not in doc:
         return doc
-    doc = dict(doc)  # copy
-    parameters = doc['parameters'] = []
+    doc = marked_yaml.copy_dict_node(doc)
     defaults = doc.pop('defaults')
-    parameters = []
+    if 'parameters' in doc:
+        raise PackageError(defaults, 'A spec cannot have both "defaults" and "parameters", please move '
+                                     'information from the deprecated defaults section to parameters')
+    parameters = doc['parameters'] = marked_yaml.list_node([], defaults.start_mark, defaults.end_mark)
     for key, value in defaults.items():
-        parameters.append({'name': key, 'default': value, 'type': guess_type(value)})
+        parameters.append(marked_yaml.dict_node(
+            {'name': key,
+             'default': value,
+             'type': marked_yaml.unicode_node(guess_type(value), value.start_mark, value.end_mark)},
+            start_mark=key.start_mark, end_mark=value.end_mark))
     return doc
