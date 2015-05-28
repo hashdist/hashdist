@@ -325,7 +325,7 @@ class Package(DictRepr):
         # (TODO: Get rid of PackageYAML in this context, make a new class..)
         condition_to_yaml_file = {}
         for doc, f in zip(tdocs, yaml_files):
-            when = doc.pop('when', None)
+            when = doc.when
             for section in ['dependencies', 'parameters', 'extends']:
                 doc.pop(section, None)
             condition_to_yaml_file[when] = f.copy_with_doc(doc)
