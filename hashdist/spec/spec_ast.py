@@ -14,15 +14,21 @@ GLOBALS_LST = [len]
 GLOBALS = dict((entry.__name__, entry) for entry in GLOBALS_LST)
 
 
+def _handle_dash(expr, parameters):
+    new_parameters = dict((key.replace('-', '_'), value) for key, value in parameters.items())
+    return expr.replace('-', '_'), new_parameters
+
+
 def eval_condition(expr, parameters):
     if expr is None:  # A NoneType argument means no condition, evaluates to True, while 'None' as a str will evaluate False
         return True
+    expr_p, parameters_p = _handle_dash(expr, parameters)
     try:
-        return bool(eval(expr, GLOBALS, parameters))
+        return bool(eval(expr_p, GLOBALS, parameters_p))
     except NameError as e:
         raise ProfileError(expr, "parameter not defined: %s" % e)
     except SyntaxError as e:
-        raise PackageError(expr, "syntax error in expression '%s'" % expr)
+        raise PackageError(expr, "syntax error in expression '%s'" % expr_p)
 
 
 ALLOW_STRINGIFY = (basestring, int)
@@ -33,17 +39,18 @@ def eval_strexpr(expr, parameters, node=None):
     We allow *some* stringification, but not most of them; having
     bool turn into 'True' is generally not useful
     """
+    expr_p, parameters_p = _handle_dash(expr, parameters)
     node = node if node is not None else expr
     try:
-        result = eval(expr, GLOBALS, parameters)
+        result = eval(expr_p, GLOBALS, parameters_p)
         if not isinstance(result, ALLOW_STRINGIFY) or isinstance(result, DENY_STRINGIFY):
             # We want to avoid bools turning into 'True' etc. without explicit
-            raise PackageError(expr, "expression must return a string: %s" % expr)
+            raise PackageError(expr, "expression must return a string: %s" % expr_p)
         return str(result)
     except NameError as e:
         raise PackageError(expr, "parameter not defined: %s" % e)
     except SyntaxError as e:
-        raise PackageError(expr, "syntax error in expression '%s'" % expr)
+        raise PackageError(expr, "syntax error in expression '%s'" % expr_p)
 
 
 
