@@ -9,7 +9,7 @@ from ..formats.marked_yaml import load_yaml_from_file, is_null, marked_yaml_load
 from .utils import substitute_profile_parameters, to_env_var
 from .. import core
 from .exceptions import ProfileError, PackageError
-from .spec_ast import when_transform_yaml, sexpr_and, check_no_sub_conditions, eval_condition
+from .spec_ast import when_transform_yaml, sexpr_and, sexpr_or, check_no_sub_conditions, eval_condition
 from . import spec_ast
 
 
@@ -147,8 +147,7 @@ class Parameter(DictRepr):
                 raise PackageError(self._doc, 'Parameter %s declared with conflicting %s: %s and %s' % (
                     self.name, attr, a, b))
 
-        assert self.declared_when is not None and other_param.declared_when is not None
-        declared_when = '(%s) or (%s)' % (self.declared_when, other_param.declared_when)
+        declared_when = sexpr_or(self.declared_when, other_param.declared_when)
         return Parameter(name=self.name, type=self.type, default=self.default, declared_when=declared_when,
                          doc=self._doc)
 

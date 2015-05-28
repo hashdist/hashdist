@@ -97,6 +97,13 @@ def sexpr_and(x, y):
         return '(%s) and (%s)' % (x, y)
 
 
+def sexpr_or(x, y):
+    if x is None or y is None:
+        return None
+    else:
+        return '(%s) or (%s)' % (x, y)
+
+
 def when_transform_yaml(doc, when=None):
     """
     Takes the YAML-like document `doc` (dicts, lists, primitive types) and
