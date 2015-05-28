@@ -204,6 +204,7 @@ class Profile(object):
             # Step 1: Fill in default fallback values and replace string package params
             # with values of type PackageInstance
             param_values = dict(param_doc)
+            param_values['package'] = pkgname # magic parameter
             for param in pkg_spec.parameters.values():
                 if param.has_package_type():
                     # Package parameters default to other packages of the same

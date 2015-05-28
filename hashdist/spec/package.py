@@ -163,7 +163,8 @@ class Package(DictRepr):
     returning a PackageInstance.
     """
     GLOBAL_PARAMETERS = [
-        Parameter('BASH', basestring)
+        Parameter('BASH', basestring),
+        Parameter('package', basestring),
         ]
 
     def __init__(self, name, parameters, constraints, condition_to_yaml_file,
