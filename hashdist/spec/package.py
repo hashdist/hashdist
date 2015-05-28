@@ -46,8 +46,8 @@ def parse_deps(doc, when=None):
     constraints = []
     for name_pattern, section_lst in [('%s', build_deps), ('_run_%s', run_deps)]:
         for node in section_lst:
-            required = not node.endswith('?')
-            pkg_name = node[:-1] if not required else node
+            required = not node.startswith('+')
+            pkg_name = node[1:] if not required else node
             param_name = name_pattern % pkg_name
             if param_name in parameters:
                 raise PackageError(node, 'dependency %s repeated' % pkg_name)

@@ -138,7 +138,7 @@ def test_profile_packages_section(d):
     """)
 
     dump(pjoin(d, 'pkgs/a.yaml'), dedent("""\
-        dependencies: {build: [x, 'y?', 'z?'], run: [x, 'w?']}
+        dependencies: {build: [x, +y, +z], run: [x, +w]}
         parameters:
           - name: fooparam  # default value filled in
             type: int
