@@ -122,6 +122,8 @@ class Parameter(DictRepr):
 
     @staticmethod
     def parse_from_yaml(doc, when=None):
+        if not isinstance(doc, dict):
+            raise PackageError(doc, 'Parameters must be declared as "{name: <name>}"')
         type = Parameter.TYPENAME_TO_TYPE[doc.get('type', 'str')]
         return Parameter(name=doc['name'],
                          type=type,
@@ -361,7 +363,13 @@ class Package(DictRepr):
                 declared[param.name] = param_values.get(param.name, param.default)
         return declared
 
-    def instantiate(self, param_values):
+    def check_constraints(self, param_values, node=None):
+        for c in self.constraints:
+            if not eval_condition(c, param_values):
+                raise ProfileError(node, '%s package: constraint not satisfied: "%s"' % (self.name, c))
+
+    def instantiate(self, param_values, node=None):
+        self.check_constraints(param_values, node=node)
         return PackageInstance(self, param_values)
 
 
@@ -511,7 +519,6 @@ class PackageInstanceImpl(object):
         loader = PackageLoader(self._spec, self._param_values)
         self.doc = loader.doc
         self.hook_files = loader.get_hook_files()
-
         self.build_deps = dict([(key, value) for key, value in self._param_values.items()
                                 if not key.startswith('_run_') and isinstance(value, PackageInstance)])
 

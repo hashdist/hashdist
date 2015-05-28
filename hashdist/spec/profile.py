@@ -248,7 +248,7 @@ class Profile(object):
             # Step 2: Type-check and remove parameters that are not declared
             # (also according to when-conditions)
             param_values = pkg_spec.typecheck_parameter_set(param_values, node=param_doc)
-            result[pkgname] = inner_result = pkg_spec.instantiate(param_values)
+            result[pkgname] = inner_result = pkg_spec.instantiate(param_values, node=param_doc)
             visiting.remove(pkgname)
             return inner_result
 

@@ -361,3 +361,23 @@ def test_pass_undeclared_parameter(d):
     with assert_raises(ProfileError) as e:
         prof.resolve_parameters()
     assert 'Parameter "notpresent" not declared in any variation on package "foo"' in str(e.exc_val)
+
+
+@temp_working_dir_fixture
+def test_not_providing_required_parameter(d):
+    dump(pjoin(d, "profile.yaml"), """\
+        package_dirs: [.]
+        packages:
+          foo:
+    """)
+
+    dump(pjoin(d, "foo.yaml"), """\
+        parameters: [{name: needed}]
+    """)
+
+    with profile.TemporarySourceCheckouts(None) as checkouts:
+        doc = profile.load_and_inherit_profile(checkouts, pjoin(d, 'profile.yaml'))
+        prof = profile.Profile(null_logger, doc, checkouts)
+    with assert_raises(ProfileError) as e:
+        prof.resolve_parameters()
+    assert 'constraint not satisfied: "needed is not None"' in str(e.exc_val)
