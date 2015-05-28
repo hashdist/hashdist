@@ -353,7 +353,7 @@ def test_name_anonymous_stages():
 def test_files_glob(d):
     dump('pkgs/bar/bar.yaml', """
         dependencies:
-          run: [dep]
+          run: []
         profile_links:
         - name: link_with_glob
           link: '*/**/*'
@@ -409,6 +409,8 @@ def test_package_spec(d):
         - name: use_middlebase_alt
           type: bool
           default: true
+        - name: param_with_def_val
+          default: in_base
     """)
     dump('pkgs/middlebase/middlebase.yaml', """
         extends: [base]
@@ -453,6 +455,9 @@ def test_package_spec(d):
             - name: str_parameter
               type: str
               default: foovalue
+
+        - name: param_with_def_val
+          default: in_bar
     """)
     dump('profile.yaml', """
         package_dirs:
@@ -464,12 +469,16 @@ def test_package_spec(d):
         prof = profile.load_profile(null_logger, checkouts, "profile.yaml")
         pkg = prof.load_package('bar')
 
+    eq_(pkg.parameters['param_with_def_val'].default, 'in_bar')
+
     mock_package = object()
 
     eq_(set(pkg.parameters.keys()),
-        set(['_run_adep', 'adep', 'bool_parameter', 'cdep', '_run_rdep',
-             'other_parameter', 'str_parameter',
-             'int_parameter', 'y', 'x', 'use_middlebase_alt', 'bdep', 'BASH']))
+        set(['BASH', '_run_adep', '_run_rdep',
+             'adep', 'bdep', 'bool_parameter', 'cdep',
+             'int_parameter', 'other_parameter', 'package', 'str_parameter',
+             'y', 'x', 'use_middlebase_alt',
+             'param_with_def_val']))
 
     # Check resulting declared_when and constraints
     eq_(pkg.parameters['str_parameter'].declared_when,

@@ -131,24 +131,22 @@ class Parameter(DictRepr):
                          declared_when=when,
                          doc=doc)
 
-    def merge_with(self, other_param):
+    def merge_with(self, other_param, default_from_self=False):
         """
         Merges together two parameter declarations (from different YAML files
         with different with-clauses).
 
-        For now we require 'type' and 'default' to be the same; these should
-        be refactored into constraints eventually at which point we can merge
-        them better.
+        We require type to be the same.
+
+        If default_from_self is True, we let the default from self win, otherwise
+        we require them to be the same.
         """
         if self.name != other_param.name:
             raise ValueError()
-        for attr in ('type', 'default'):
-            a = getattr(self, attr)
-            b = getattr(other_param, attr)
-            if a != b:
-                raise PackageError(self._doc, 'Parameter %s declared with conflicting %s: %s and %s' % (
-                    self.name, attr, a, b))
-
+        if self.type != other_param.type:
+            raise PackageError(self._doc, 'Parameter %s declared with conflicting types' % self.name)
+        if not default_from_self and self.default != other_param.default:
+            raise PackageError(self._doc, 'Parameter %s declared with conflicting default values' % self.name)
         declared_when = sexpr_or(self.declared_when, other_param.declared_when)
         return Parameter(name=self.name, type=self.type, default=self.default, declared_when=declared_when,
                          doc=self._doc)
@@ -242,9 +240,12 @@ class Package(DictRepr):
         parameters = {}
         constraints = []
 
-        def add_param(param):
+        def add_param(param, default_from_self):
+            # default_from_self=True is used when including parameters from ancestors; at this point
+            # parameters from the package file has already been populated and we
+            # use these default values
             if param.name in parameters:
-                param = parameters[param.name].merge_with(param)
+                param = parameters[param.name].merge_with(param, default_from_self=default_from_self)
             parameters[param.name] = param
 
         if len(yaml_files) == 0:
@@ -275,26 +276,15 @@ class Package(DictRepr):
 
         constraints = []
         parents = []
+        # First pass: Explicit parameters in leaf-level package specs
         for doc in tdocs:
             when = doc.when if doc.when is not None else otherwise
-
-            for parent_name in doc.get('extends', []):
-                parent_when = sexpr_and(when, parent_name.when)
-                parent = profile.load_package(parent_name)
-                for param in parent.parameters.values():
-                    add_param(param.copy_with(declared_when=sexpr_and(parent_when, param.declared_when)))
-                for constraint in parent.constraints:
-                    if parent_when is None:
-                        constraints.append(constraint)
-                    else:
-                        constraints.append('not (%s) or (%s)' % (parent_when, constraint))
-                parents.append((parent_when, parent))
 
             # Add explicit parameters
             for x in doc.get('parameters', []):
                 param_when = sexpr_and(when, x.when)
                 check_no_sub_conditions(x)
-                add_param(Parameter.parse_from_yaml(x, param_when))
+                add_param(Parameter.parse_from_yaml(x, param_when), default_from_self=False)
                 required = x.get('required', 'default' not in x)
                 if required:
                     if param_when is None:
@@ -305,8 +295,25 @@ class Package(DictRepr):
             # Add deps parameters
             dep_params, dep_constraints = parse_deps(doc, when=when)
             for p in dep_params.values():
-                add_param(p)
+                add_param(p, default_from_self=False)
             constraints.extend(dep_constraints)
+
+        # Second pass: Parameters from ancestors
+        for doc in tdocs:
+            when = doc.when if doc.when is not None else otherwise
+
+            for parent_name in doc.get('extends', []):
+                parent_when = sexpr_and(when, parent_name.when)
+                parent = profile.load_package(parent_name)
+                for param in parent.parameters.values():
+                    add_param(param.copy_with(declared_when=sexpr_and(parent_when, param.declared_when)),
+                              default_from_self=True)
+                for constraint in parent.constraints:
+                    if parent_when is None:
+                        constraints.append(constraint)
+                    else:
+                        constraints.append('not (%s) or (%s)' % (parent_when, constraint))
+                parents.append((parent_when, parent))
 
         # Attach the YAML files too, we just transform them first to remove the sections
         # parsed above. Group them by their 'when' clause and take the 'when' clause out
