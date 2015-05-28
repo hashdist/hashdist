@@ -326,6 +326,9 @@ class Package(DictRepr):
         """
         declared = self.get_declared(param_values, node)
         for param_name, value in param_values.items():
+            if param_name not in self.parameters:
+                raise ProfileError(param_name, 'Parameter "%s" not declared in any variation on package "%s"' %
+                                   (param_name, self.name))
             self.parameters[param_name].check_type(value, node=node)
         return declared
 

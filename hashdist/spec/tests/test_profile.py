@@ -17,6 +17,10 @@ from .. import package
 from .. import builder
 from ..exceptions import ProfileError
 
+
+null_logger = logging.getLogger('null_logger')
+
+
 def gitify(dir):
     with working_directory(dir):
         subprocess.check_call(['git', 'init'], stdout=open(os.devnull, 'wb'))
@@ -216,7 +220,6 @@ def test_resource_resolution(d):
     dump(pjoin(d, "level1", "pkgs", "foo.yaml"), "{}")
     dump(pjoin(d, "level1", "pkgs", "bar.yaml"), "{}")
 
-    null_logger = logging.getLogger('null_logger')
     with profile.TemporarySourceCheckouts(None) as checkouts:
         doc = profile.load_and_inherit_profile(checkouts, pjoin(d, "level3", "profile.yaml"))
         p = profile.Profile(null_logger, doc, checkouts)
@@ -313,7 +316,6 @@ def test_defaults_section_in_package(d):
           - when: foo
             handler: bash
     """)
-    null_logger = logging.getLogger('null_logger')
     def get_build_stages_of_mypkg(profile_file):
         with profile.TemporarySourceCheckouts(None) as checkouts:
             doc = profile.load_and_inherit_profile(checkouts, pjoin(d, profile_file))
@@ -340,3 +342,22 @@ def test_defaults_section_in_package(d):
         {'handler': 'bash'}, {'handler': 'bash', 'bash': 'exit 0\n'}]
     assert get_build_stages_of_mypkg('with_global.yaml') == [{'handler': 'bash', 'bash': 'exit 1\n'}]
     assert get_build_stages_of_mypkg('with_package.yaml') == [{'handler': 'bash', 'bash': 'exit 1\n'}]
+
+
+@temp_working_dir_fixture
+def test_pass_undeclared_parameter(d):
+    dump(pjoin(d, "profile.yaml"), """\
+        package_dirs: [.]
+        packages:
+          foo:
+            notpresent: true
+    """)
+
+    dump(pjoin(d, "foo.yaml"), "")
+
+    with profile.TemporarySourceCheckouts(None) as checkouts:
+        doc = profile.load_and_inherit_profile(checkouts, pjoin(d, 'profile.yaml'))
+        prof = profile.Profile(null_logger, doc, checkouts)
+    with assert_raises(ProfileError) as e:
+        prof.resolve_parameters()
+    assert 'Parameter "notpresent" not declared in any variation on package "foo"' in str(e.exc_val)
