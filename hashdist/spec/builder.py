@@ -134,7 +134,7 @@ class ProfileBuilder(object):
         extra_env = {'HASHDIST_CPU_COUNT': str(worker_count)}
         self.build_store.ensure_present(self._build_specs[pkg], config, extra_env=extra_env,
                                         keep_build=keep_build, debug=debug)
-        self._built.add(pkgname)
+        self._built.add(pkg)
 
     def build_profile(self, config, keep_build='never'):
         profile_build_spec = self.get_profile_build_spec()
