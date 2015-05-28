@@ -38,12 +38,15 @@ def parse_deps(doc, when=None):
     The build deps are turned into parameters with the same name, as they are referenced
     in build scripts etc. The run deps are turned into parameters with names ``_run_<name>``.
     """
-    deps_section = doc.get('dependencies', {})
+    parameters = {}
+    constraints = []
+    deps_section = doc.get('dependencies', None)
+    if not deps_section:
+        return parameters, constraints
+
     build_deps = deps_section.get('build', [])
     run_deps = deps_section.get('run', [])
 
-    parameters = {}
-    constraints = []
     for name_pattern, section_lst in [('%s', build_deps), ('_run_%s', run_deps)]:
         for node in section_lst:
             required = not node.startswith('+')
