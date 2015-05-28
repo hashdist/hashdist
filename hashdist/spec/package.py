@@ -581,7 +581,7 @@ class PackageInstanceImpl(object):
         build_script = assemble_build_script(self.doc, ctx)
         files = {}
         for to_name, from_name in ctx._bundled_files.iteritems():
-            p = profile.find_package_file(self.name, from_name)
+            p = profile.find_package_file(self._spec.name, from_name)
             if p is None:
                 raise ProfileError(from_name, 'file "%s" not found' % from_name)
             with open(profile.resolve(p)) as f:
