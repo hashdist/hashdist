@@ -64,10 +64,11 @@ def parse_deps(doc, when=None):
                 declared_when=dep_when,
                 doc=node)
             if required:
-                constraints.append(
-                    ('not (%s) or (%s is not None)' % (dep_when, param_name)
+                c = ('not (%s) or (%s is not None)' % (dep_when, param_name)
                      if dep_when is not None else
-                     '%s is not None' % param_name))
+                     '%s is not None' % param_name)
+                c = marked_yaml.unicode_node(c, node.start_mark, node.end_mark)
+                constraints.append(c)
     return parameters, constraints
 
 
