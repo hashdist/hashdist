@@ -138,7 +138,7 @@ def test_profile_packages_section(d):
     """)
 
     dump(pjoin(d, 'pkgs/a.yaml'), dedent("""\
-        dependencies: {build: [x, +y, +z], run: [x, +w]}
+        dependencies: {build: [x, +q, +y, +z], run: [x, +q, +w]}
         parameters:
           - name: fooparam  # default value filled in
             type: int
@@ -147,12 +147,13 @@ def test_profile_packages_section(d):
             type: str
             default: 'fromdefault'
     """))
-    dump(pjoin(d, 'pkgs/b.yaml'), "")
+    dump(pjoin(d, 'pkgs/b.yaml'), "dependencies: {build: [q]}")
     dump(pjoin(d, 'pkgs/c.yaml'), "dependencies: {build: [b]}")
     dump(pjoin(d, 'pkgs/e.yaml'), "dependencies: {build: [d]}")
     dump(pjoin(d, 'pkgs/x.yaml'), "profile_links: [{link: '*/**/*'}]")
     dump(pjoin(d, 'pkgs/y.yaml'), "")
     dump(pjoin(d, 'pkgs/z.yaml'), "")
+    dump(pjoin(d, 'pkgs/q.yaml'), "")
 
     p = profile.load_profile(null_logger, profile.TemporarySourceCheckouts(None),
                              pjoin(d, "profile.yaml"))
@@ -175,8 +176,12 @@ def test_profile_packages_section(d):
     # z: optional package not specified, NOT pulled in
     assert 'z' not in pkgs
     assert pkgs['a'].z is None
-    # w: optional run-dep is simply ignored
-    assert not hasattr(pkgs['a'], '_run_w')
+    # q: optional in a, required in b -- should be passed to a as well!
+    assert 'q' in pkgs
+    assert pkgs['a'].q is not None and pkgs['b'].q is not None
+    assert pkgs['a']._run_q is not None
+    # w: optional run-dep
+    assert pkgs['a']._run_w is None
 
     # Check that each package loaded the right YAML file
     for x in ['a', 'b', 'c', 'e', 'x']:
@@ -207,12 +212,19 @@ def test_profile_packages_section(d):
                      'target': '${ARTIFACT}'}]}
                     ]},
                 {'hit': ['build-postprocess', '--write-protect']}],
-            'import': [
-                {'id': 'x/cye2gqdezpn343yduqzttawplswxdubw', 'ref': 'X'},
-                {'id': 'a/k3sdoxtwx2zezkncvqqllmpxvcgl4a33', 'ref': 'A'},
-                {'id': 'b/bvvvvxqihddfvpm6xv4kgiyrsphlmkhg', 'ref': 'B'},
-                {'id': 'c/bc7nfsonjqw6n4wqwoh532dot67tiiwf', 'ref': 'C'},
-                {'id': 'e/jkw7z7y364i57wxbnhyac324bd4ugms6', 'ref': 'E'},
-                {'id': 'y/66vt2inbxuodtn3jilnpkoajwtsb46kk', 'ref': 'Y'}]},
+           'import': [{'id': 'q/deoatuqg6fqo6tcmoxvwbmtpkxitqyp6',
+                       'ref': 'Q'},
+                      {'id': 'x/cye2gqdezpn343yduqzttawplswxdubw',
+                       'ref': 'X'},
+                      {'id': 'a/cefcdsfgxmwf5aysx56yedb6zv3eiouw',
+                       'ref': 'A'},
+                      {'id': 'b/n3inim7xqv4vkqn5oc7pop23g4uslptu',
+                       'ref': 'B'},
+                      {'id': 'c/nzfy5wj3cavumi7kb3srcf352ouychrq',
+                       'ref': 'C'},
+                      {'id': 'e/ry4sqshmcartjaz2p2bmdmcswygh3rfv',
+                       'ref': 'E'},
+                      {'id': 'y/66vt2inbxuodtn3jilnpkoajwtsb46kk',
+                       'ref': 'Y'}]},
         'name': 'profile',
         'version': 'n'})

@@ -25,6 +25,14 @@ from .. import core
 from .exceptions import ProfileError, PackageError
 
 
+class _optional_package(object):
+    """
+    Marker object
+    """
+    def __init__(self, name):
+        self.name = name
+
+
 class Profile(object):
     """
     Profiles acts as nodes in a tree, with `extends` containing the
@@ -105,7 +113,7 @@ class Profile(object):
 
         A :class:`~hashdist.spec.package.Package` instance if successfull,
         which references ~hashdist.spec.package.PackageYAML instances with
-        the package contents. 
+        the package contents.
 
         Raises
         ------
@@ -175,7 +183,7 @@ class Profile(object):
         is a dict of { name : PackageInstance }, where "name" is the name used
         in the profile of the package.
         """
-        result = {}  # name : PackageInstance
+        result = {}  # {name : (package spec, dict of parameters to pass)}
         visiting = set()
 
         def visit(pkgname):
@@ -199,43 +207,38 @@ class Profile(object):
 
             pkg_spec = self.load_package(pkgname)
 
-            # Now we want to complete the information in param_doc.
+            # Any parameters explicitly provided but declared? raise error
+            for key in param_doc:
+                if key not in pkg_spec.parameters:
+                    raise ProfileError(key, 'Parameter "%s" not declared in any variation on package "%s"' %
+                                       (key, pkg_spec.name))
 
-            # Step 1: Fill in default fallback values and replace string package params
-            # with values of type PackageInstance
-            param_values = dict(param_doc)
+            # Step 1: Produce param_values, which is the full set of parameters for the package. In essence this
+            # is param_doc from the profile + default values + replace names of packages with Package instances.
+            #
+            # NOTE: For now, we do not resolve any optional dependencies. This is left to a second pass, because
+            # we want all hard dependencies to be resolved first, then include whatever was pulled in in that pass
+            # (globally) to be picked up for the optional dependencies.
+            param_values = {}
             param_values['package'] = pkgname # magic parameter
             for param in pkg_spec.parameters.values():
                 if param.has_package_type():
-                    # Package parameters default to other packages of the same
-                    # name as the parameter in the profile. At this point we recurse
-                    # to make sure that package is resolved, and a PackageInstance
-                    # is present instead of str in param_values.
-
-                    # We will include the package if and only if include ends up True.
-                    # If not, we set it to None, and also it is never visited.
-                    # Note: If *another* package requires it, we don't include it,
-                    # only if it's explicitly listed, for now. Will write tests after
-                    # list has decided what we want.
                     dep_name = param.name
                     if dep_name.startswith('_run_'):
                         dep_name = dep_name[len('_run_'):]
-                    include = False
-                    if dep_name in param_values:
-                        include = True
-                    # OK, not explicitly given. Is it present in profile though?
-                    elif dep_name in self.packages:
-                        include = True
+                    dep_pkg = None  # if left None in the end, it is optional and we don't provide id
+
+                    # Do some very basic matching on constraints; this is only likely to match our
+                    # own auto-generate constraint, though it doesn't hurt if it matches user-provided
+                    # constraints
+                    required = '%s is not None' % param.name in pkg_spec.constraints
+                    if required or dep_name in param_values:
+                        dep_pkg = visit(param_doc.get(dep_name, dep_name))
                     else:
-                        # We do a tiny special case of constraint
-                        # solving here; if there is a constraint saying exactly that the
-                        # package must be included, we auto-include it. This constraint
-                        # is generated in package.parse_deps. Obviously this is in anticipation
-                        # of a better constraints system.
-                        include = '%s is not None' % param.name in pkg_spec.constraints
-                    inc_pkg = visit(param_doc.get(dep_name, dep_name)) if include else None
-                    param_values[param.name] = inc_pkg
-                elif param.name not in param_values:
+                        # Optional and not explicitly provided. Solve this in second pass
+                        dep_pkg = _optional_package(dep_name)
+                    param_values[param.name] = dep_pkg
+                elif param.name not in param_doc:
                     if param.name in self.parameters:
                         # Inherit from global profile parameters
                         param_values[param.name] = self.parameters[param.name]
@@ -244,19 +247,32 @@ class Profile(object):
                         # be None and there will be a constraint that it is not None that will
                         # fail later.
                         param_values[param.name] = param.default
+                else:
+                    # Use explicitly passed parameter
+                    param_values[param.name] = param_doc[param.name]
 
             # Step 2: Type-check and remove parameters that are not declared
             # (also according to when-conditions)
-            param_values = pkg_spec.typecheck_parameter_set(param_values, node=param_doc)
-            result[pkgname] = inner_result = pkg_spec.instantiate(param_values, node=param_doc)
+            x = result[pkgname] = pkg_spec.pre_instantiate(param_values)
             visiting.remove(pkgname)
-            return inner_result
+            return x
 
+        # Pass 1: Resolve defaults and hard dependencies
         for pkgname, args in self.packages.items():
             visit(pkgname)
+
+        # Pass 2: Fill in any optional dependencies (potentially causing cyclic references
+        #         which is OK) and call init() on packages
+        for pkg_name, pkg in result.items():
+            for param_name, param_value in pkg._param_values.items():
+                if isinstance(param_value, _optional_package):
+                    pkg._param_values[param_name] = result.get(param_value.name, None)
+            pkg._param_values = pkg._spec.typecheck_parameter_set(pkg._param_values, node=None)
+            pkg.init()
+
         return result
 
-    
+
     def __repr__(self):
         return 'Profile containing ' + ', '.join(
             key[1] for key in self._yaml_cache.keys() if key[0] == 'package')

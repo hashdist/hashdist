@@ -55,11 +55,6 @@ def parse_deps(doc, when=None):
             if param_name in parameters:
                 raise PackageError(node, 'dependency %s repeated' % pkg_name)
 
-            # An optional run-dep is sort of a contradiction in terms at the moment,
-            # filter them out
-            if param_name.startswith('_run_') and not required:
-                continue
-
             dep_when = sexpr_and(when, node.when)
             parameters[param_name] = Parameter(
                 name=param_name,
@@ -380,9 +375,13 @@ class Package(DictRepr):
                 raise ProfileError(node, '%s package: constraint not satisfied: "%s"' % (self.name, c))
 
     def instantiate(self, param_values, node=None):
+        package = self.pre_instantiate(param_values, node)
+        package.init()
+        return package
+
+    def pre_instantiate(self, param_values, node=None):
         self.check_constraints(param_values, node=node)
         return PackageInstance(self, param_values)
-
 
 
 class PackageYAML(object):
@@ -499,10 +498,17 @@ class PackageInstance(object):
     Therefore a lot of the internal routines that belong to a PackageInstance
     are, as a namespace issue, hidden away in the PackageInstanceImpl
     class/`_impl` attribute.
+
+    Because packages can refer to one another cyclically, we need a two-stage
+    construction. First construct, then param_values dict remain mutable, then
+    call `init()` after which _impl becomes available and the package should
+    be considered immutable.
     """
     def __init__(self, spec, param_values):
         self._spec = spec
         self._param_values = param_values
+
+    def init(self):
         self._impl = PackageInstanceImpl(self)
 
     def __getattr__(self, key):
