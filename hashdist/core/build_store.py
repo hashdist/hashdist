@@ -350,6 +350,7 @@ class BuildStore(object):
         return pjoin(self.artifact_root, name, digest[:SHORT_ARTIFACT_ID_LEN])
 
     def _download_artifact(self, url,path):
+        import subprocess
         # Provide a special case for local files
         use_urllib = not SIMPLE_FILE_URL_RE.match(url)
         if not use_urllib:
@@ -405,7 +406,8 @@ class BuildStore(object):
             raise RemoteBuildStoreFetchError(msg)
         os.chmod(temp_path, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
         subprocess.check_call(['tar', 'xzf', temp_path], cwd=self.artifact_root)
-        robust_rmtree(temp_path,self.logger)
+        os.remove(temp_path)
+
     def resolve(self, artifact_id,build_store_only=False):
         """Given an artifact_id, resolve the short path for it, or return
         None if the artifact isn't built.
