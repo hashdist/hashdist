@@ -79,7 +79,7 @@ class ProfileBuilder(object):
         return self.get_ready_dict().keys()
 
     def get_build_spec(self, pkgname):
-        return self._build_specs[pkgname]
+        return self._build_specs[self._packages[pkgname]]
 
     def get_build_script(self, pkgname):
         python_path = self.profile.hook_import_dirs
