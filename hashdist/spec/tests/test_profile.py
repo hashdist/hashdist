@@ -16,6 +16,7 @@ from .. import profile
 from .. import package
 from .. import builder
 from ..exceptions import ProfileError
+from ..exceptions import PackageError
 
 
 null_logger = logging.getLogger('null_logger')
@@ -344,6 +345,12 @@ def test_defaults_section_in_package(d):
     assert get_build_stages_of_mypkg('with_package.yaml') == [{'handler': 'bash', 'bash': 'exit 1\n'}]
 
 
+def build_profile(d):
+    with profile.TemporarySourceCheckouts(None) as checkouts:
+        doc = profile.load_and_inherit_profile(checkouts, pjoin(d, 'profile.yaml'))
+        prof = profile.Profile(null_logger, doc, checkouts)
+    return prof
+
 @temp_working_dir_fixture
 def test_pass_undeclared_parameter(d):
     dump(pjoin(d, "profile.yaml"), """\
@@ -355,9 +362,7 @@ def test_pass_undeclared_parameter(d):
 
     dump(pjoin(d, "foo.yaml"), "")
 
-    with profile.TemporarySourceCheckouts(None) as checkouts:
-        doc = profile.load_and_inherit_profile(checkouts, pjoin(d, 'profile.yaml'))
-        prof = profile.Profile(null_logger, doc, checkouts)
+    prof = build_profile(d)
     with assert_raises(ProfileError) as e:
         prof.resolve_parameters()
     assert 'Parameter "notpresent" not declared in any variation on package "foo"' in str(e.exc_val)
@@ -375,9 +380,27 @@ def test_not_providing_required_parameter(d):
         parameters: [{name: needed}]
     """)
 
-    with profile.TemporarySourceCheckouts(None) as checkouts:
-        doc = profile.load_and_inherit_profile(checkouts, pjoin(d, 'profile.yaml'))
-        prof = profile.Profile(null_logger, doc, checkouts)
+    prof = build_profile(d)
     with assert_raises(ProfileError) as e:
         prof.resolve_parameters()
     assert 'constraint not satisfied: "needed is not None"' in str(e.exc_val)
+
+
+@temp_working_dir_fixture
+def test_not_declaring_parameter(d):
+    dump(pjoin(d, "profile.yaml"), """\
+        package_dirs: [.]
+        packages:
+          foo:
+    """)
+
+    dump(pjoin(d, "foo.yaml"), """\
+        build_stages:
+        - when: foo
+          handler: bash
+    """)
+
+    prof = build_profile(d)
+    with assert_raises(ProfileError) as e:
+        prof.resolve_parameters()
+    assert "parameter not defined: name 'foo' is not defined" in str(e.exc_val)
