@@ -118,6 +118,7 @@ class MockProfile(object):
         return MockPackageYAML(filename, doc, hook)
 
     def load_package(self, name):
+        assert isinstance(name, basestring)
         yaml = self.load_package_yaml(name, {})
         return package.Package.create_from_yaml_files(self, [yaml])
 

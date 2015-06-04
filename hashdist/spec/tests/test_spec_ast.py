@@ -25,13 +25,13 @@ def test_type_transform():
          - 1
          - 2: 3
     ''')
-    eq_(type(pdoc['a']['x'][0]), spec_ast.int_node)
-    eq_(type(pdoc['a']['x'][1][2]), spec_ast.int_node)
-    eq_(type(pdoc['a']['b'][4]), spec_ast.null_node)
+    eq_(type(pdoc.value['a'].value['x'].value[0]), spec_ast.int_node)
+    eq_(type(pdoc.value['a'].value['x'].value[1].value[2]), spec_ast.int_node)
+    eq_(type(pdoc.value['a'].value['b'].value[4]), spec_ast.null_node)
     eq_(type(pdoc), spec_ast.dict_node)
     # Keys are not transformed:
-    eq_(type(pdoc.keys()[0]), marked_yaml.unicode_node)
-    eq_(type(pdoc['a'].keys()[0]), marked_yaml.unicode_node)
+    eq_(type(pdoc.value.keys()[0]), marked_yaml.unicode_node)
+    eq_(type(pdoc.value['a'].value.keys()[0]), marked_yaml.unicode_node)
 
 
 def test_when_transform():
@@ -43,16 +43,14 @@ def test_when_transform():
          - 2: 3
            when: use_2
     ''')
-    eq_(set(pdoc.keys()), set(['b', 'x']))
-    eq_(pdoc['b'].when, 'x == 0')
-    eq_(pdoc['b'], ['c', 'd1', 'd2', 3, 4, None, {'a': 'b'}])
-    eq_(pdoc['b'][0].when, 'x == 0')
-    eq_(pdoc['b'][1].when, '(x == 0) and (use_d)')
-    eq_(pdoc['b'][2].when, '(x == 0) and (use_d)')
-    eq_(pdoc['b'][3].when, 'x == 0')
-    eq_(pdoc['x'], [1, {2: 3}])
-    eq_(pdoc['x'][0].when, 'x == 0')
-    eq_(pdoc['x'][1].when, '(x == 0) and (use_2)')
+    eq_(set(pdoc.value.keys()), set(['b', 'x']))
+    eq_(pdoc.value['b'].when, 'x == 0')
+    eq_(pdoc.value['b'].value[0].when, 'x == 0')
+    eq_(pdoc.value['b'].value[1].when, '(x == 0) and (use_d)')
+    eq_(pdoc.value['b'].value[2].when, '(x == 0) and (use_d)')
+    eq_(pdoc.value['b'].value[3].when, 'x == 0')
+    eq_(pdoc.value['x'].value[0].when, 'x == 0')
+    eq_(pdoc.value['x'].value[1].when, '(x == 0) and (use_2)')
 
 
 def test_scalar_result_mixed_with_dict():

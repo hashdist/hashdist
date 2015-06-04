@@ -40,17 +40,17 @@ def parse_deps(doc, when=None):
     """
     parameters = {}
     constraints = []
-    deps_section = doc.get('dependencies', None)
-    if not deps_section:
+    deps_section = doc.value.get('dependencies', None)
+    if deps_section is None or not deps_section.value:
         return parameters, constraints
 
-    build_deps = deps_section.get('build', [])
-    run_deps = deps_section.get('run', [])
+    build_deps = deps_section.get_value('build', [])
+    run_deps = deps_section.get_value('run', [])
 
     for name_pattern, section_lst in [('%s', build_deps), ('_run_%s', run_deps)]:
         for node in section_lst:
-            required = not node.startswith('+')
-            pkg_name = node[1:] if not required else node
+            required = not node.value.startswith('+')
+            pkg_name = node.value[1:] if not required else node.value
             param_name = name_pattern % pkg_name
             if param_name in parameters:
                 raise PackageError(node, 'dependency %s repeated' % pkg_name)
@@ -121,12 +121,13 @@ class Parameter(DictRepr):
 
     @staticmethod
     def parse_from_yaml(doc, when=None):
-        if not isinstance(doc, dict):
+        if not isinstance(doc.value, dict):
             raise PackageError(doc, 'Parameters must be declared as "{name: <name>}"')
-        type = Parameter.TYPENAME_TO_TYPE[doc.get('type', 'str')]
-        return Parameter(name=doc['name'],
+        type = Parameter.TYPENAME_TO_TYPE[spec_ast.evaluate_doc(doc.value['type'], {})
+                                          if 'type' in doc.value else 'str']
+        return Parameter(name=spec_ast.evaluate_doc(doc.value['name'], {}),
                          type=type,
-                         default=doc.get('default', None),
+                         default=spec_ast.evaluate_doc(doc.value['default'], {}) if 'default' in doc.value else None,
                          declared_when=when,
                          doc=doc)
 
@@ -269,8 +270,10 @@ class Package(DictRepr):
         # section, with interpreter-style parsing for the rest
         tdocs = []
         for f in yaml_files:
-            tdoc = when_transform_yaml(f.doc)
-            tdoc.when = tdoc.pop('when', None)
+            doc = marked_yaml.copy_dict_node(f.doc)
+            when = doc.pop('when', None)
+            tdoc = when_transform_yaml(doc)
+            tdoc.when = when
             tdocs.append(tdoc)
 
         constraints = []
@@ -279,17 +282,19 @@ class Package(DictRepr):
         for doc in tdocs:
             when = doc.when if doc.when is not None else otherwise
 
-            # Add explicit parameters
-            for x in doc.get('parameters', []):
+            # Add explicit parameters.
+            for x in doc.get_value('parameters', []):
                 param_when = sexpr_and(when, x.when)
-                check_no_sub_conditions(x)
                 add_param(Parameter.parse_from_yaml(x, param_when), default_from_self=False)
-                required = x.get('required', 'default' not in x)
+                required = (spec_ast.evaluate_doc(x.value['required'], {})
+                            if 'required' in x.value
+                            else ('default' not in x.value))
                 if required:
                     if param_when is None:
-                        constraints.append('%s is not None' % x['name'])
+                        constraints.append('%s is not None' % spec_ast.evaluate_doc(x.value['name'], {}))
                     else:
-                        constraints.append('not (%s) or (%s is not None)' % (param_when, x['name']))
+                        constraints.append('not (%s) or (%s is not None)' % (
+                            param_when, spec_ast.evaluate_doc(x.value['name'], {})))
 
             # Add deps parameters
             dep_params, dep_constraints = parse_deps(doc, when=when)
@@ -301,9 +306,9 @@ class Package(DictRepr):
         for doc in tdocs:
             when = doc.when if doc.when is not None else otherwise
 
-            for parent_name in doc.get('extends', []):
+            for parent_name in doc.get_value('extends', []):
                 parent_when = sexpr_and(when, parent_name.when)
-                parent = profile.load_package(parent_name)
+                parent = profile.load_package(spec_ast.evaluate_doc(parent_name, {}))
                 for param in parent.parameters.values():
                     add_param(param.copy_with(declared_when=sexpr_and(parent_when, param.declared_when)),
                               default_from_self=True)
@@ -322,7 +327,7 @@ class Package(DictRepr):
         for doc, f in zip(tdocs, yaml_files):
             when = doc.when
             for section in ['dependencies', 'parameters', 'extends']:
-                doc.pop(section, None)
+                doc.value.pop(section, None)
             condition_to_yaml_file[when] = f.copy_with_doc(doc)
 
         return Package(name, parameters, constraints, condition_to_yaml_file, parents=parents)

@@ -62,13 +62,20 @@ CONDITIONAL_RE = re.compile(r'^when (.*)$')
 # the explicit 'when'-clauses from the document
 #
 def create_node_class(cls):
-    class node_class(cls):
+    class node_class(object):
         def __init__(self, x, when):
-            cls.__init__(self, x, x.start_mark, x.end_mark)
+            self.value = x
+            self.start_mark = x.start_mark
+            self.end_mark = x.end_mark
             self.when = when
 
-        def __new__(self, x, when):
-            return cls.__new__(self, x, x.start_mark, x.end_mark)
+        def get_value(self, key, default):
+            # only relevant on dict_node..
+            if key not in self.value:
+                return default
+            else:
+                return self.value[key].value
+
     node_class.__name__ = cls.__name__
     return node_class
 
@@ -150,7 +157,8 @@ def _transform_choose_scalar(doc, when):
 
 
 def _transform_dict_merge(doc, when):
-    result = dict_node(marked_yaml.dict_like(doc), when)
+    assert isinstance(doc, marked_yaml.dict_node)
+    result = marked_yaml.dict_like(doc)
 
     for key, value in doc.items():
         m = CONDITIONAL_RE.match(unicode(key))
@@ -159,17 +167,17 @@ def _transform_dict_merge(doc, when):
                 raise PackageError(value, "'when' dict entry must contain another dict")
             sub_when = sexpr_and(when, m.group(1))
             to_merge = _transform_dict(value, sub_when)
-            for k, v in to_merge.items():
+            for k, v in to_merge.value.items():
                 if k in result:
                     raise PackageError(k, "key '%s' conflicts with another key of the same name "
                                        "in another when-clause" % k)
                 result[k] = v
         else:
             result[key] = when_transform_yaml(value, when)
-    return result
+    return dict_node(result, when)
 
 def _transform_list(doc, when):
-    result = list_node(marked_yaml.list_node([], doc.start_mark, doc.end_mark), when)
+    result = []
     for item in doc:
         if isinstance(item, dict) and len(item) == 1:
             # lst the form [..., {'when EXPR': BODY}, ...]
@@ -180,7 +188,7 @@ def _transform_list(doc, when):
                     raise PackageError(value, "'when' clause within list must contain another list")
                 sub_when = sexpr_and(when, m.group(1))
                 to_extend = _transform_list(value, sub_when)
-                result.extend(to_extend)
+                result.extend(to_extend.value)
             else:
                 result.append(when_transform_yaml(item, when))
         elif isinstance(item, dict) and 'when' in item:
@@ -190,7 +198,7 @@ def _transform_list(doc, when):
             result.append(when_transform_yaml(item_copy, sub_when))
         else:
             result.append(when_transform_yaml(item, when))
-    return result
+    return list_node(marked_yaml.list_node(result, doc.start_mark, doc.end_mark), when)
 
 
 def has_sub_conditions(doc):
@@ -199,13 +207,13 @@ def has_sub_conditions(doc):
     or True if there is variation.
     """
     if isinstance(doc, dict):
-        for child in doc.values():
+        for child in doc.value.values():
             if child.when != doc.when:
                 return True
         else:
             return False
     elif isinstance(doc, list):
-        for child in doc:
+        for child in doc.value:
             if child.when != doc.when:
                 return True
         else:
@@ -243,7 +251,7 @@ def evaluate_doc(doc, parameters):
     elif isinstance(doc, choose_value_node):
         return evaluate_choose(doc, parameters)
     elif isinstance(doc, (int_node, null_node, bool_node)):
-        return doc
+        return doc.value
     else:
         raise ValueError('doc was not an AST node: %r of type %s' % (doc, type(doc)))
 
@@ -255,21 +263,21 @@ def evaluate_unicode(doc, parameters):
     """
     def dbrace_expand(match):
         return eval_strexpr(match.group(1), parameters, node=doc)
-    return marked_yaml.unicode_node(DBRACE_RE.sub(dbrace_expand, doc), doc.start_mark, doc.end_mark)
+    return marked_yaml.unicode_node(DBRACE_RE.sub(dbrace_expand, doc.value), doc.start_mark, doc.end_mark)
 
 
 def evaluate_dict(doc, parameters):
-    result = marked_yaml.dict_node({}, doc.start_mark, doc.end_mark)
+    result = {}
 
-    for key, value in doc.items():
+    for key, value in doc.value.items():
         if eval_condition(value.when, parameters):
             result[key] = evaluate_doc(value, parameters)
-    return result
+    return marked_yaml.dict_node(result, doc.start_mark, doc.end_mark)
 
 
 def evaluate_list(doc, parameters):
     result = marked_yaml.list_node([], doc.start_mark, doc.end_mark)
-    for item in doc:
+    for item in doc.value:
         if eval_condition(item.when, parameters):
             result.append(evaluate_doc(item, parameters))
     return result

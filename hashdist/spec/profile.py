@@ -124,6 +124,7 @@ class Profile(object):
         * class:`~hashdist.spec.exceptions.PackageError`` is raised if
           a package conflicts with a previous one.
         """
+        assert isinstance(pkgname, basestring)
         from .package import Package, PackageYAML
 
         use = self._use_for_package(pkgname)
