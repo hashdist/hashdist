@@ -5,6 +5,7 @@ from . import utils
 from . import hook
 from . import hook_api
 from ..formats.marked_yaml import load_yaml_from_file
+from ..formats import marked_yaml
 from ..core import BuildSpec, ArtifactBuilder
 from .utils import to_env_var
 from .exceptions import PackageError, ProfileError
@@ -123,8 +124,8 @@ class ProfileBuilder(object):
             "name": "profile",
             "version": "n",
             "build": {
-                "import": imports,
-                "commands": commands,
+                "import": marked_yaml.raw_tree(imports),
+                "commands": marked_yaml.raw_tree(commands),
                 }
             })
 
