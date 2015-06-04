@@ -9,7 +9,7 @@ from ..formats.marked_yaml import load_yaml_from_file, is_null, marked_yaml_load
 from .utils import substitute_profile_parameters, to_env_var
 from .. import core
 from .exceptions import ProfileError, PackageError
-from .spec_ast import when_transform_yaml, sexpr_and, sexpr_or, check_no_sub_conditions, eval_condition
+from .spec_ast import when_transform_yaml, sexpr_and, sexpr_or, sexpr_implies, check_no_sub_conditions, eval_condition
 from . import spec_ast
 
 
@@ -30,16 +30,22 @@ class PackageType(object):
         return 'package(%s)' % self.contract
 
 
-def parse_deps(doc, when=None):
+def parse_deps_and_constraints(doc, when=None):
     """
-    Parses the ``dependencies`` section of `doc` into a list of `Parameter` instances
-    and constraints.
+    Parses the ``dependencies`` and ``constraints`` section of `doc` into a
+    list of `Parameter` instances and constraints.
 
     The build deps are turned into parameters with the same name, as they are referenced
     in build scripts etc. The run deps are turned into parameters with names ``_run_<name>``.
     """
     parameters = {}
     constraints = []
+
+    for c in doc.get_value('constraints', []):
+        when = c.when
+        c = spec_ast.evaluate_doc(c, {})  # no when clauses *within* or variable expansions
+        constraints.append(sexpr_implies(when, c))
+
     deps_section = doc.value.get('dependencies', None)
     if deps_section is None or not deps_section.value:
         return parameters, constraints
@@ -62,7 +68,7 @@ def parse_deps(doc, when=None):
                 declared_when=dep_when,
                 doc=node)
             if required:
-                c = ('not (%s) or (%s is not None)' % (dep_when, param_name)
+                c = (sexpr_implies(dep_when, '%s is not None' % param_name)
                      if dep_when is not None else
                      '%s is not None' % param_name)
                 c = marked_yaml.unicode_node(c, node.start_mark, node.end_mark)
@@ -297,7 +303,7 @@ class Package(DictRepr):
                             param_when, spec_ast.evaluate_doc(x.value['name'], {})))
 
             # Add deps parameters
-            dep_params, dep_constraints = parse_deps(doc, when=when)
+            dep_params, dep_constraints = parse_deps_and_constraints(doc, when=when)
             for p in dep_params.values():
                 add_param(p, default_from_self=False)
             constraints.extend(dep_constraints)

@@ -118,6 +118,13 @@ def sexpr_or(x, y):
         return '(%s) or (%s)' % (x, y)
 
 
+def sexpr_implies(when, then):
+    assert then is not None
+    if when is None:
+        return then
+    else:
+        return 'not (%s) or (%s)' % (when, then)
+
 def when_transform_yaml(doc, when=None):
     """
     Takes the YAML-like document `doc` (dicts, lists, primitive types) and

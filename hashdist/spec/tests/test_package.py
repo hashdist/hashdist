@@ -547,18 +547,18 @@ def test_package_spec(d):
 def test_parse_deps_repeated():
     from .test_spec_ast import load_when_doc_from_str as loads
     with assert_raises(PackageError) as e:
-        package.parse_deps(loads("{'dependencies': {'build': ['a', '+a']}}"))
+        package.parse_deps_and_constraints(loads("{'dependencies': {'build': ['a', '+a']}}"))
     assert 'dependency a repeated' in str(e.exc_val)
     with assert_raises(PackageError):
-        package.parse_deps(loads("{'dependencies': {'run': ['a', '+a']}}"))
+        package.parse_deps_and_constraints(loads("{'dependencies': {'run': ['a', '+a']}}"))
     assert 'dependency a repeated' in str(e.exc_val)
     # But this is OK:
-    package.parse_deps(loads("{'dependencies': {'run': ['a'], 'build': ['a']}}"))
+    package.parse_deps_and_constraints(loads("{'dependencies': {'run': ['a'], 'build': ['a']}}"))
 
 
 def test_parse_deps():
     from .test_spec_ast import load_when_doc_from_str as loads
-    params, constraints = package.parse_deps(loads(
+    params, constraints = package.parse_deps_and_constraints(loads(
         "{dependencies: {build: [a, b], run: [x, +b, +c]}}"))
     eq_(set(params.keys()), set(['a', 'b', '_run_x', '_run_b', '_run_c']))
     eq_(set(constraints), set(['_run_x is not None', 'a is not None', 'b is not None']))

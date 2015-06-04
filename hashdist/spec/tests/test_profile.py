@@ -345,6 +345,14 @@ def test_defaults_section_in_package(d):
     assert get_build_stages_of_mypkg('with_package.yaml') == [{'handler': 'bash', 'bash': 'exit 1\n'}]
 
 
+def std_profile(d):
+    dump(pjoin(d, "profile.yaml"), """\
+        package_dirs: [.]
+        packages:
+          foo:
+    """)
+
+
 def build_profile(d):
     with profile.TemporarySourceCheckouts(None) as checkouts:
         doc = profile.load_and_inherit_profile(checkouts, pjoin(d, 'profile.yaml'))
@@ -370,12 +378,7 @@ def test_pass_undeclared_parameter(d):
 
 @temp_working_dir_fixture
 def test_not_providing_required_parameter(d):
-    dump(pjoin(d, "profile.yaml"), """\
-        package_dirs: [.]
-        packages:
-          foo:
-    """)
-
+    std_profile(d)
     dump(pjoin(d, "foo.yaml"), """\
         parameters: [{name: needed}]
     """)
@@ -388,11 +391,7 @@ def test_not_providing_required_parameter(d):
 
 @temp_working_dir_fixture
 def test_not_declaring_parameter(d):
-    dump(pjoin(d, "profile.yaml"), """\
-        package_dirs: [.]
-        packages:
-          foo:
-    """)
+    std_profile(d)
 
     dump(pjoin(d, "foo.yaml"), """\
         build_stages:
@@ -404,3 +403,52 @@ def test_not_declaring_parameter(d):
     with assert_raises(ProfileError) as e:
         prof.resolve_parameters()
     assert "parameter not defined: name 'foo' is not defined" in str(e.exc_val)
+
+
+@temp_working_dir_fixture
+def test_constraints(d):
+    dump(pjoin(d, "profile.yaml"), """\
+        package_dirs: [.]
+        packages:
+          foo:
+            x: bar
+            y: whatever
+    """)
+
+    dump(pjoin(d, "foo.yaml"), """\
+        parameters:
+        - name: x
+        - name: y
+
+        constraints:
+        - when y == 'check_that_x_is_not_foo':
+            - x != 'foo'
+        - x != 'bar'
+    """)
+
+    prof = build_profile(d)
+    with assert_raises(ProfileError) as e:
+        prof.resolve_parameters()
+    assert "constraint not satisfied: \"x != 'bar'\"" in str(e.exc_val)
+
+    dump(pjoin(d, "profile.yaml"), """\
+        package_dirs: [.]
+        packages:
+          foo:
+            x: foo
+            y: check_that_x_is_not_foo
+    """)
+
+    prof = build_profile(d)
+    with assert_raises(ProfileError) as e:
+        prof.resolve_parameters()
+    assert "constraint not satisfied: \"not (y == 'check_that_x_is_not_foo') or (x != 'foo')\"" in str(e.exc_val)
+
+    dump(pjoin(d, "profile.yaml"), """\
+        package_dirs: [.]
+        packages:
+          foo:
+            x: legal
+            y: legal
+    """)
+    build_profile(d).resolve_parameters()
