@@ -15,8 +15,8 @@ GLOBALS = dict((entry.__name__, entry) for entry in GLOBALS_LST)
 
 
 def _handle_dash(expr, parameters):
-    new_parameters = dict((key.replace('-', '_'), value) for key, value in parameters.items())
-    return expr.replace('-', '_'), new_parameters
+    new_parameters = dict((key.replace('-', '_dash_'), value) for key, value in parameters.items())
+    return expr.replace('-', '_dash_'), new_parameters
 
 
 def eval_condition(expr, parameters):
