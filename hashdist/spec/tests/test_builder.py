@@ -135,6 +135,7 @@ def test_profile_packages_section(d):
              use: c  # really just assigns d as alias for c
            e:
            y:
+             myval: yup
     """)
 
     dump(pjoin(d, 'pkgs/a.yaml'), dedent("""\
@@ -146,12 +147,16 @@ def test_profile_packages_section(d):
           - name: barparam  # set by profile.yaml
             type: str
             default: 'fromdefault'
+        build_stages:
+          - handler: bash
+            bash: |
+              {{y and y.myval}}
     """))
     dump(pjoin(d, 'pkgs/b.yaml'), "dependencies: {build: [q]}")
     dump(pjoin(d, 'pkgs/c.yaml'), "dependencies: {build: [b]}")
     dump(pjoin(d, 'pkgs/e.yaml'), "dependencies: {build: [d]}")
     dump(pjoin(d, 'pkgs/x.yaml'), "profile_links: [{link: '*/**/*'}]")
-    dump(pjoin(d, 'pkgs/y.yaml'), "")
+    dump(pjoin(d, 'pkgs/y.yaml'), "parameters: [{name: myval}]")
     dump(pjoin(d, 'pkgs/z.yaml'), "")
     dump(pjoin(d, 'pkgs/q.yaml'), "")
 
@@ -174,6 +179,7 @@ def test_profile_packages_section(d):
     assert '_run_x' not in pkgs
     assert isinstance(pkgs['a'].x, PackageInstance)
     assert pkgs['a']._run_x is pkgs['a'].x
+    assert pkgs['a'].y.myval == 'yup'
     # y: optional package specified in profile
     assert 'y' in pkgs
     assert isinstance(pkgs['a'].y, PackageInstance)
@@ -204,6 +210,9 @@ def test_profile_packages_section(d):
 
     # Test the profile build spec
     pb._compute_specs()
+
+    assert 'yup' in pb.get_build_script('a')
+
     spec = pb.get_profile_build_spec()
     eq_(spec.doc, {
         'build': {
