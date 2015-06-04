@@ -220,9 +220,11 @@ class Profile(object):
             # we want all hard dependencies to be resolved first, then include whatever was pulled in in that pass
             # (globally) to be picked up for the optional dependencies.
             param_values = {}
-            param_values['package'] = pkgname # magic parameter
             for param in pkg_spec.parameters.values():
-                if param.has_package_type():
+                if param.name == 'package':
+                    # Magic parameter
+                    param_values['package'] = pkg_spec.name
+                elif param.has_package_type():
                     dep_name = param.name
                     if dep_name.startswith('_run_'):
                         dep_name = dep_name[len('_run_'):]

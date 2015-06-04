@@ -165,6 +165,10 @@ def test_profile_packages_section(d):
     pb._load_packages()
     pkgs = pb._packages
 
+    # package parameter should be present
+    for name, pkg in pkgs.items():
+        assert pkg.package == name
+
     # x: required package not specified in profile, auto-pulled in
     assert 'x' in pkgs
     assert '_run_x' not in pkgs
