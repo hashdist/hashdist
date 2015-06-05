@@ -267,9 +267,9 @@ class BuildStore(object):
 
     logger : Logger
     """
-    
+
     chunk_size = 16 * 1024
-    
+
     def __init__(self, temp_build_dir, artifact_root, gc_roots_dir, logger, local_mirrors=(), mirrors=(), create_dirs=False):
         self.temp_build_dir = os.path.realpath(temp_build_dir)
         self.artifact_root = os.path.realpath(artifact_root)
@@ -349,7 +349,7 @@ class BuildStore(object):
     def _get_artifact_path(self, name, digest):
         return pjoin(self.artifact_root, name, digest[:SHORT_ARTIFACT_ID_LEN])
 
-    def _download_artifact(self, url,path):
+    def _download_artifact(self, url, path, name, digest):
         import subprocess
         # Provide a special case for local files
         use_urllib = not SIMPLE_FILE_URL_RE.match(url)
@@ -407,7 +407,44 @@ class BuildStore(object):
         os.chmod(temp_path, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
         subprocess.check_call(['tar', 'xzf', temp_path], cwd=self.artifact_root)
         os.remove(temp_path)
+        def relocate(artifact_dir, path):
+            artifact_full_path = pjoin(self.artifact_root, artifact_dir)
+            if not path.startswith(artifact_full_path):
+                raise ValueError('filename must be prefixed with artifact_dir')
+            s = path[len(artifact_full_path):]
+            ignore_patterns = ['.*\.pyc',
+                               '.*\.pyo',
+                               '.id',
+                               '.artifact.json']
+            for pattern in ignore_patterns:
+                if re.match(pattern, s):
+                    return
 
+            artifact_dir_b = artifact_dir.encode(sys.getfilesystemencoding())
+            baddies = []
+            is_link = os.path.islink(path)
+            if not is_link and os.path.isfile(path):
+                with open(path) as f:
+                    data = f.read()
+                if artifact_dir_b in data:
+                    from_b = pjoin('/','home','cekees','.hashdist','bld',artifact_dir).encode(sys.getfilesystemencoding())
+                    to_b = pjoin(self.artifact_root,artifact_dir).encode(sys.getfilesystemencoding())
+                    new_data = data.replace(from_b, to_b)
+                    self.logger.warning('File contains reference  to "%s", which is being replaced with : %s' % (from_b, to_b))
+                    st = os.stat(path)
+                    os.chmod( path, st.st_mode | stat.S_IWRITE )
+                    os.unlink( path )
+                    with open(path,'w') as f:
+                        data = f.write(new_data)
+                    os.chmod( path, st.st_mode)
+        for dirpath, dirnames, filenames in os.walk(path, topdown=False):
+            #import pdb
+            #pdb.set_trace()
+            st = os.stat(dirpath)
+            os.chmod(dirpath, st.st_mode | stat.S_IWRITE)
+            for filename in filenames:
+                relocate(pjoin(name, digest), pjoin(dirpath, filename))
+            os.chmod(dirpath, st.st_mode)
     def resolve(self, artifact_id,build_store_only=False):
         """Given an artifact_id, resolve the short path for it, or return
         None if the artifact isn't built.
@@ -416,9 +453,9 @@ class BuildStore(object):
         path = self._get_artifact_path(name, digest)
         if build_store_only and not os.path.exists(path):
             return None
-        elif (not build_store_only and 
+        elif (not build_store_only and
               not os.path.exists(path) and
-              not self.fetch_from_local_mirrors(name,digest[:SHORT_ARTIFACT_ID_LEN],path) and 
+              not self.fetch_from_local_mirrors(name,digest[:SHORT_ARTIFACT_ID_LEN],path) and
               not self.fetch_from_mirrors(name,digest[:SHORT_ARTIFACT_ID_LEN],path)):
             msg = "No existing artifact in store or on mirrors for %s" % path
             self.logger.debug(msg)
@@ -445,7 +482,7 @@ class BuildStore(object):
                     self.logger.error('Please get in touch with the HashDist developer mailing list.')
                     raise IllegalBuildStoreError('Hashes collide in first 12 chars: %s and %s' % (present_id, artifact_id))
             return path
-    
+
     def fetch_from_local_mirrors(self, name,digest,path):
         for mirror in self.local_mirrors:
             path_mirror = '%s/%s/%s' % (mirror, name, digest)
@@ -462,12 +499,12 @@ class BuildStore(object):
         msg = "Could not find build on any local mirrors for %s" % path
         self.logger.debug(msg)
         return False
-        
+
     def fetch_from_mirrors(self, name,digest,path):
         for mirror in self.mirrors:
             url = '%s/%s/%s.tar.gz' % (mirror, name, digest)
             try:
-                self._download_artifact(url,path)
+                self._download_artifact(url, path, name, digest)
             except StoreNotFoundError:
                 msg = "Could not find remote build store mirror, continuing"
                 self.logger.debug(msg)
@@ -483,7 +520,7 @@ class BuildStore(object):
         msg = "Could not find build on any remote mirrors for %s" % path
         self.logger.debug(msg)
         return False
-        
+
     def is_present(self, build_spec):
         build_spec = as_build_spec(build_spec)
         return self.resolve(build_spec.artifact_id,build_store_only=True) is not None
