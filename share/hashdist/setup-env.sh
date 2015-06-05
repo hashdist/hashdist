@@ -1,6 +1,6 @@
 # This file is part of Hashdist to setup Hashdist environment for bash.
 #
-# We provide a 'hit' Bash function, that checks for subcommand is called. If it
+# We provide a 'hit' Bash function, that checks for the subcommand called. If it
 # is "load" or "unload", then it hooks them up with Bash to do the right thing.
 # Otherwise it just forwards the arguments to the 'hit' program.
 
