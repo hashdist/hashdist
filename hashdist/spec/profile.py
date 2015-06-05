@@ -19,7 +19,7 @@ from urlparse import urlsplit
 from urllib import urlretrieve
 import posixpath
 
-from ..formats.marked_yaml import load_yaml_from_file, is_null, marked_yaml_load
+from ..formats.marked_yaml import load_yaml_from_file, is_null, marked_yaml_load, raw_tree
 from .utils import substitute_profile_parameters
 from .. import core
 from .exceptions import ProfileError, PackageError
@@ -244,7 +244,7 @@ class Profile(object):
                 elif param.name not in param_doc:
                     if param.name in self.parameters:
                         # Inherit from global profile parameters
-                        param_values[param.name] = self.parameters[param.name]
+                        param_values[param.name] = raw_tree(self.parameters[param.name])
                     else:
                         # Use default value. If it is a required parameter, then default will
                         # be None and there will be a constraint that it is not None that will
@@ -252,7 +252,7 @@ class Profile(object):
                         param_values[param.name] = param.default
                 else:
                     # Use explicitly passed parameter
-                    param_values[param.name] = param_doc[param.name]
+                    param_values[param.name] = raw_tree(param_doc[param.name])
 
             # Step 2: Type-check and remove parameters that are not declared
             # (also according to when-conditions)

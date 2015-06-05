@@ -5,7 +5,7 @@ import sys
 from collections import defaultdict
 
 from ..formats import marked_yaml
-from ..formats.marked_yaml import load_yaml_from_file, is_null, marked_yaml_load
+from ..formats.marked_yaml import load_yaml_from_file, is_null, marked_yaml_load, raw_tree
 from .utils import substitute_profile_parameters, to_env_var
 from .. import core
 from .exceptions import ProfileError, PackageError
@@ -131,9 +131,9 @@ class Parameter(DictRepr):
             raise PackageError(doc, 'Parameters must be declared as "{name: <name>}"')
         type = Parameter.TYPENAME_TO_TYPE[spec_ast.evaluate_doc(doc.value['type'], {})
                                           if 'type' in doc.value else 'str']
-        return Parameter(name=spec_ast.evaluate_doc(doc.value['name'], {}),
+        return Parameter(name=raw_tree(spec_ast.evaluate_doc(doc.value['name'], {})),
                          type=type,
-                         default=spec_ast.evaluate_doc(doc.value['default'], {}) if 'default' in doc.value else None,
+                         default=raw_tree(spec_ast.evaluate_doc(doc.value['default'], {})) if 'default' in doc.value else None,
                          declared_when=when,
                          doc=doc)
 
