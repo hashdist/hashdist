@@ -24,99 +24,42 @@ class RemoteAddError(Exception):
 class RemoteRemoveError(Exception):
     pass
 
-
-class RemotePCSError(Exception):
-    pass
-
-
-def remote_pcs_test(remote, logger):
-    # Required for providers registration :
-    from pcs_api.providers import (dropbox,
-                                   googledrive)
-    #
-    from pcs_api.credentials.app_info_file_repo \
-        import AppInfoFileRepository
-    from pcs_api.credentials.user_creds_file_repo \
-        import UserCredentialsFileRepository
-    from pcs_api.credentials.user_credentials import UserCredentials
-    from pcs_api.storage import StorageFacade
-    from pcs_api.bytes_io import (MemoryByteSource, MemoryByteSink,
-                                  FileByteSource, FileByteSink,
-                                  StdoutProgressListener)
-    from pcs_api.models import (CPath,
-                                CFolder,
-                                CBlob,
-                                CUploadRequest,
-                                CDownloadRequest)
-    logger.info("Setting up cloud storage app")
-    remote_path = pjoin(DEFAULT_STORE_DIR, "remotes", remote)
-    app_info_path = pjoin(remote_path, "app_info_data.txt")
-    user_credentials_path = pjoin(remote_path, "user_credentials_data.txt")
-    if not os.path.exists(app_info_path):
-        msg = 'No remote application information: ' \
-            + repr(app_info_path)
-        logger.critical(msg)
-        msg = "Run 'hit remote add ...'"
-        logger.critical(msg)
+def makeRemoteConfigDir(name, ctx):
+    """Create a directory for holding the remote's push information"""
+    remote_config_path = pjoin(DEFAULT_STORE_DIR, "remotes", name)
+    try:
+        if not os.path.exists(remote_config_path):
+            os.makedirs(remote_config_path)
+    except:
+        msg = "Could not create:" + repr(remote_config_path)
+        ctx.logger.critical(msg)
         exit(1)
-    apps_repo = AppInfoFileRepository(app_info_path)
-    if not os.path.exists(user_credentials_path):
-        msg = 'No user credentials found: ' + repr(user_credentials_path)
-        logger.critical(msg)
-        msg = "Run 'hit remote add ...'"
-        logger.critical(msg)
-        exit(1)
-    user_credentials_repo = UserCredentialsFileRepository(
-        user_credentials_path)
-    provider_name = apps_repo._app_info.keys()[0].split(".")[0]
-    app_info = apps_repo.get(provider_name)
-    user_info = user_credentials_repo.get(app_info)
-    storage = StorageFacade.for_provider(provider_name) \
-        .app_info_repository(apps_repo, app_info.app_name) \
-        .user_credentials_repository(user_credentials_repo,
-                                     user_info.user_id) \
-        .build()
-    msg = "Cloud storage user_id = " + repr(storage.get_user_id())
-    logger.info(msg)
-    msg = "Cloud storage quota = " + repr(storage.get_quota())
-    logger.info(msg)
-    logger.info("Cloud storage is  ready")
-    fpath = CPath('/test_dir')
-    storage.create_folder(fpath)
-    bpath = fpath.add("test.txt")
-    file_contents_uploaded = b"Test file contents"
-    upload_request = CUploadRequest(
-        bpath,
-        MemoryByteSource(file_contents_uploaded)).content_type('text/plain')
-    upload_request.progress_listener(StdoutProgressListener())
-    storage.upload(upload_request)
-    file_contents_downloaded = MemoryByteSink()
-    download_request = CDownloadRequest(bpath,
-                                        file_contents_downloaded)
-    download_request.progress_listener(StdoutProgressListener())
-    storage.download(download_request)
-    storage.delete(fpath)
-    if file_contents_uploaded != file_contents_downloaded.get_bytes():
-        raise RemotePCSError
-
+    return remote_config_path
 
 @register_subcommand
 class Remote(object):
+    """Manage remote build store and source cache.
 
-    """
-    Manage remote build store and source cache.
-
-    Currently, only common cloud-based storage is supported
-    (https://github.com/netheosgithub/pcs_api).
+    Currently, only cloud-based and ssh server storage is supported. See
+    https://github.com/netheosgithub/pcs_api for information on cloud-based
+    storage.
 
 
-    Example:: **First**, create a dropbox app for your remote at
+    Example (Cloud):: **First**, create a dropbox app for your remote at
     https://www.dropbox.com/developers/apps. See the wiki here for graphical
     insructions https://github.com/hashdist/hashdist/wiki/How-to-add-remotes.
     Next, add the remote:
 
         $ hit remote add --pcs="dropbox" --app-name="hd_osx" \\
           --app-id=x --app-secret=y
+
+    Example (SSH):: **First**, ensure that you can have passwordless ssh and
+    scp to the server you would like to use and ensure that the directory for
+    your remote exists.
+
+    Next, add the remote:
+
+        $ hit remote add --ssh="username@server:remote_dir/"
 
     """
     command = 'remote'
@@ -126,10 +69,12 @@ class Remote(object):
         ap.add_argument('subcommand', choices=['add', 'remove', 'show'])
         ap.add_argument('name', default="primary", nargs="?",
                         help="Name of remote")
+        ap.add_argument('--ssh',
+                        help='Use sshuser@sshhost:remote_dir/')
         ap.add_argument('--pcs', default="dropbox",
                         help='Use personal cloud service')
-        ap.add_argument('--test-pcs', action="store_true",
-                        help='Test personal cloud service')
+        ap.add_argument('--check', action="store_true",
+                        help='Test remote')
         ap.add_argument('--app-name', default="hashdist_PLATFORM",
                         help='Name of the app on the cloud service')
         ap.add_argument('--app-id', default=None,
@@ -141,17 +86,8 @@ class Remote(object):
 
     @staticmethod
     def run(ctx, args):
-        from pcs_api.credentials.app_info_file_repo \
-            import AppInfoFileRepository
-        from pcs_api.credentials.user_creds_file_repo \
-            import UserCredentialsFileRepository
-        from pcs_api.credentials.user_credentials import UserCredentials
-        from pcs_api.oauth.oauth2_bootstrap import OAuth2BootStrapper
-        from pcs_api.storage import StorageFacade
-        # Required for registering providers :
-        from pcs_api.providers import (dropbox,
-                                       googledrive)
-        #
+        from ..core import RemoteHandlerSSH, RemoteHandlerPCS
+
         if args.subcommand == 'add':
             ctx.logger.info("Attempting to add remote")
             remote_bld = None
@@ -213,14 +149,7 @@ class Remote(object):
                     else:
                         ctx.logger.info("Wrote " + repr(ctx._config_filename))
             elif args.pcs:
-                remote_path = pjoin(DEFAULT_STORE_DIR, "remotes", args.name)
-                try:
-                    if not os.path.exists(remote_path):
-                        os.makedirs(remote_path)
-                except:
-                    msg = "Could not create:" + repr(remote_path)
-                    ctx.logger.critical(msg)
-                    exit(1)
+                remote_config_path = makeRemoteConfigDir(args.name, ctx)
                 if None in [args.app_id, args.app_secret]:
                     msg = "Supply both --app-id and --app-secret"
                     ctx.logger.critical(msg)
@@ -228,25 +157,27 @@ class Remote(object):
                 app_info_data = '{pcs}.{app_name} = {{ "appId": "{app_id}", \
                 "appSecret": "{app_secret}", \
                 "scope": ["sandbox"] }}'.format(**args.__dict__)
-                app_info_path = pjoin(remote_path, "app_info_data.txt")
-                user_credentials_path = pjoin(remote_path,
+                app_info_path = pjoin(remote_config_path, "app_info_data.txt")
+                user_credentials_path = pjoin(remote_config_path,
                                               "user_credentials_data.txt")
                 f = open(app_info_path, "w")
                 f.write(app_info_data)
                 f.close()
                 ctx.logger.info("Wrote " + repr(ctx._config_filename))
-                apps_repo = AppInfoFileRepository(app_info_path)
-                user_credentials_repo = UserCredentialsFileRepository(
-                    user_credentials_path)
-                storage = StorageFacade.for_provider(args.pcs) \
-                    .app_info_repository(apps_repo, args.app_name) \
-                    .user_credentials_repository(user_credentials_repo) \
-                    .for_bootstrap() \
-                    .build()
-                bootstrapper = OAuth2BootStrapper(storage)
-                bootstrapper.do_code_workflow()
-                if args.test_pcs:
-                    remote_pcs_test(args.name, ctx.logger)
+                bootstrap_PCS(args,
+                              app_info_path,
+                              user_credentials_path)
+                if args.check:
+                    remoteHandler = RemoteHandlerPCS(remote_config_path, ctx)
+                    remoteHandler.check()
+            elif  args.ssh:
+                remote_config_path = makeRemoteConfigDir(args.name, ctx)
+                sshserver_path = pjoin(remote_config_path, "sshserver")
+                with open(sshserver_path, 'w') as f:
+                    f.write(args.ssh)
+                if args.check:
+                    remoteHandler = RemoteHandlerSSH(remote_config_path, ctx)
+                    remoteHandler.check()
         elif args.subcommand == 'remove':
             ctx.logger.info("Attempting to remove remote")
             if (args.name.startswith('http://') or
@@ -259,14 +190,14 @@ class Remote(object):
                     try:
                         config_lines.remove(remote_bld)
                     except ValueError:
-                        ctx.logger.warning("Not found in config")
+                        ctx.logger.warning("Not found in build_store config")
                 if args.objects in ['source', 'build_and_source']:
                     remote_src = ' - url: {0}/src\n' \
                         .format(args.name)
                     try:
                         config_lines.remove(remote_src)
                     except ValueError:
-                        ctx.logger.warning("Not found in config")
+                        ctx.logger.warning("Not found in source_cache config")
                 # write temporary config file and check for correctness
                 tmp_config_path = pjoin(DEFAULT_STORE_DIR, 'config_tmp.yaml')
                 with open(tmp_config_path, 'w') as config_file:
@@ -283,10 +214,11 @@ class Remote(object):
                 else:
                     ctx.logger.info("Wrote " + repr(ctx._config_filename))
             else:
-                remote_path = pjoin(DEFAULT_STORE_DIR, "remotes", args.name)
-                print remote_path
+                remote_config_path = pjoin(DEFAULT_STORE_DIR,
+                                           "remotes",
+                                           args.name)
                 try:
-                    robust_rmtree(remote_path, ctx.logger)
+                    robust_rmtree(remote_config_path, ctx.logger)
                 except:
                     raise RemoteRemoveError
                 ctx.logger.info("Removed remote: " + repr(args.name))
@@ -302,27 +234,39 @@ class Remote(object):
                     import pprint
                     pp = pprint.PrettyPrinter(indent=4)
                     sys.stdout.write('=' * len(remote_name) + '\n')
-                    with open(pjoin(DEFAULT_STORE_DIR,
-                                    "remotes",
-                                    remote_name,
-                                    "app_info_data.txt"), "r") as f:
-                        for line in f.readlines():
-                            if not line.strip().startswith("#"):
-                                app_name, app_dict = line.split("=")
-                                sys.stdout.write(app_name + " = \n")
-                                pp.pprint(json.loads(app_dict))
-                        sys.stdout.write("\n")
-                    with open(pjoin(DEFAULT_STORE_DIR,
-                                    "remotes",
-                                    remote_name,
-                                    "user_credentials_data.txt"), "r") as f:
-                        for line in f.readlines():
-                            if not line.strip().startswith("#"):
-                                app_user, app_cred_dict = line.split("=")
-                                sys.stdout.write(app_user + " = \n")
-                                pp.pprint(json.loads(app_cred_dict))
-                if args.test_pcs:
-                    remote_pcs_test(remote_name, ctx.logger)
+                    remote_config_path =  pjoin(DEFAULT_STORE_DIR,
+                                           "remotes",
+                                           remote_name)
+                    sshserver_path = pjoin(remote_config_path,
+                                           "sshserver")
+                    if os.path.isfile(sshserver_path):
+                        with open(sshserver_path,"r") as f:
+                            sys.stdout.write(f.read())
+                        if args.check:
+                            remoteHandler = RemoteHandlerPCS(
+                                remote_config_path,
+                                ctx)
+                            remoteHandler.check()
+                    else:
+                        with open(pjoin(remote_config_path,
+                                        "app_info_data.txt"), "r") as f:
+                            for line in f.readlines():
+                                if not line.strip().startswith("#"):
+                                    app_name, app_dict = line.split("=")
+                                    sys.stdout.write(app_name + " = \n")
+                                    pp.pprint(json.loads(app_dict))
+                            sys.stdout.write("\n")
+                        with open(pjoin(remote_config_path,
+                                        "user_credentials_data.txt"), "r") as f:
+                            for line in f.readlines():
+                                if not line.strip().startswith("#"):
+                                    app_user, app_cred_dict = line.split("=")
+                                    sys.stdout.write(app_user + " = \n")
+                                    pp.pprint(json.loads(app_cred_dict))
+                if args.check:
+                    remoteHandler = RemoteHandlerPCS(remote_config_path,
+                                                      ctx)
+                    remoteHandler.check()
         else:
             raise AssertionError()
 
@@ -354,63 +298,18 @@ class Push(object):
     @staticmethod
     def run(ctx, args):
         import hashlib
-        # Required for providers registration :
-        from pcs_api.providers import (dropbox,
-                                       googledrive)
-        #
-        from pcs_api.credentials.app_info_file_repo \
-            import AppInfoFileRepository
-        from pcs_api.credentials.user_creds_file_repo \
-            import UserCredentialsFileRepository
-        from pcs_api.credentials.user_credentials import UserCredentials
-        from pcs_api.storage import StorageFacade
-        from pcs_api.bytes_io import (MemoryByteSource, MemoryByteSink,
-                                      FileByteSource, FileByteSink,
-                                      StdoutProgressListener)
-        from pcs_api.models import (CPath,
-                                    CFolder,
-                                    CBlob,
-                                    CUploadRequest,
-                                    CDownloadRequest)
         # set up store and change to the artifact root  dir
-        from ..core import BuildStore, SourceCache
+        from ..core import (BuildStore,
+                            SourceCache,
+                            RemoteHandlerSSH,
+                            RemoteHandlerPCS,
+                            bootstrap_PCS)
         remote_path = pjoin(DEFAULT_STORE_DIR, "remotes", args.name)
         if not args.dry_run:
-            ctx.logger.info("Setting up cloud storage app")
-            app_info_path = pjoin(remote_path, "app_info_data.txt")
-            user_credentials_path = pjoin(remote_path,
-                                          "user_credentials_data.txt")
-            if not os.path.exists(app_info_path):
-                msg = 'No remote application information: ' \
-                      + repr(app_info_path)
-                ctx.logger.critical(msg)
-                msg = "Run 'hit remote add ...'"
-                ctx.logger.critical(msg)
-                exit(1)
-            apps_repo = AppInfoFileRepository(app_info_path)
-            if not os.path.exists(user_credentials_path):
-                msg = 'No user credentials found: ' \
-                    + repr(user_credentials_path)
-                ctx.logger.critical(msg)
-                msg = "Run 'hit remote add ...'"
-                ctx.logger.critical(msg)
-                exit(1)
-            user_credentials_repo = UserCredentialsFileRepository(
-                user_credentials_path)
-            provider_name = apps_repo._app_info.keys()[0].split(".")[0]
-            app_info = apps_repo.get(provider_name)
-            user_info = user_credentials_repo.get(app_info)
-            storage = StorageFacade.for_provider(provider_name) \
-                .app_info_repository(apps_repo, app_info.app_name) \
-                .user_credentials_repository(user_credentials_repo,
-                                             user_info.user_id) \
-                .build()
-            msg = "Cloud storage user_id = " + repr(storage.get_user_id())
-            ctx.logger.info(msg)
-            msg = "Cloud storage quota = " + repr(storage.get_quota())
-            ctx.logger.info(msg)
-            ctx.logger.info("Cloud storage is  ready")
-
+            if os.path.isfile(pjoin(remote_path,'sshserver')):
+                remoteHandler = RemoteHandlerSSH(remote_path, ctx)
+            else:
+                remoteHandler = RemoteHandlerPCS(remote_path, ctx)
         if args.objects in ['build', 'build_and_source']:
             store = BuildStore.create_from_config(ctx.get_config(), ctx.logger)
             os.chdir(store.artifact_root)
@@ -442,16 +341,9 @@ class Push(object):
                 sys.stdout.write(pushing)
             else:
                 try:
-                    remote_manifest_string = MemoryByteSink()
-                    fpath = CPath('/bld/')
-                    bpath = fpath.add("build_manifest.json")
-                    download_request = CDownloadRequest(bpath,
-                                                        remote_manifest_string)
-                    download_request.progress_listener(
-                        StdoutProgressListener())
-                    storage.download(download_request)
-                    manifest = json.loads(
-                        str(remote_manifest_string.get_bytes()))
+                    manifest_bytes = remoteHandler.get_bytes(
+                        '/bld/build_manifest.json')
+                    manifest = json.loads(str(manifest_bytes))
                 except:
                     msg = "Failed to get remote manifest; " + \
                           "ALL PACKAGES WILL BE PUSHED"
@@ -493,29 +385,16 @@ class Push(object):
                             sha1.update(f.read())
                             manifest[package][artifact] = sha1.hexdigest()
                         msg = "Pushing " + repr(artifact_tgz_path) + "\n"
-                        ctx.logger.info(msg)
-                        fpath = CPath('/bld/' + package)
-                        storage.create_folder(fpath)
-                        bpath = fpath.add(artifact_tgz)
-                        upload_request = CUploadRequest(
-                            bpath, FileByteSource(artifact_tgz_path))
-                        upload_request.progress_listener(
-                            StdoutProgressListener())
-                        storage.upload(upload_request)
+                        remoteHandler.mkdir('/bld/'+package)
+                        remoteHandler.put_file(
+                            artifact_tgz_path,
+                            '/bld/{0}/{1}'.format(package,artifact_tgz))
                         ctx.logger.info("Cleaning up and syncing manifest")
                         os.remove(artifact_tgz_path)
                         new_manifest_string = json.dumps(manifest)
                         new_manifest_bytes = bytes(new_manifest_string)
-                        manifest_byte_source = MemoryByteSource(
-                            new_manifest_bytes)
-                        fpath = CPath('/bld/')
-                        bpath = fpath.add("build_manifest.json")
-                        upload_request = CUploadRequest(
-                            bpath,
-                            manifest_byte_source).content_type('text/plain')
-                        upload_request.progress_listener(
-                            StdoutProgressListener())
-                        storage.upload(upload_request)
+                        remoteHandler.put_bytes(new_manifest_bytes,
+                                                remote_path)
                         with open(pjoin(remote_path,
                                         "build_manifest.json"), "w") as f:
                             f.write(new_manifest_string)
@@ -554,16 +433,9 @@ class Push(object):
                 sys.stdout.write(pushing)
             else:
                 try:
-                    remote_manifest_string = MemoryByteSink()
-                    fpath = CPath('/src/')
-                    bpath = fpath.add("source_manifest.json")
-                    download_request = CDownloadRequest(bpath,
-                                                        remote_manifest_string)
-                    download_request.progress_listener(
-                        StdoutProgressListener())
-                    storage.download(download_request)
-                    manifest = json.loads(
-                        str(remote_manifest_string.get_bytes()))
+                    remote_manifest_bytes = remoteHandler.get_bytes(
+                        '/src/source_manifest.json')
+                    manifest = json.loads(str(remote_manifest_bytes))
                 except:
                     msg = "Failed to get remote manifest; " + \
                           "all packages will be pushed"
@@ -596,28 +468,15 @@ class Push(object):
                         source_pack_path = pjoin(subdir, source_pack)
                         msg = "Pushing " + repr(source_pack_path) + "\n"
                         sys.stdout.write(msg)
-                        fpath = CPath('/src/' + subdir)
-                        storage.create_folder(fpath)
-                        bpath = fpath.add(source_pack)
-                        upload_request = CUploadRequest(
-                            bpath,
-                            FileByteSource(source_pack_path))
-                        upload_request.progress_listener(
-                            StdoutProgressListener())
-                        storage.upload(upload_request)
+                        remoteHandler.mkdir('/src/'+subdir)
+                        remoteHandler.put_file(
+                            source_pack_path,
+                            '/src/{0}/{1}'.format(subdir, source_pack))
                         ctx.logger.info("Syncing manifest")
                         new_manifest_string = json.dumps(manifest)
                         new_manifest_bytes = bytes(new_manifest_string)
-                        manifest_byte_source = MemoryByteSource(
-                            new_manifest_bytes)
-                        fpath = CPath('/src')
-                        bpath = fpath.add("source_manifest.json")
-                        upload_request = CUploadRequest(
-                            bpath,
-                            manifest_byte_source).content_type('text/plain')
-                        upload_request.progress_listener(
-                            StdoutProgressListener())
-                        storage.upload(upload_request)
+                        remoteHandler.put_bytes(new_manifest_bytes,
+                                                '/src/source_manifest.json')
                         with open(pjoin(remote_path,
                                         "source_manifest.json"), "w") as f:
                             f.write(new_manifest_string)

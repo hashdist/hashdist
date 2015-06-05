@@ -421,16 +421,25 @@ class BuildStore(object):
                     return
 
             artifact_dir_b = artifact_dir.encode(sys.getfilesystemencoding())
-            baddies = []
             is_link = os.path.islink(path)
+            location_file = pjoin(artifact_dir, 'location')
+            if os.path.isfile(location_file):
+                with open(location_file, 'r') as f:
+                    from_b = pjoin(f.read()).encode(
+                        sys.getfilesystemencoding())
+            else:
+                from_b =  pjoin(os.getenv('HASHDIST_MIRROR_BLD'),
+                                artifact_dir).encode(
+                                    sys.getfilesystemencoding())
             if not is_link and os.path.isfile(path):
                 with open(path) as f:
                     data = f.read()
                 if artifact_dir_b in data:
-                    from_b = pjoin('/','home','cekees','.hashdist','bld',artifact_dir).encode(sys.getfilesystemencoding())
-                    to_b = pjoin(self.artifact_root,artifact_dir).encode(sys.getfilesystemencoding())
+                    to_b = pjoin(self.artifact_root,artifact_dir).encode(
+                        sys.getfilesystemencoding())
                     new_data = data.replace(from_b, to_b)
-                    self.logger.warning('File contains reference  to "%s", which is being replaced with : %s' % (from_b, to_b))
+                    self.logger.warning(
+                        'File contains reference  to "%s", which is being replaced with : %s' % (from_b, to_b))
                     st = os.stat(path)
                     os.chmod( path, st.st_mode | stat.S_IWRITE )
                     os.unlink( path )
@@ -438,8 +447,6 @@ class BuildStore(object):
                         data = f.write(new_data)
                     os.chmod( path, st.st_mode)
         for dirpath, dirnames, filenames in os.walk(path, topdown=False):
-            #import pdb
-            #pdb.set_trace()
             st = os.stat(dirpath)
             os.chmod(dirpath, st.st_mode | stat.S_IWRITE)
             for filename in filenames:

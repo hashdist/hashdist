@@ -255,6 +255,10 @@ class BuildPostprocess(object):
     --check-ignore=REGEX
 
         Ignore filenames matching REGEX for the relocatability check
+
+    --insert-location
+
+        Insert a root path to be stripped on relocation
     """
     command = 'build-postprocess'
 
@@ -268,6 +272,7 @@ class BuildPostprocess(object):
         ap.add_argument('--relative-sh-script', action='append')
         ap.add_argument('--relative-symlinks', action='store_true')
         ap.add_argument('--check-relocatable', action='store_true')
+        ap.add_argument('--insert-location', action='store_true')
         ap.add_argument('--check-ignore', action='append')
         ap.add_argument('--pyc', action='store_true')
         ap.add_argument('path', nargs='?', help='dir/file to post-process (dirs are handled '
@@ -296,7 +301,8 @@ class BuildPostprocess(object):
                                     build_store))
 
         if (args.relative_sh_script or args.check_relocatable or
-            args.relative_symlinks or args.relative_pkgconfig):
+            args.relative_symlinks or args.relative_pkgconfig or
+            args.insert_location):
             if 'ARTIFACT' not in ctx.env:
                 ctx.logger.error('ARTIFACT environment variable not set')
             artifact_dir = ctx.env['ARTIFACT']
@@ -323,6 +329,12 @@ class BuildPostprocess(object):
         if args.relative_pkgconfig:
             handlers.append(lambda filename: build_tools.postprocess_relative_pkgconfig(
                 ctx.logger, artifact_dir, filename))
+
+        if args.insert_location:
+            handlers.append(lambda filename:
+                            build_tools.insert_location(ctx.logger,
+                                                        artifact_dir,
+                                                        filename))
 
         if args.check_relocatable:
             handlers.append(lambda filename: build_tools.check_relocatable(ctx.logger, args.check_ignore,

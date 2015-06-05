@@ -7,3 +7,4 @@ from .cache import DiskCache, null_cache, cached_method
 from .run_job import InvalidJobSpecError, JobFailedError
 from .fileutils import atomic_symlink
 from .hasher import hash_document
+from .remote_handler import RemoteHandlerSSH, RemoteHandlerPCS, bootstrap_PCS
