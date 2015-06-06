@@ -40,8 +40,10 @@ def makeRemoteConfigDir(name, ctx):
         exit(1)
     return remote_config_path
 
+
 @register_subcommand
 class Remote(object):
+
     """Manage remote build store and source cache.
 
     Currently, only cloud-based and ssh server storage is supported. See
@@ -236,20 +238,20 @@ class Remote(object):
                 sys.stdout.write(build_mirror.values()[-1] + " (fetch:bld)\n")
             for remote_name in os.listdir(pjoin(DEFAULT_STORE_DIR, "remotes")):
                 sys.stdout.write(remote_name + " (push)\n")
-                if args.verbose:
+                if args.verbose or args.check:
                     import pprint
                     pp = pprint.PrettyPrinter(indent=4)
                     sys.stdout.write('=' * len(remote_name) + '\n')
-                    remote_config_path =  pjoin(DEFAULT_STORE_DIR,
-                                           "remotes",
-                                           remote_name)
+                    remote_config_path = pjoin(DEFAULT_STORE_DIR,
+                                               "remotes",
+                                               remote_name)
                     sshserver_path = pjoin(remote_config_path,
                                            "sshserver")
                     if os.path.isfile(sshserver_path):
-                        with open(sshserver_path,"r") as f:
-                            sys.stdout.write(f.read())
+                        with open(sshserver_path, "r") as f:
+                            sys.stdout.write(f.read()+"\n")
                         if args.check:
-                            remoteHandler = RemoteHandlerPCS(
+                            remoteHandler = RemoteHandlerSSH(
                                 remote_config_path,
                                 ctx)
                             remoteHandler.check()
@@ -263,16 +265,18 @@ class Remote(object):
                                     pp.pprint(json.loads(app_dict))
                             sys.stdout.write("\n")
                         with open(pjoin(remote_config_path,
-                                        "user_credentials_data.txt"), "r") as f:
+                                        "user_credentials_data.txt"),
+                                  "r") as f:
                             for line in f.readlines():
                                 if not line.strip().startswith("#"):
                                     app_user, app_cred_dict = line.split("=")
                                     sys.stdout.write(app_user + " = \n")
                                     pp.pprint(json.loads(app_cred_dict))
-                if args.check:
-                    remoteHandler = RemoteHandlerPCS(remote_config_path,
-                                                      ctx)
-                    remoteHandler.check()
+                        if args.check:
+                            remoteHandler = RemoteHandlerPCS(
+                                remote_config_path,
+                                ctx)
+                            remoteHandler.check()
         else:
             raise AssertionError()
 
@@ -311,7 +315,7 @@ class Push(object):
                             RemoteHandlerPCS)
         remote_config_path = pjoin(DEFAULT_STORE_DIR, "remotes", args.name)
         if not args.dry_run:
-            if os.path.isfile(pjoin(remote_config_path,'sshserver')):
+            if os.path.isfile(pjoin(remote_config_path, 'sshserver')):
                 remoteHandler = RemoteHandlerSSH(remote_config_path, ctx)
             else:
                 remoteHandler = RemoteHandlerPCS(remote_config_path, ctx)
@@ -355,7 +359,8 @@ class Push(object):
                     ctx.logger.warn(msg)
                     manifest = {}
                 ctx.logger.info("Writing local copy of remote  manifest")
-                with open(pjoin(remote_config_path, "build_manifest.json"), "w") as f:
+                with open(pjoin(remote_config_path,
+                                "build_manifest.json"), "w") as f:
                     f.write(json.dumps(manifest))
                 ctx.logger.info("Calculating which packages to push")
                 push_manifest = {}
@@ -390,10 +395,10 @@ class Push(object):
                             sha1.update(f.read())
                             manifest[package][artifact] = sha1.hexdigest()
                         msg = "Pushing " + repr(artifact_tgz_path) + "\n"
-                        remoteHandler.mkdir('/bld/'+package)
+                        remoteHandler.mkdir('/bld/' + package)
                         remoteHandler.put_file(
                             artifact_tgz_path,
-                            '/bld/{0}/{1}'.format(package,artifact_tgz))
+                            '/bld/{0}/{1}'.format(package, artifact_tgz))
                         ctx.logger.info("Cleaning up and syncing manifest")
                         os.remove(artifact_tgz_path)
                         new_manifest_string = json.dumps(manifest)
@@ -473,7 +478,7 @@ class Push(object):
                         source_pack_path = pjoin(subdir, source_pack)
                         msg = "Pushing " + repr(source_pack_path) + "\n"
                         sys.stdout.write(msg)
-                        remoteHandler.mkdir('/src/'+subdir)
+                        remoteHandler.mkdir('/src/' + subdir)
                         remoteHandler.put_file(
                             source_pack_path,
                             '/src/{0}/{1}'.format(subdir, source_pack))
