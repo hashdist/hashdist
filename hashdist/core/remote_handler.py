@@ -2,6 +2,7 @@
 Interface to remote storage
 """
 from os.path import join as pjoin, exists as pexists
+import subprocess
 
 class RemotePCSError(Exception):
     pass
@@ -28,55 +29,71 @@ class RemoteHandlerSSH(HandlerBase):
     def __init__(self, remote_config_path, ctx):
         sshserver_path = pjoin(remote_config_path, "sshserver")
         with open(sshserver_path, 'r') as f:
-            self.sshserver = f.readlines()[0]
+            serverinfo = f.readlines()[0]
+        self.sshserver, self.remote_root = serverinfo.split(":")
+        if self.remote_root[-1] is  '/':
+            self.remote_root = self.remote_root[:-1]
         self.ctx = ctx
     def mkdir(self, remote_path):
+
         subprocess.check_call(["ssh",
                                self.sshserver,
-                               'mkdir '+remote_path])
+                               'mkdir -p ' + self.remote_root + remote_path])
     def put_bytes(self, bytes, remote_path):
-        sshpipe = subprocess.Popen(['scp',
-                                    '-',
-                                    self.sshserver + ':' + remote_path],
+        sshpipe = subprocess.Popen(['ssh',
+                                    self.sshserver,
+                                    'cat - > ' +
+                                    self.remote_root +
+                                    remote_path],
                                    stdin = subprocess.PIPE)
-        sshpipe.stdin.write(bytes)
+        sshpipe.stdin.write(str(bytes))
+        sshpipe.stdin.flush()
+        sshpipe.terminate()
     def get_bytes(self, remote_path):
-        sshpipe = subprocess.Popen(['scp',
-                                    self.sshserver + ':' + remote_path,
-                                    '-'],
+        sshpipe = subprocess.Popen(['ssh',
+                                    self.sshserver,
+                                    'cat ' +
+                                    self.remote_root +
+                                    remote_path],
                                    stdout = subprocess.PIPE)
-        return sshpipe.stdout.write(bytes)
+        remote_path_string = sshpipe.stdout.read()
+        sshpipe.terminate()
+        return bytes(remote_path_string)
     def put_file(self, local_path, remote_path):
         subprocess.check_call(["scp",
                                local_path,
-                               self.sshserver + ":" + remote_path])
+                               self.sshserver + ":" +
+                               self.remote_root +
+                               remote_path])
     def get_file(self, local_path, remote_path):
         subprocess.check_call(["scp",
-                               self.sshserver + ":" + remote_path,
+                               self.sshserver + ":" +
+                               self.remote_root +
+                               remote_path,
                                local_path])
     def check(self):
         with open("test.txt", "w") as f:
             f.write("Test file\n")
-        self.mkdir('test_dir')
+        self.mkdir('/test_dir')
         self.put_file("test.txt",
-                      "test_dir/test.txt")
+                      "/test_dir/test.txt")
         self.get_file("test_remote.txt",
-                      "test_dir/test.txt")
+                      "/test_dir/test.txt")
         with open("test_remote.txt", "r") as f:
             assert "Test file\n" == f.read()
         os.remove("test.txt")
         os.remove("test_remote.txt")
         file_contents_uploaded = b"Test file contents"
-        self.put_bytes(file_contents_uploaded, "test_dir/test.txt")
-        file_contends_downloaded = self.get_bytes("test_dir/test.txt")
+        self.put_bytes(file_contents_uploaded, "/test_dir/test.txt")
+        file_contends_downloaded = self.get_bytes("/test_dir/test.txt")
         subprocess.check_call(['ssh',
                                self.sshserver,
                                'rm',
-                               'test_dir/test.txt'])
+                               self.remote_root + '/test_dir/test.txt'])
         subprocess.check_call(['ssh',
                                self.sshserver,
                                'rmdir',
-                               'test_dir'])
+                               self.remote_root + '/test_dir'])
 
 
 class RemoteHandlerPCS(HandlerBase):
@@ -154,7 +171,7 @@ class RemoteHandlerPCS(HandlerBase):
         download_request.progress_listener(StdoutProgressListener())
         self.storage.download(download_request)
         return remote_bytes.get_bytes()
-    def make_dir(self, remote_path):
+    def mkdir(self, remote_path):
         from pcs_api.models import CPath
         fpath = CPath(remote_path)
         self.storage.create_folder(fpath)
@@ -210,7 +227,7 @@ class RemoteHandlerPCS(HandlerBase):
         if file_contents_uploaded != file_contents_downloaded.get_bytes():
             raise RemotePCSError
 
-def bootstrap_PCS(args, app_info_path, user_credentials_repo):
+def bootstrap_PCS(args, app_info_path, user_credentials_path):
     from pcs_api.providers import (dropbox,
                                    googledrive)
     from pcs_api.credentials.app_info_file_repo \

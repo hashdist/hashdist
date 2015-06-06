@@ -24,12 +24,16 @@ class RemoteAddError(Exception):
 class RemoteRemoveError(Exception):
     pass
 
+
 def makeRemoteConfigDir(name, ctx):
     """Create a directory for holding the remote's push information"""
     remote_config_path = pjoin(DEFAULT_STORE_DIR, "remotes", name)
     try:
-        if not os.path.exists(remote_config_path):
+        if not pexists(remote_config_path):
             os.makedirs(remote_config_path)
+        else:
+            msg = "Remote already exists:" + repr(remote_config_path)
+            ctx.logger.warning(msg)
     except:
         msg = "Could not create:" + repr(remote_config_path)
         ctx.logger.critical(msg)
@@ -44,13 +48,12 @@ class Remote(object):
     https://github.com/netheosgithub/pcs_api for information on cloud-based
     storage.
 
-
     Example (Cloud):: **First**, create a dropbox app for your remote at
     https://www.dropbox.com/developers/apps. See the wiki here for graphical
     insructions https://github.com/hashdist/hashdist/wiki/How-to-add-remotes.
     Next, add the remote:
 
-        $ hit remote add --pcs="dropbox" --app-name="hd_osx" \\
+        $ hit remote add remote_name --pcs="dropbox" --app-name="hd_osx" \\
           --app-id=x --app-secret=y
 
     Example (SSH):: **First**, ensure that you can have passwordless ssh and
@@ -59,7 +62,7 @@ class Remote(object):
 
     Next, add the remote:
 
-        $ hit remote add --ssh="username@server:remote_dir/"
+        $ hit remote add remote_name --ssh="username@server:remote_dir/"
 
     """
     command = 'remote'
@@ -69,9 +72,9 @@ class Remote(object):
         ap.add_argument('subcommand', choices=['add', 'remove', 'show'])
         ap.add_argument('name', default="primary", nargs="?",
                         help="Name of remote")
-        ap.add_argument('--ssh',
+        ap.add_argument('--ssh', default=None,
                         help='Use sshuser@sshhost:remote_dir/')
-        ap.add_argument('--pcs', default="dropbox",
+        ap.add_argument('--pcs', default=None,
                         help='Use personal cloud service')
         ap.add_argument('--check', action="store_true",
                         help='Test remote')
@@ -86,7 +89,7 @@ class Remote(object):
 
     @staticmethod
     def run(ctx, args):
-        from ..core import RemoteHandlerSSH, RemoteHandlerPCS
+        from ..core import RemoteHandlerSSH, RemoteHandlerPCS, bootstrap_PCS
 
         if args.subcommand == 'add':
             ctx.logger.info("Attempting to add remote")
@@ -155,22 +158,22 @@ class Remote(object):
                     ctx.logger.critical(msg)
                     exit(1)
                 app_info_data = '{pcs}.{app_name} = {{ "appId": "{app_id}", \
-                "appSecret": "{app_secret}", \
-                "scope": ["sandbox"] }}'.format(**args.__dict__)
+"appSecret": "{app_secret}", "scope": ["sandbox"] }}'.format(**args.__dict__)
                 app_info_path = pjoin(remote_config_path, "app_info_data.txt")
                 user_credentials_path = pjoin(remote_config_path,
                                               "user_credentials_data.txt")
                 f = open(app_info_path, "w")
                 f.write(app_info_data)
                 f.close()
-                ctx.logger.info("Wrote " + repr(ctx._config_filename))
+                ctx.logger.info("Wrote " + app_info_path)
+                ctx.logger.info("Bootstrapping PCS")
                 bootstrap_PCS(args,
                               app_info_path,
                               user_credentials_path)
                 if args.check:
                     remoteHandler = RemoteHandlerPCS(remote_config_path, ctx)
                     remoteHandler.check()
-            elif  args.ssh:
+            elif args.ssh:
                 remote_config_path = makeRemoteConfigDir(args.name, ctx)
                 sshserver_path = pjoin(remote_config_path, "sshserver")
                 with open(sshserver_path, 'w') as f:
@@ -217,11 +220,14 @@ class Remote(object):
                 remote_config_path = pjoin(DEFAULT_STORE_DIR,
                                            "remotes",
                                            args.name)
-                try:
-                    robust_rmtree(remote_config_path, ctx.logger)
-                except:
-                    raise RemoteRemoveError
-                ctx.logger.info("Removed remote: " + repr(args.name))
+                if pexists(remote_config_path):
+                    try:
+                        robust_rmtree(remote_config_path, ctx.logger)
+                    except:
+                        raise RemoteRemoveError
+                    ctx.logger.info("Removed remote: " + repr(args.name))
+                else:
+                    ctx.logger.warning("No remote: " + repr(args.name))
         elif args.subcommand == 'show':
             config = ctx.get_config()
             for source_mirror in config['source_caches'][1:]:
@@ -302,20 +308,19 @@ class Push(object):
         from ..core import (BuildStore,
                             SourceCache,
                             RemoteHandlerSSH,
-                            RemoteHandlerPCS,
-                            bootstrap_PCS)
-        remote_path = pjoin(DEFAULT_STORE_DIR, "remotes", args.name)
+                            RemoteHandlerPCS)
+        remote_config_path = pjoin(DEFAULT_STORE_DIR, "remotes", args.name)
         if not args.dry_run:
-            if os.path.isfile(pjoin(remote_path,'sshserver')):
-                remoteHandler = RemoteHandlerSSH(remote_path, ctx)
+            if os.path.isfile(pjoin(remote_config_path,'sshserver')):
+                remoteHandler = RemoteHandlerSSH(remote_config_path, ctx)
             else:
-                remoteHandler = RemoteHandlerPCS(remote_path, ctx)
+                remoteHandler = RemoteHandlerPCS(remote_config_path, ctx)
         if args.objects in ['build', 'build_and_source']:
             store = BuildStore.create_from_config(ctx.get_config(), ctx.logger)
             os.chdir(store.artifact_root)
             # try loading the local copy of the remote manifest
             try:
-                with open(pjoin(remote_path,
+                with open(pjoin(remote_config_path,
                                 "build_manifest.json"), "r") as manifest_file:
                     local_manifest = json.loads(manifest_file.read())
             except:
@@ -350,7 +355,7 @@ class Push(object):
                     ctx.logger.warn(msg)
                     manifest = {}
                 ctx.logger.info("Writing local copy of remote  manifest")
-                with open(pjoin(remote_path, "build_manifest.json"), "w") as f:
+                with open(pjoin(remote_config_path, "build_manifest.json"), "w") as f:
                     f.write(json.dumps(manifest))
                 ctx.logger.info("Calculating which packages to push")
                 push_manifest = {}
@@ -394,8 +399,8 @@ class Push(object):
                         new_manifest_string = json.dumps(manifest)
                         new_manifest_bytes = bytes(new_manifest_string)
                         remoteHandler.put_bytes(new_manifest_bytes,
-                                                remote_path)
-                        with open(pjoin(remote_path,
+                                                '/bld/build_manifest.json')
+                        with open(pjoin(remote_config_path,
                                         "build_manifest.json"), "w") as f:
                             f.write(new_manifest_string)
         if args.objects in ['source', 'build_and_source']:
@@ -404,7 +409,7 @@ class Push(object):
             os.chdir(cache.cache_path)
             # try loading the local copy of the remote manifest
             try:
-                with open(pjoin(remote_path,
+                with open(pjoin(remote_config_path,
                                 "source_manifest.json"), "r") as manifest_file:
                     local_manifest = json.loads(manifest_file.read())
             except:
@@ -438,11 +443,11 @@ class Push(object):
                     manifest = json.loads(str(remote_manifest_bytes))
                 except:
                     msg = "Failed to get remote manifest; " + \
-                          "all packages will be pushed"
+                          "ALL PACKAGES WILL BE PUSHED"
                     ctx.logger.warn(msg)
                     manifest = {}
                 ctx.logger.info("Writing local copy of remote  manifest")
-                with open(pjoin(remote_path,
+                with open(pjoin(remote_config_path,
                                 "source_manifest.json"), "w") as f:
                     f.write(json.dumps(manifest))
                 ctx.logger.info("Calculating which packages to push")
@@ -477,6 +482,6 @@ class Push(object):
                         new_manifest_bytes = bytes(new_manifest_string)
                         remoteHandler.put_bytes(new_manifest_bytes,
                                                 '/src/source_manifest.json')
-                        with open(pjoin(remote_path,
+                        with open(pjoin(remote_config_path,
                                         "source_manifest.json"), "w") as f:
                             f.write(new_manifest_string)
