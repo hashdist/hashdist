@@ -132,7 +132,7 @@ class Develop(ProfileFrontendBase):
 
         hit develop default.yaml xx
 
-    This creates a throw away developmet profile 'xx', into which you can
+    This creates a throw away development profile 'xx', into which you can
     install things (e.g. you can do 'xx/bin/pip install numpy') and once you
     are done, you can safely delete it (e.g. 'rm -rf xx').
 
