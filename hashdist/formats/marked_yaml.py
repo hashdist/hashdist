@@ -2,6 +2,9 @@
 A PyYAML loader subclass that is fit for parsing DSLs: It annotates
 positions in source code, and only parses values as strings.
 
+In addition there is a couple of Hashdist-specific modifications to the
+parsing (so really it should be hashdist_yaml..)
+
 The loader is based on `SafeConstructor`, i.e., the behaviour of
 `yaml.safe_load`, but in addition:
 
@@ -11,6 +14,8 @@ The loader is based on `SafeConstructor`, i.e., the behaviour of
 
  - Every string is always returned as unicode, no ASCII-ficiation is
    attempted.
+
+ - Float parsing is disabled, they are returned as strings
 
 """
 
@@ -170,6 +175,9 @@ class NodeConstructor(SafeConstructor):
         assert isinstance(obj, unicode)
         return unicode_node(obj, node.start_mark, node.end_mark)
 
+    def construct_yaml_float(self, node):
+        return self.construct_yaml_str(node)
+
     def construct_yaml_int(self, node):
         obj = SafeConstructor.construct_yaml_int(self, node)
         return int_node(obj, node.start_mark, node.end_mark)
@@ -182,6 +190,10 @@ class NodeConstructor(SafeConstructor):
         assert isinstance(obj, bool)
         return bool_node(obj, node.start_mark, node.end_mark)
 
+
+NodeConstructor.add_constructor(
+        u'tag:yaml.org,2002:float',
+        NodeConstructor.construct_yaml_float)
 
 NodeConstructor.add_constructor(
         u'tag:yaml.org,2002:map',

@@ -266,11 +266,15 @@ class Profile(object):
 
         # Pass 2: Fill in any optional dependencies (potentially causing cyclic references
         #         which is OK) and call init() on packages
+
         for pkg_name, pkg in result.items():
             for param_name, param_value in pkg._param_values.items():
                 if isinstance(param_value, _optional_package):
                     pkg._param_values[param_name] = result.get(param_value.name, None)
             pkg._param_values = pkg._spec.typecheck_parameter_set(pkg._param_values, node=None)
+
+        # Pass 3: Call pkg.init() which check constraints and initializes
+        for pkg in result.values():
             pkg.init()
 
         return result

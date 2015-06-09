@@ -11,6 +11,7 @@ from .. import core
 from .exceptions import ProfileError, PackageError
 from .spec_ast import when_transform_yaml, sexpr_and, sexpr_or, sexpr_implies, check_no_sub_conditions, eval_condition
 from . import spec_ast
+from .version import Version
 
 
 class PackageType(object):
@@ -89,7 +90,7 @@ class Parameter(DictRepr):
     """
     Declaration of a parameter in a package.
     """
-    TYPENAME_TO_TYPE = {'bool': bool, 'str': basestring, 'int': int}
+    TYPENAME_TO_TYPE = {'bool': bool, 'str': basestring, 'int': int, 'version': Version}
     def __init__(self, name, type, default=None, declared_when='True', doc=None):
         """
         doc: only used for exceptions
@@ -131,9 +132,12 @@ class Parameter(DictRepr):
             raise PackageError(doc, 'Parameters must be declared as "{name: <name>}"')
         type = Parameter.TYPENAME_TO_TYPE[spec_ast.evaluate_doc(doc.value['type'], {})
                                           if 'type' in doc.value else 'str']
+        default_value = raw_tree(spec_ast.evaluate_doc(doc.value['default'], {})) if 'default' in doc.value else None
+        if default_value is not None and type in (int, bool, Version):
+            default_value = type(default_value)
         return Parameter(name=raw_tree(spec_ast.evaluate_doc(doc.value['name'], {})),
                          type=type,
-                         default=raw_tree(spec_ast.evaluate_doc(doc.value['default'], {})) if 'default' in doc.value else None,
+                         default=default_value,
                          declared_when=when,
                          doc=doc)
 
@@ -341,15 +345,17 @@ class Package(DictRepr):
     def typecheck_parameter_set(self, param_values, node=None):
         """
         Type-checks the given parameter values, and also checks that enough parameters
-        are provided, and returns the subset that is declared.
-        Raises PackageError if there is a problem.
+        are provided, and returns the subset that is declared. Also coerces from string to
+        Version where necessary. Raises PackageError if there is a problem.
         """
         declared = self.get_declared(param_values, node)
         for param_name, value in param_values.items():
             if param_name not in self.parameters:
                 raise ProfileError(param_name, 'Parameter "%s" not declared in any variation on package "%s"' %
                                    (param_name, self.name))
-            self.parameters[param_name].check_type(value, node=node)
+            # then type-check the value from declared, as that is possibly coerced
+            if param_name in declared:
+                self.parameters[param_name].check_type(declared[param_name], node=node)
         return declared
 
     def get_failing_constraints(self, param_values, node=None):
@@ -369,7 +375,11 @@ class Package(DictRepr):
         return result
 
     def get_declared(self, param_values, node=None):
-        declared = {}  # the subset of param_values for parameters that have been declared, with defaults filled in
+        """
+        Returns the subset of param_values for parameters that have been declared, with defaults filled in,
+        and strings coerced to Version.
+        """
+        declared = {}
         for param in self.parameters.values():
             try:
                 is_declared = eval_condition(param.declared_when, dict(param_values))
@@ -377,7 +387,10 @@ class Package(DictRepr):
                 raise PackageError(node, 'Lacking a parameter needed to determine if %s should '
                                    'be declared: %r' % (param.name, e))
             if is_declared:
-                declared[param.name] = param_values.get(param.name, param.default)
+                value = param_values.get(param.name, param.default)
+                if param.type is Version and isinstance(value, basestring):
+                    value = Version(value)
+                declared[param.name] = value
         return declared
 
     def check_constraints(self, param_values, node=None):
@@ -386,12 +399,11 @@ class Package(DictRepr):
                 raise ProfileError(node, '%s package: constraint not satisfied: "%s"' % (self.name, c))
 
     def instantiate(self, param_values, node=None):
-        package = self.pre_instantiate(param_values, node)
-        package.init()
+        package = self.pre_instantiate(param_values)
+        package.init(node)
         return package
 
-    def pre_instantiate(self, param_values, node=None):
-        self.check_constraints(param_values, node=node)
+    def pre_instantiate(self, param_values):
         return PackageInstance(self, param_values)
 
 
@@ -515,11 +527,12 @@ class PackageInstance(object):
     call `init()` after which _impl becomes available and the package should
     be considered immutable.
     """
-    def __init__(self, spec, param_values):
+    def __init__(self, spec, param_values=None):
         self._spec = spec
         self._param_values = param_values
 
-    def init(self):
+    def init(self, node=None):
+        self._spec.check_constraints(self._param_values, node)
         self._impl = PackageInstanceImpl(self)
 
     def __getattr__(self, key):

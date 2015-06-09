@@ -5,12 +5,14 @@ level:
  - the `{{var}}` expansion.
 """
 import re
+import sys
 
 from .exceptions import ProfileError, PackageError
 from ..formats import marked_yaml
+from .version import Version, preprocess_version_literal
 
 
-GLOBALS_LST = [len]
+GLOBALS_LST = [len, Version]
 GLOBALS = dict((entry.__name__, entry) for entry in GLOBALS_LST)
 
 
@@ -19,19 +21,28 @@ def _handle_dash(expr, parameters):
     return expr.replace('-', '_dash_'), new_parameters
 
 
+def preprocess(expr, parameters):
+    expr, parameters = _handle_dash(expr, parameters)
+    expr = preprocess_version_literal(expr)
+    return expr, parameters
+
+
 def eval_condition(expr, parameters):
     if expr is None:  # A NoneType argument means no condition, evaluates to True, while 'None' as a str will evaluate False
         return True
-    expr_p, parameters_p = _handle_dash(expr, parameters)
+    expr_p, parameters_p = preprocess(expr, parameters)
     try:
         return bool(eval(expr_p, GLOBALS, parameters_p))
     except NameError as e:
         raise ProfileError(expr, "parameter not defined: %s" % e)
     except SyntaxError as e:
         raise PackageError(expr, "syntax error in expression '%s'" % expr_p)
+    except:
+        raise PackageError(expr, "exception %s raised during execution of \"%s\": %r" % (
+            sys.exc_info()[0].__name__, expr_p, str(sys.exc_info()[1])))
 
 
-ALLOW_STRINGIFY = (basestring, int)
+ALLOW_STRINGIFY = (basestring, int, Version)
 DENY_STRINGIFY = (bool,)  # subclass of int..
 
 def eval_strexpr(expr, parameters, node=None):
@@ -39,7 +50,7 @@ def eval_strexpr(expr, parameters, node=None):
     We allow *some* stringification, but not most of them; having
     bool turn into 'True' is generally not useful
     """
-    expr_p, parameters_p = _handle_dash(expr, parameters)
+    expr_p, parameters_p = preprocess(expr, parameters)
     node = node if node is not None else expr
     try:
         result = eval(expr_p, GLOBALS, parameters_p)

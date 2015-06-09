@@ -452,3 +452,44 @@ def test_constraints(d):
             y: legal
     """)
     build_profile(d).resolve_parameters()
+
+
+@temp_working_dir_fixture
+def test_version_constraints(d):
+    dump(pjoin(d, "profile.yaml"), """\
+        package_dirs: [.]
+        packages:
+          foo:
+          bar:
+            version: 1.2b0
+    """)
+
+    dump(pjoin(d, "foo.yaml"), """\
+        parameters:
+        - name: version
+          type: version
+          default: 10.0
+        dependencies:
+          build: [bar]
+        constraints:
+        - 0.1 <= bar.version < 1.3
+    """)
+    dump(pjoin(d, "bar.yaml"), """\
+        parameters:
+        - name: version
+          type: version
+    """)
+    prof = build_profile(d)
+    prof.resolve_parameters()
+
+
+    dump(pjoin(d, "profile.yaml"), """\
+        package_dirs: [.]
+        packages:
+          foo:
+          bar: {version: 10.0}
+        """)
+    prof = build_profile(d)
+    with assert_raises(ProfileError) as e:
+        prof.resolve_parameters()
+    assert 'constraint not satisfied: "0.1 <= bar.version < 1.3"' in str(e.exc_val)
