@@ -20,6 +20,8 @@ from urllib import urlretrieve
 import posixpath
 
 from ..formats.marked_yaml import load_yaml_from_file, is_null, marked_yaml_load, raw_tree
+from ..formats import marked_yaml
+from . import spec_ast
 from .utils import substitute_profile_parameters
 from .. import core
 from .exceptions import ProfileError, PackageError
@@ -41,12 +43,22 @@ class Profile(object):
     def __init__(self, logger, doc, checkouts_manager):
         self.logger = logger
         self.doc = doc
-        self.parameters = dict(doc.get('parameters', {}))
         self.file_resolver = FileResolver(checkouts_manager, doc.get('package_dirs', []))
         self.checkouts_manager = checkouts_manager
         self.hook_import_dirs = doc.get('hook_import_dirs', [])
-        self.packages = doc['packages']
         self._yaml_cache = {} # (filename: [list of documents, possibly with when-clauses])
+        # Load parameters, when-transforming them individually
+        self.parameters = {}
+        for param_name, param_node in doc.get('parameters', {}).items():
+            self.parameters[param_name] = spec_ast.when_transform_yaml(param_node)
+        # Load package arguments, when-transforming them individually
+        self.packages = {}
+        for pkg_name, pkg_node in doc.get('packages', {}).items():
+            pkg_params = marked_yaml.dict_like(pkg_node)
+            for param_name, param_value in pkg_node.items():
+                pkg_params[param_name] = spec_ast.when_transform_yaml(param_value)
+            self.packages[pkg_name] = pkg_params
+
 
     def resolve(self, path):
         """Turn <repo>/path into /tmp/foo-342/path"""
@@ -178,11 +190,47 @@ class Profile(object):
         use = self._use_for_package(pkgname)
         return self.file_resolver.find_file([filename, pjoin(use, filename)])
 
+    def apply_parameter_rules(self, package_params):
+        """
+        Insert the extra parameters `package_params` (typically per-package)
+        and evaluate the ruleset specified in `self.parameters`. Returns
+        the computed parameters.
+        """
+        # Refer to the parameter declarations in the YAML as 'rules'
+        rules = dict(self.parameters)
+        rules.update(package_params)
+        visiting = set()
+        result = {}
+
+        def visit(param_name):
+            if param_name in visiting:
+                raise ProfileError(pkgname, 'dependency cycle between parameters, '
+                                   'including parameter "%s"' % param_name)
+            if param_name in result:
+                return result[param_name]
+            visiting.add(param_name)
+            rule = rules[param_name]
+            # Ensure all referenced parameters are in `result`.
+            referenced = {}
+            for ref in rule.references:
+                referenced[ref] = visit(ref)
+            x = result[param_name] = spec_ast.evaluate_doc(rule, referenced)
+            visiting.remove(param_name)
+            return x
+
+        for param_name in rules.keys():
+            visit(param_name)
+        return result
+
+
     def resolve_parameters(self):
         """
         Figures out the explicit parameters to pass to each Package. The result
         is a dict of { name : PackageInstance }, where "name" is the name used
         in the profile of the package.
+
+        This method automatically calls self.apply_parameter_rules for each
+        package.
         """
         result = {}  # {name : (package spec, dict of parameters to pass)}
         visiting = set()
@@ -201,18 +249,17 @@ class Profile(object):
             if 'use' in param_doc:
                 if len(param_doc) != 1:
                     raise ProfileError(param_doc, 'If "use:" is provided, no other parameters should be provided')
-                pkgname = param_doc['use']
+                pkgname = spec_ast.evaluate_doc(param_doc['use'], {})
                 return visit(pkgname)
 
             visiting.add(pkgname)
 
             pkg_spec = self.load_package(pkgname)
 
-            # Any parameters explicitly provided but declared? raise error
-            for key in param_doc:
-                if key not in pkg_spec.parameters:
-                    raise ProfileError(key, 'Parameter "%s" not declared in any variation on package "%s"' %
-                                       (key, pkg_spec.name))
+            # Inherit defaults and do any expression processing. Note that this is
+            # *after* checking that no extra parameters were provided..so it contains
+            # extra parameters, we'll pull out the ones wanted below
+            param_doc = self.apply_parameter_rules(param_doc)
 
             # Step 1: Produce param_values, which is the full set of parameters for the package. In essence this
             # is param_doc from the profile + default values + replace names of packages with Package instances.
@@ -234,25 +281,21 @@ class Profile(object):
                     # Do some very basic matching on constraints; this is only likely to match our
                     # own auto-generate constraint, though it doesn't hurt if it matches user-provided
                     # constraints
-                    required = '%s is not None' % param.name in pkg_spec.constraints
+                    required = '%s is not None' % param.name in [c.expr for c in pkg_spec.constraints]
                     if required or dep_name in param_values:
                         dep_pkg = visit(param_doc.get(dep_name, dep_name))
                     else:
                         # Optional and not explicitly provided. Solve this in second pass
                         dep_pkg = _optional_package(dep_name)
                     param_values[param.name] = dep_pkg
-                elif param.name not in param_doc:
-                    if param.name in self.parameters:
-                        # Inherit from global profile parameters
-                        param_values[param.name] = raw_tree(self.parameters[param.name])
-                    else:
-                        # Use default value. If it is a required parameter, then default will
-                        # be None and there will be a constraint that it is not None that will
-                        # fail later.
-                        param_values[param.name] = param.default
-                else:
-                    # Use explicitly passed parameter
+                elif param.name in param_doc:
+                    # Use explicitly specified parameter (either passed to package, or from parameters: section in prof)
                     param_values[param.name] = raw_tree(param_doc[param.name])
+                else:
+                    # Use default value. If it is a required parameter, then default will
+                    # be None and there will be a constraint that it is not None that will
+                    # fail later.
+                    param_values[param.name] = param.default
 
             # Step 2: Type-check and remove parameters that are not declared
             # (also according to when-conditions)
@@ -521,15 +564,16 @@ def load_and_inherit_profile(checkouts, include_doc, cwd=None, override_paramete
                 parameters[k] = v
 
     # Merge packages section
-    packages = {}
+    node = doc.get('packages', doc)
+    packages = marked_yaml.dict_node({}, node.start_mark, node.end_mark)
     for parent_doc in parents:
         for pkgname, settings in parent_doc.get('packages', {}).iteritems():
-            packages.setdefault(pkgname, {}).update(settings)
+            packages.setdefault(pkgname, marked_yaml.dict_node({}, None, None)).update(settings)
 
     for pkgname, settings in doc.get('packages', {}).iteritems():
         if is_null(settings):
             settings = {}
-        packages.setdefault(pkgname, {}).update(settings)
+        packages.setdefault(pkgname, marked_yaml.dict_node({}, None, None)).update(settings)
 
     for pkgname, settings in list(packages.items()):  # copy to avoid changes during iteration
         if settings.get('skip', False):

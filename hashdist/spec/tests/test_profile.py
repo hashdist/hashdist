@@ -359,22 +359,6 @@ def build_profile(d):
         prof = profile.Profile(null_logger, doc, checkouts)
     return prof
 
-@temp_working_dir_fixture
-def test_pass_undeclared_parameter(d):
-    dump(pjoin(d, "profile.yaml"), """\
-        package_dirs: [.]
-        packages:
-          foo:
-            notpresent: true
-    """)
-
-    dump(pjoin(d, "foo.yaml"), "")
-
-    prof = build_profile(d)
-    with assert_raises(ProfileError) as e:
-        prof.resolve_parameters()
-    assert 'Parameter "notpresent" not declared in any variation on package "foo"' in str(e.exc_val)
-
 
 @temp_working_dir_fixture
 def test_not_providing_required_parameter(d):
@@ -493,3 +477,66 @@ def test_version_constraints(d):
     with assert_raises(ProfileError) as e:
         prof.resolve_parameters()
     assert 'constraint not satisfied: "0.1 <= bar.version < 1.3"' in str(e.exc_val)
+
+
+@temp_working_dir_fixture
+def test_conditionals_in_profile(d):
+    # note: {{expr}}-expansion not supported yet as we're not parsing expressions
+    # so don't know their dependencies
+    dump(pjoin(d, "base_profile.yaml"), """\
+    package_dirs: [.]
+    parameters:
+      y:
+        when platform == 'linux': 'onlinux'
+        when platform == 'windows': 'onwindows'
+
+    packages:
+      foo:
+        x1:
+          when platform == 'linux': '1'
+          when platform == 'windows': '2'
+        x2:  # overridden in sub-profile
+          when platform == 'linux': '1'
+          when platform == 'windows': '2'
+    """)
+
+    dump(pjoin(d, 'profile.yaml'), """\
+    extends:
+    - file: base_profile.yaml
+    parameters:
+      platform: linux
+      x2:  # overridden in packages.foo
+        when y == 'onlinux': '{{y}}_chosen'
+        when y == 'onwindows': '{{y}}_chosen'
+      x3:  # not overridden
+        when y == 'onlinux': '{{y}}_chosen'
+        when y == 'onwindows': '{{y}}_chosen'
+    packages:
+      foo:
+        x2: '3'
+      bar:
+        # Change the platform variable for this package, and everything else
+        # changes too..
+        platform: 'windows'
+    """)
+
+    dump(pjoin(d, 'foo.yaml'), """\
+    parameters:
+      - name: x1
+      - name: x2
+      - name: y
+    """)
+    dump(pjoin(d, 'bar.yaml'), """\
+    parameters:
+      - name: x2
+      - name: y
+    """)
+    prof = build_profile(d)
+    p = prof.apply_parameter_rules(prof.packages['foo'])
+    eq_(p, {'x2': u'3', 'platform': u'linux', 'y': u'onlinux', 'x3': u'onlinux_chosen', 'x1': '1'})
+    p = prof.apply_parameter_rules(prof.packages['bar'])
+    eq_(p, {'y': u'onwindows', 'platform': u'windows', 'x2': u'onwindows_chosen', 'x3': u'onwindows_chosen'})
+
+    pkgs = prof.resolve_parameters()
+    eq_(pkgs['foo'].x2, '3')
+    eq_(pkgs['bar'].x2, 'onwindows_chosen')

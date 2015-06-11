@@ -482,19 +482,19 @@ def test_package_spec(d):
              'param_with_def_val']))
 
     # Check resulting declared_when and constraints
-    eq_(pkg.parameters['str_parameter'].declared_when,
+    eq_(pkg.parameters['str_parameter'].declared_when.expr,
         '((int_parameter > 0) and (bool_parameter == True and int_parameter == 3)) or '
         '((not (int_parameter > 0)) and (not bool_parameter))')
 
-    eq_(pkg.parameters['bdep'].declared_when,
+    eq_(pkg.parameters['bdep'].declared_when.expr,
         '((int_parameter > 0) and (bool_parameter)) or (not (int_parameter > 0))')
 
     # x and y depedns on use_middlebase_alt..
-    eq_(pkg.parameters['x'].declared_when, '((int_parameter > 0) and (bool_parameter)) and (use_middlebase_alt)')
-    eq_(pkg.parameters['y'].declared_when, '((int_parameter > 0) and (bool_parameter)) and (not (use_middlebase_alt))')
+    eq_(pkg.parameters['x'].declared_when.expr, '((int_parameter > 0) and (bool_parameter)) and (use_middlebase_alt)')
+    eq_(pkg.parameters['y'].declared_when.expr, '((int_parameter > 0) and (bool_parameter)) and (not (use_middlebase_alt))')
 
     ##pprint(sorted(pkg.constraints))
-    eq_(set(pkg.constraints), set([
+    eq_(set([x.expr for x in pkg.constraints]), set([
         'not ((int_parameter > 0) and (bool_parameter)) or (bdep is not None)',
         'not ((int_parameter > 0) and (bool_parameter)) or (not (use_middlebase_alt) or (x is not None))',
         'not ((int_parameter > 0) and (bool_parameter)) or (not (not (use_middlebase_alt)) or (y is not None))',
@@ -510,9 +510,10 @@ def test_package_spec(d):
         ]))
 
     # get_failing_constraints method
-    eq_(pkg.get_failing_constraints({'int_parameter': 3, 'adep': None, 'bool_parameter': True,
+    eq_([x.expr for x in
+          pkg.get_failing_constraints({'int_parameter': 3, 'adep': None, 'bool_parameter': True,
                                      'bdep': mock_package, '_run_rdep': mock_package, '_run_adep': mock_package,
-                                     'use_middlebase_alt': False, 'y': 3}),
+                                     'use_middlebase_alt': False, 'y': 3})],
         ['not (int_parameter > 0) or (adep is not None)'])
 
     with assert_raises(ProfileError) as e:
@@ -561,4 +562,4 @@ def test_parse_deps():
     params, constraints = package.parse_deps_and_constraints(loads(
         "{dependencies: {build: [a, b], run: [x, +b, +c]}}"))
     eq_(set(params.keys()), set(['a', 'b', '_run_x', '_run_b', '_run_c']))
-    eq_(set(constraints), set(['_run_x is not None', 'a is not None', 'b is not None']))
+    eq_(set([x.expr for x in constraints]), set(['_run_x is not None', 'a is not None', 'b is not None']))

@@ -1,8 +1,10 @@
+import ast
 from pprint import pprint
 from ...core.test.utils import *
 from ...formats import marked_yaml
 from .. import spec_ast
 from ..exceptions import PackageError
+from ..exceptions import ProfileError
 from StringIO import StringIO
 
 
@@ -44,13 +46,13 @@ def test_when_transform():
            when: use_2
     ''')
     eq_(set(pdoc.value.keys()), set(['b', 'x']))
-    eq_(pdoc.value['b'].when, 'x == 0')
-    eq_(pdoc.value['b'].value[0].when, 'x == 0')
-    eq_(pdoc.value['b'].value[1].when, '(x == 0) and (use_d)')
-    eq_(pdoc.value['b'].value[2].when, '(x == 0) and (use_d)')
-    eq_(pdoc.value['b'].value[3].when, 'x == 0')
-    eq_(pdoc.value['x'].value[0].when, 'x == 0')
-    eq_(pdoc.value['x'].value[1].when, '(x == 0) and (use_2)')
+    eq_(pdoc.value['b'].when.expr, 'x == 0')
+    eq_(pdoc.value['b'].value[0].when.expr, 'x == 0')
+    eq_(pdoc.value['b'].value[1].when.expr, '(x == 0) and (use_d)')
+    eq_(pdoc.value['b'].value[2].when.expr, '(x == 0) and (use_d)')
+    eq_(pdoc.value['b'].value[3].when.expr, 'x == 0')
+    eq_(pdoc.value['x'].value[0].when.expr, 'x == 0')
+    eq_(pdoc.value['x'].value[1].when.expr, '(x == 0) and (use_2)')
 
 
 def test_scalar_result_mixed_with_dict():
@@ -102,3 +104,27 @@ def test_eval_list():
     assert {'dictionary': [2, 'foolinuxnes', {'nested': 'dict'}]} == r
     r = spec_ast.evaluate_doc(doc, {'platform': 'windows', 'host': False})
     assert {'dictionary': ['foowindowsnes', {'nested': 'dict'}]} == r
+
+def test_Expr():
+    e = spec_ast.Expr('x or 2', int)
+    eq_(e.eval({'x': False}), 2)
+    eq_(e.eval({'x': True}), 1)
+    with assert_raises(ProfileError) as ex:
+        e.eval({})
+    assert 'parameter not defined' in str(ex.exc_val)
+    with assert_raises(PackageError) as ex:
+        spec_ast.Expr('<<<')
+    assert 'syntax error' in str(ex.exc_val)
+    eq_(e.references, set(['x']))
+
+def test_StrExpr():
+    e = spec_ast.StrExpr('plain string')
+    eq_(e.eval({}), 'plain string')
+
+    e = spec_ast.StrExpr('x is {{str(x)}} causing {{x or 2}}')
+    eq_(e.eval({'x': False}), 'x is False causing 2')
+
+    with assert_raises(PackageError):  # ends up returning bool, not allowed
+        eq_(e.eval({'x': True}), 'x is False causing 2')
+    eq_(e.references, set(['x']))
+

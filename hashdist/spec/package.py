@@ -9,7 +9,8 @@ from ..formats.marked_yaml import load_yaml_from_file, is_null, marked_yaml_load
 from .utils import substitute_profile_parameters, to_env_var
 from .. import core
 from .exceptions import ProfileError, PackageError
-from .spec_ast import when_transform_yaml, sexpr_and, sexpr_or, sexpr_implies, check_no_sub_conditions, eval_condition
+from .spec_ast import (when_transform_yaml, expr_and, expr_or, expr_implies, check_no_sub_conditions, eval_condition,
+                       TRUE_EXPR, Expr)
 from . import spec_ast
 from .version import Version
 
@@ -31,7 +32,7 @@ class PackageType(object):
         return 'package(%s)' % self.contract
 
 
-def parse_deps_and_constraints(doc, when=None):
+def parse_deps_and_constraints(doc, when=TRUE_EXPR):
     """
     Parses the ``dependencies`` and ``constraints`` section of `doc` into a
     list of `Parameter` instances and constraints.
@@ -43,9 +44,9 @@ def parse_deps_and_constraints(doc, when=None):
     constraints = []
 
     for c in doc.get_value('constraints', []):
-        when = c.when
-        c = spec_ast.evaluate_doc(c, {})  # no when clauses *within* or variable expansions
-        constraints.append(sexpr_implies(when, c))
+        when = Expr(c.when, bool)
+        c = Expr(spec_ast.evaluate_doc(c, {}), bool)  # no when clauses *within* or variable expansions
+        constraints.append(expr_implies(when, c))
 
     deps_section = doc.value.get('dependencies', None)
     if deps_section is None or not deps_section.value:
@@ -56,23 +57,22 @@ def parse_deps_and_constraints(doc, when=None):
 
     for name_pattern, section_lst in [('%s', build_deps), ('_run_%s', run_deps)]:
         for node in section_lst:
-            required = not node.value.startswith('+')
-            pkg_name = node.value[1:] if not required else node.value
+            if '{{' in node.template:
+                raise PackageError(node, 'No expressions allowed as part of dependency names')
+            required = not node.template.startswith('+')
+            pkg_name = node.template[1:] if not required else node.template
             param_name = name_pattern % pkg_name
             if param_name in parameters:
                 raise PackageError(node, 'dependency %s repeated' % pkg_name)
 
-            dep_when = sexpr_and(when, node.when)
+            dep_when = expr_and(when, node.when)
             parameters[param_name] = Parameter(
                 name=param_name,
                 type=PackageType(pkg_name),
-                declared_when=dep_when,
+                declared_when=dep_when and spec_ast.Expr(dep_when, bool),
                 doc=node)
             if required:
-                c = (sexpr_implies(dep_when, '%s is not None' % param_name)
-                     if dep_when is not None else
-                     '%s is not None' % param_name)
-                c = marked_yaml.unicode_node(c, node.start_mark, node.end_mark)
+                c = expr_implies(dep_when, spec_ast.Expr('%s is not None' % param_name, bool))
                 constraints.append(c)
     return parameters, constraints
 
@@ -91,7 +91,7 @@ class Parameter(DictRepr):
     Declaration of a parameter in a package.
     """
     TYPENAME_TO_TYPE = {'bool': bool, 'str': basestring, 'int': int, 'version': Version}
-    def __init__(self, name, type, default=None, declared_when='True', doc=None):
+    def __init__(self, name, type, default=None, declared_when=TRUE_EXPR, doc=None):
         """
         doc: only used for exceptions
         """
@@ -101,7 +101,7 @@ class Parameter(DictRepr):
         self.declared_when = declared_when
         self._doc = doc
 
-    def copy_with(self, declared_when=None):
+    def copy_with(self, declared_when=TRUE_EXPR):
         declared_when = declared_when if declared_when is not None else self.declared_when
         return Parameter(self.name, self.type, self.default, declared_when, self._doc)
 
@@ -127,7 +127,7 @@ class Parameter(DictRepr):
                 self.name, value, self.type))
 
     @staticmethod
-    def parse_from_yaml(doc, when=None):
+    def parse_from_yaml(doc, when=TRUE_EXPR):
         if not isinstance(doc.value, dict):
             raise PackageError(doc, 'Parameters must be declared as "{name: <name>}"')
         type = Parameter.TYPENAME_TO_TYPE[spec_ast.evaluate_doc(doc.value['type'], {})
@@ -157,7 +157,7 @@ class Parameter(DictRepr):
             raise PackageError(self._doc, 'Parameter %s declared with conflicting types' % self.name)
         if not default_from_self and self.default != other_param.default:
             raise PackageError(self._doc, 'Parameter %s declared with conflicting default values' % self.name)
-        declared_when = sexpr_or(self.declared_when, other_param.declared_when)
+        declared_when = expr_or(self.declared_when, other_param.declared_when)
         return Parameter(name=self.name, type=self.type, default=self.default, declared_when=declared_when,
                          doc=self._doc)
 
@@ -191,7 +191,7 @@ class Package(DictRepr):
         parameters: dict { str: Parameter }
             Parameters this package takes
 
-        constraints: list of str
+        constraints: list of Expr
             Constraints on parameters that must be satisfied to use package
 
         condition_to_yaml_file : dict { str/None: PackageYAML}
@@ -273,38 +273,35 @@ class Package(DictRepr):
             raise ValueError('Exactly one PackageYAML should be primary')
 
         # Find the explicit expression for the 'primary when'
-        otherwise = None if len(yaml_files) == 1 else 'not %s' % ' and not '.join(
-            '(%s)' % f.doc['when'] for f in yaml_files if 'when' in f.doc)
+        otherwise = TRUE_EXPR if len(yaml_files) == 1 else Expr('not %s' % ' and not '.join(
+            '(%s)' % f.doc['when'] for f in yaml_files if 'when' in f.doc), bool)
 
         # when-transform each document. For now this is only used to parse the extends
         # section, with interpreter-style parsing for the rest
         tdocs = []
         for f in yaml_files:
             doc = marked_yaml.copy_dict_node(f.doc)
-            when = doc.pop('when', None)
             tdoc = when_transform_yaml(doc)
-            tdoc.when = when
+            when = doc.pop('when', None)
+            tdoc.when = Expr(when, bool) if when is not None else otherwise
             tdocs.append(tdoc)
 
         constraints = []
         parents = []
         # First pass: Explicit parameters in leaf-level package specs
         for doc in tdocs:
-            when = doc.when if doc.when is not None else otherwise
+            when = doc.when
 
             # Add explicit parameters.
             for x in doc.get_value('parameters', []):
-                param_when = sexpr_and(when, x.when)
+                param_when = expr_and(when, x.when)
                 add_param(Parameter.parse_from_yaml(x, param_when), default_from_self=False)
                 required = (spec_ast.evaluate_doc(x.value['required'], {})
                             if 'required' in x.value
                             else ('default' not in x.value))
                 if required:
-                    if param_when is None:
-                        constraints.append('%s is not None' % spec_ast.evaluate_doc(x.value['name'], {}))
-                    else:
-                        constraints.append('not (%s) or (%s is not None)' % (
-                            param_when, spec_ast.evaluate_doc(x.value['name'], {})))
+                    constraint = spec_ast.Expr('%s is not None' % spec_ast.evaluate_doc(x.value['name'], {}), bool)
+                    constraints.append(expr_implies(param_when, constraint))
 
             # Add deps parameters
             dep_params, dep_constraints = parse_deps_and_constraints(doc, when=when)
@@ -314,19 +311,20 @@ class Package(DictRepr):
 
         # Second pass: Parameters from ancestors
         for doc in tdocs:
-            when = doc.when if doc.when is not None else otherwise
+            when = doc.when
 
             for parent_name in doc.get_value('extends', []):
-                parent_when = sexpr_and(when, parent_name.when)
+                parent_when = expr_and(when, parent_name.when)
                 parent = profile.load_package(spec_ast.evaluate_doc(parent_name, {}))
                 for param in parent.parameters.values():
-                    add_param(param.copy_with(declared_when=sexpr_and(parent_when, param.declared_when)),
+                    add_param(param.copy_with(declared_when=expr_and(parent_when, param.declared_when)),
                               default_from_self=True)
                 for constraint in parent.constraints:
+                    constraint = spec_ast.Expr(constraint, bool)
                     if parent_when is None:
                         constraints.append(constraint)
                     else:
-                        constraints.append('not (%s) or (%s)' % (parent_when, constraint))
+                        constraints.append(expr_implies(parent_when, constraint))
                 parents.append((parent_when, parent))
 
         # Attach the YAML files too, we just transform them first to remove the sections
@@ -396,7 +394,7 @@ class Package(DictRepr):
     def check_constraints(self, param_values, node=None):
         for c in self.constraints:
             if not eval_condition(c, param_values):
-                raise ProfileError(node, '%s package: constraint not satisfied: "%s"' % (self.name, c))
+                raise ProfileError(node, '%s package: constraint not satisfied: "%s"' % (self.name, c.expr))
 
     def instantiate(self, param_values, node=None):
         package = self.pre_instantiate(param_values)
