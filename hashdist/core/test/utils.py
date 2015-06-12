@@ -35,6 +35,33 @@ def make_abs_temp_dir():
     return os.path.realpath(tempfile.mkdtemp())
 
 
+def contextmanager_to_decorator(ctx):
+    """
+    Turns a context manager to a decorator, passing the results as an extra first
+    argument. So this::
+
+        @contextmanager_to_decorator(foo)
+        def bar(r):
+            BLOCK
+
+    corresponds to this::
+
+        def bar():
+            with foo() as r:
+                BLOCK
+
+    NOTE that the argument is a callable, and called without arguments
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def replacement(*args, **kw):
+            with ctx() as enter_result:
+                func_result = func(enter_result, *args, **kw)
+            return func_result
+        return replacement
+    return decorator
+
+
 # Make our own assert_raises, as nose.tools doesn't have it on Python 2.6
 # We always use the context manager form
 class AssertRaisesResult(object):
@@ -100,14 +127,14 @@ def dump(filename, contents):
 def temp_working_dir_fixture(func):
     if inspect.isgeneratorfunction(func):
         @functools.wraps(func)
-        def replacement():
+        def replacement(*args, **kw):
             with temp_working_dir() as d:
-                for x in func(d): yield x
+                for x in func(d, *args, **kw): yield x
     else:
         @functools.wraps(func)
-        def replacement():
+        def replacement(*args, **kw):
             with temp_working_dir() as d:
-                return func(d)
+                return func(d, *args, **kw)
     return replacement
 
 

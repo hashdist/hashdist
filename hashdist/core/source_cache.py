@@ -265,6 +265,69 @@ class SourceCache(object):
         """
         return GitSourceCache(self).fetch_git(repository, rev, repo_name)
 
+    def fetch_local(self, path, repo_name):
+        """Fetches the contents of a local directory. The following strategy
+        is used:
+
+        a) If the directory is *inside* a git checkout, a RemoteFetchError is
+           raised as this is not currently supported.
+
+        b) If the directory is the root of a git checkout and `git status` is
+           empty (i.e. there's a fresh commit), that commit is used directly,
+           and `git:<sha1>` is returned.
+
+        c) If the directory is a *dirty* git checkout, a git-tree object and
+           git commit will be created in the source cache for the current state,
+           and `git-tree:<sha1>` is returned.
+
+        d) No git repo: As of yet unsupported, will raise RemoteFetchError.
+           Eventually this will help.
+
+
+        Parameters
+        ----------
+
+        path : str
+            The local path to the files
+
+        repo_name : str
+            A unique name to use for the git repository, e.g., ``numpy``.
+            This is currently required because git doesn't seem to allow
+            getting a unique ID for a remote repo; and cloning all repos
+            into the same git repo has scalability issues.
+
+
+        Returns
+        -------
+
+        key : str
+            The globally unique key; this is EITHER the git commit SHA-1 hash
+            prepended by ``git:``, OR the git-tree SHA-1 hash prepended by
+            ``git-tree:``, depending on whether an existing git commit was
+            found.
+        """
+        return LocalSourceCache(self).fetch_local(path, repo_name)
+
+    def git_commit_to_tree(self, key):
+        """
+        Turns a `git:<sha1>` key into its corresponding `git-tree:<sha1>`.
+        The latter is more stable, but less standard and excludes commit metadata
+        from the hash.
+
+        Parameters
+        ----------
+
+        key : str
+            Must start with "git:"
+
+        Returns
+        -------
+
+        key : str
+            Will start with "git-tree:"
+        """
+        return GitSourceCache(self).git_commit_to_tree(key)
+
     def fetch_archive(self, url, type=None):
         """Fetches  a tarball without knowing the key up-front.
 
@@ -305,7 +368,7 @@ class SourceCache(object):
         return ArchiveSourceCache(self).put(files)
 
     def _get_handler(self, type):
-        if type == 'git':
+        if type in ('git', 'git-tree'):
             handler = GitSourceCache(self)
         elif type == 'files' or type in archive_types:
             handler = ArchiveSourceCache(self)
@@ -498,6 +561,19 @@ class GitSourceCache(object):
         retcode, out, err = self.git(repo_name, 'rev-list', '-n1', '--quiet', commit)
         return retcode == 0
 
+    def git_commit_to_tree(self, key):
+        if not key.startswith('git:'):
+            raise ValueError('Invalid key argument')
+        hash = key[4:]
+        for repo_name in self._get_repo_names():
+            retcode, out, err = self.git(repo_name, 'cat-file', 'commit', hash)
+            if retcode == 0:
+                break
+        else:
+            raise KeyNotFoundError('Source item not present: git:%s' % hash)
+        tree_hash = [line.split(' ')[1] for line in out.splitlines() if line.startswith('tree ')][0]
+        return 'git-tree:%s' % tree_hash
+
     def fetch_git(self, repo_url, rev, repo_name, commit=None):
         if commit is None and rev is None:
             raise ValueError('Either a commit or a branch/rev must be specified')
@@ -509,7 +585,6 @@ class GitSourceCache(object):
 
         if rev is not None:
             self.checked_git(repo_name, 'fetch', repo_url, rev)
-
         else:
             # when rev is None, fetch all the remote heads; seems like one must
             # do a separate ls-remote...
@@ -529,18 +604,41 @@ class GitSourceCache(object):
 
         return 'git:%s' % commit
 
-    def unpack(self, type, hash, target_path):
-        assert type == 'git'
-
-        # We don't want to require supplying a repo name, so for now
-        # we simply iterate through all git repos
+    def _get_repo_names(self):
         try:
-            repo_names = os.listdir(self.repo_path)
+            return os.listdir(self.repo_path)
         except OSError, e:
             if e.errno != errno.ENOENT:
                 raise
-            repo_names = []
-        for repo_name in repo_names:
+            return []
+
+    def unpack(self, type, hash, target_path):
+        if type == 'git':
+            return self.unpack_commit(hash, target_path)
+        elif type == 'git-tree':
+            return self.unpack_tree(hash, target_path)
+        else:
+            raise ValueError('unsupported type argument: %s' % type)
+
+    def unpack_tree(self, tree_hash, target_path):
+        for repo_name in self._get_repo_names():
+            retcode, out, err = self.git(repo_name, 'show', tree_hash)
+            if retcode == 0 and out.splitlines()[0].strip() == 'tree %s' % tree_hash:
+                break
+        else:
+            raise KeyNotFoundError('git tree-object not present: git-tree:%s' % tree_hash)
+        # Create temporary branch reference to tree object. The branch will
+        # act as the *root* commit!, since git-tree:<sha1> does not include any parent
+        # information
+        commit = self.checked_git(repo_name, 'commit-tree', tree_hash,
+                                  '-m', 'Hashdist temporary tree commit').strip()
+        # We don't need to do any cleanup, gc should handle it, so we can just tail-call
+        self._unpack_commit_core(repo_name, commit, target_path)
+
+    def unpack_commit(self, hash, target_path):
+        # We don't want to require supplying a repo name, so for now
+        # we simply iterate through all git repos
+        for repo_name in self._get_repo_names():
             retcode, out, err = self.git(repo_name, 'rev-list', '-n1', '--quiet', hash)
             if retcode == 0:
                 break
@@ -548,24 +646,26 @@ class GitSourceCache(object):
             raise KeyNotFoundError('Source item not present: git:%s' % hash)
 
         # We clone the repo with 'git clone --shared' and check out the hash
-        repo_path = self.get_bare_repo_path(repo_name)
+        self._unpack_commit_core(repo_name, hash, target_path)
 
-        with self._marked_commit(repo_name, hash) as branch:
+    def _unpack_commit_core(self, repo_name, commit, target_path):
+        with self._marked_commit(repo_name, commit) as branch:
+            repo_path = self.get_bare_repo_path(repo_name)
             with working_directory(target_path):
                 self.checked_git(None, 'init')
                 self.checked_git(None, 'fetch', repo_path, branch)
-                self.checked_git(None, 'checkout', hash)
+                self.checked_git(None, 'checkout', commit)
 
-        # Check out any submodules:
-        # a) Pare .gitmodules
-        # b) For each submodule, put override of url .git/config to point to source cache
-        # c) git submodule update --init
-        with working_directory(target_path):
-            if os.path.exists('.gitmodules'):
-                submodules = self._parse_submodule_config(repo_name, '.gitmodules')
-                for key, submod in submodules.items():
-                    self.checked_git(None, 'config', 'submodule.%s.url' % key, self.get_bare_repo_path(submod['name']))
-                self.checked_git(None, 'submodule', 'update', '--init')
+            # Check out any submodules:
+            # a) Pare .gitmodules
+            # b) For each submodule, put override of url .git/config to point to source cache
+            # c) git submodule update --init
+            with working_directory(target_path):
+                if os.path.exists('.gitmodules'):
+                    submodules = self._parse_submodule_config(repo_name, '.gitmodules')
+                    for key, submod in submodules.items():
+                        self.checked_git(None, 'config', 'submodule.%s.url' % key, self.get_bare_repo_path(submod['name']))
+                    self.checked_git(None, 'submodule', 'update', '--init')
 
     #
     # Submodule support
@@ -632,6 +732,113 @@ class GitSourceCache(object):
             # safely turn relative URLs into absolute URLs (idempotent on absolute URLs)
             absolute_submod_url = urlparse.urljoin(repo_url+'/', submod['url'])
             self.fetch_git(absolute_submod_url, rev=None, repo_name=submod['name'], commit=commit_hash)
+
+
+class LocalSourceCache(object):
+    """
+    See SourceCache.fetch_local for docs.
+    """
+
+    def __init__(self, source_cache):
+        self.git_cache = GitSourceCache(source_cache)
+        self.logger = source_cache.logger
+
+    def target_git(self, path, cmd, env=None):
+        """
+        Like GitSourceCache but without a repo_name, operating on the git repo in
+        target `path` instead
+        """
+        full_env = dict(os.environ)
+        if env:
+            full_env.update(env)
+        with working_directory(path):
+            p = subprocess.Popen(['git'] + cmd, env=full_env,
+                                 stdout=subprocess.PIPE, stdin=subprocess.PIPE,
+                                 stderr=subprocess.PIPE)
+            out, err = p.communicate()
+        return p.returncode, out, err
+
+    def checked_target_git(self, path, cmd, env=None):
+        ret, out, err = self.target_git(path, cmd, env=env)
+        if ret != 0:
+            msg = 'git call %r failed with code %d:\n%s' % (cmd, ret, err)
+            self.logger.error(msg)
+            raise RemoteFetchError(msg)
+        return out
+
+    def fetch_local(self, path, repo_name):
+        path = os.path.abspath(path)
+
+        # First verify we are in root of a git repository
+        ret, out, err = self.target_git(path, ['rev-parse', '--show-cdup'])
+        if ret != 0:
+            key = self._handle_non_git(path, repo_name)
+        else:
+            if out.strip() != '':
+                raise RemoteFetchError('Not the root of a git repository: %s' % path)
+
+            # Check if it's clean
+            out = self.checked_target_git(path, ['status', '--porcelain'])
+            if any([not line.startswith('??') for line in out.splitlines()]):
+                # A line didn't start with '??', so we're dirty
+                key = self._handle_dirty(path, repo_name, update=True)
+            else:
+                key = self._handle_clean(path, repo_name)
+        return key
+
+    def _handle_non_git(self, path, repo_name):
+        with working_directory(path):
+            if os.path.exists('.git'):
+                raise RemoteFetchError('.git already existed')
+            self.checked_target_git(path, ['init'])
+            try:
+                key = self._handle_dirty(path, repo_name, update=False)
+            finally:
+                shutil.rmtree('.git')
+        return key
+
+    def _handle_clean(self, path, repo_name):
+        commit = self.checked_target_git(path, ['rev-parse', 'HEAD']).strip()
+        rev = self.checked_target_git(path, ['rev-parse', '--abbrev-ref', 'HEAD']).strip()
+        return self.git_cache.fetch_git(path, rev=rev, repo_name=repo_name, commit=commit)
+
+    def _handle_dirty(self, path, repo_name, update):
+        """
+        This approach is based on reading the workings of the git-wip tool, which
+        can be found at https://github.com/bartman/git-wip.
+
+        update should be set to True if we have a HEAD and are taking dirty files in existing repo,
+        False to blindly commit everything
+        """
+
+        # Make the tree object, using a temporary index file to avoid changing anything
+        # about the users index. The has of the tree object is what we'll return in the end.
+        temp_dir = tempfile.mkdtemp()
+        try:
+            temp_index = pjoin(temp_dir, 'index')
+            env = {'GIT_INDEX_FILE': temp_index}
+            if update:
+                self.checked_target_git(path, ['read-tree', 'HEAD'], env=env)
+            else:
+                self.checked_target_git(path, ['add', '.'], env=env)
+            self.checked_target_git(path, ['add', '--update'], env=env)
+            tree_hash = self.checked_target_git(path, ['write-tree'], env=env).strip()
+        finally:
+            shutil.rmtree(temp_dir)
+        # In order to transport the tree object to the source cache, we make a temporary
+        # ref and commit.
+        cmd = ['commit-tree', tree_hash, '-m', 'Hashdist automatic WIP commit'] + ['-p', 'HEAD'] * update
+        commit = self.checked_target_git(path, cmd).strip()
+        ref_name = 'refs/hashdist_wip/%s' % commit
+        self.checked_target_git(path, ['update-ref', ref_name, commit, ''])
+        try:
+            self.git_cache.fetch_git(repo_url=path, rev=ref_name, repo_name=repo_name, commit=commit)
+            # ignore the returned key as we prefer the more stable git-tree:
+        finally:
+            self.checked_target_git(path, ['update-ref', '-d', ref_name, commit])
+            # leave the commit and the tree object for git gc process
+        return 'git-tree:%s' % tree_hash
+
 
 
 SIMPLE_FILE_URL_RE = re.compile(r'^file:/?[^/]+.*$')

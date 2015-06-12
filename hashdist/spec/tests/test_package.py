@@ -563,3 +563,50 @@ def test_parse_deps():
         "{dependencies: {build: [a, b], run: [x, +b, +c]}}"))
     eq_(set(params.keys()), set(['a', 'b', '_run_x', '_run_b', '_run_c']))
     eq_(set([x.expr for x in constraints]), set(['_run_x is not None', 'a is not None', 'b is not None']))
+
+
+@temp_working_dir_fixture
+@build_store_fixture()
+def test_source_local(tmphashdist, sc, bldr, config, tmpdir):
+    from hashdist.core.test.test_source_cache import write_mock_git_repo
+    from hashdist.spec.builder import ProfileBuilder
+
+    srcdir = os.path.join(tmpdir, 'foocheckout')
+    os.mkdir(srcdir)
+    master_commit, devel_commit = write_mock_git_repo(srcdir)  # current checkout is on devel branch
+    # make non-committed change (should be included)
+    dump(pjoin(srcdir, 'README'), 'a change')
+    # make a non-git-controlled file (should not be included)
+    dump(pjoin(srcdir, 'README_GARBAGE'), 'foo')
+
+    # Test parsing and construction of PackageSpec, i.e. YAML files loaded
+    # and the interface to other packages parsed.
+    dump('foo.yaml', """
+    parameters:
+    - name: PATH
+    sources:
+    - local: %s
+    build_stages:
+    - handler: bash
+      bash: "cp READ* $ARTIFACT"
+    """ % srcdir)
+
+    dump('profile.yaml', """
+        package_dirs: [.]
+        packages:
+          foo:
+        parameters:
+          BASH: /bin/bash
+          PATH: "/bin:/usr/bin"
+    """)
+
+    logging.basicConfig(level=100)
+    null_logger = logging.getLogger('')#null_logger')
+    p = profile.load_profile(null_logger, profile.TemporarySourceCheckouts(None),
+                             pjoin(tmpdir, "profile.yaml"))
+    pb = ProfileBuilder(logger, sc, bldr, p)
+    build_spec_key = pb.get_build_spec('foo').doc['sources'][1]['key']
+    artifact_id, path = pb.build('foo', config, 1, keep_build="always", debug=False)
+    assert not os.path.exists(pjoin(path, 'README_GARBAGE'))
+    with open(pjoin(path, 'README')) as f:
+        assert f.read() == 'a change'

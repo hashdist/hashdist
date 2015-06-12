@@ -68,7 +68,7 @@ def test_strip_comments():
 def fixture():
     def decorator(func):
         @functools.wraps(func)
-        def decorated():
+        def decorated(*args, **kw):
             tempdir = tempfile.mkdtemp()
             try:
                 os.makedirs(pjoin(tempdir, 'src'))
@@ -85,7 +85,7 @@ def fixture():
 
                 sc = source_cache.SourceCache.create_from_config(config, logger)
                 bldr = build_store.BuildStore.create_from_config(config, logger)
-                return func(tempdir, sc, bldr, config)
+                return func(tempdir, sc, bldr, config, *args, **kw)
             finally:
                 os.system("chmod -R +w %s" % tempdir)
                 shutil.rmtree(tempdir)

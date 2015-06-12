@@ -17,7 +17,7 @@ from ..source_cache import (ArchiveSourceCache, SourceCache,
         KeyNotFoundError, SourceNotFoundError, SecurityError, RemoteFetchError)
 from ..hasher import Hasher, format_digest
 
-from .utils import temp_dir, working_directory, VERBOSE, logger, assert_raises
+from .utils import temp_dir, working_directory, VERBOSE, logger, assert_raises, dump
 from . import utils
 from hashdist.util.logger_fixtures import log_capture
 
@@ -108,10 +108,10 @@ def cat(filename, what):
     with file(filename, 'w') as f:
         f.write(what)
 
-def make_mock_git_repo(submodules=None):
-    mock_git_repo = tempfile.mkdtemp()
-    with working_directory(mock_git_repo):
-        repo = os.path.join(mock_git_repo, '.git')
+
+def write_mock_git_repo(directory, submodules=None):
+    with working_directory(directory):
+        repo = os.path.join(directory, '.git')
         git('init', repo=repo)
         cat('README', 'First revision')
         git('add', 'README', repo=repo)
@@ -130,7 +130,12 @@ def make_mock_git_repo(submodules=None):
         git('add', 'README', repo=repo)
         git('commit', '-m', 'Second revision', repo=repo)
         devel_commit = git('rev-list', '-n1', 'HEAD', repo=repo).strip()
-        return mock_git_repo, master_commit, devel_commit
+        return master_commit, devel_commit
+
+def make_mock_git_repo(submodules=None):
+    mock_git_repo = tempfile.mkdtemp()
+    master_commit, devel_commit = write_mock_git_repo(mock_git_repo, submodules)
+    return mock_git_repo, master_commit, devel_commit
 
 #
 # Tests
@@ -393,3 +398,35 @@ def test_mirrors():
                 sc.fetch('http://nonexisting.com', mock_tarball_hash)
                 assert [sha] == os.listdir(pjoin(sc_dir, 'packs', 'tar.gz'))
 
+
+@utils.contextmanager_to_decorator(temp_source_cache)
+def test_local_git(sc):
+    # The mock git repo starts checked out on the 'devel' branch
+    key = sc.fetch_local(mock_git_repo, 'foo')
+    assert key == 'git:%s' % mock_git_devel_branch_commit  # not stable, contains time
+    assert sc.git_commit_to_tree(key) == 'git-tree:a6fa764672a8516ab6af2b7957bd51897c94052d'  # stable
+
+    # Now modify something...
+    dump(pjoin(mock_git_repo, 'README'), 'a change to readme file')
+    # ..and fetch again
+    key = sc.fetch_local(mock_git_repo, 'foo')
+    assert key == 'git-tree:d7d038d67e5bb61db8d72d7f5282f63e77ddc35b'  # stable, no metadata
+    # unpack using the git-tree key
+    with temp_dir() as d:
+        sc.unpack(key, d)
+        with file(pjoin(d, 'README')) as f:
+            assert f.read() == 'a change to readme file'
+
+@utils.contextmanager_to_decorator(temp_dir)
+@utils.contextmanager_to_decorator(temp_source_cache)
+def test_local_nongit(sc, d):
+    # Get a git-tree without a repo to pull from, plain directory
+    dump(pjoin(d, 'README'), 'a change to readme file')  # same tree as above test
+    key = sc.fetch_local(d, 'foo')
+    assert key == 'git-tree:d7d038d67e5bb61db8d72d7f5282f63e77ddc35b'  # stable, no metadata
+    assert os.listdir(d) == ['README']  # no .git left
+    # unpack using the git-tree key
+    with temp_dir() as unpack_d:
+        sc.unpack(key, unpack_d)
+        with file(pjoin(unpack_d, 'README')) as f:
+            assert f.read() == 'a change to readme file'
