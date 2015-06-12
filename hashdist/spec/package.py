@@ -72,7 +72,9 @@ def parse_deps_and_constraints(doc, when=TRUE_EXPR):
                 declared_when=dep_when and spec_ast.Expr(dep_when, bool),
                 doc=node)
             if required:
-                c = expr_implies(dep_when, spec_ast.Expr('%s is not None' % param_name, bool))
+                c = expr_implies(dep_when, spec_ast.Expr(
+                    '%s is not None' % spec_ast.preprocess_package_name(param_name), bool,
+                    node=node))
                 constraints.append(c)
     return parameters, constraints
 

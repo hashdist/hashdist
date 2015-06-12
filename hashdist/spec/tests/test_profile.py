@@ -386,7 +386,7 @@ def test_not_declaring_parameter(d):
     prof = build_profile(d)
     with assert_raises(ProfileError) as e:
         prof.resolve_parameters()
-    assert "parameter not defined: name 'foo' is not defined" in str(e.exc_val)
+    assert "'foo' is not defined" in str(e.exc_val)
 
 
 @temp_working_dir_fixture

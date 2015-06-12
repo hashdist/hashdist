@@ -281,7 +281,8 @@ class Profile(object):
                     # Do some very basic matching on constraints; this is only likely to match our
                     # own auto-generate constraint, though it doesn't hurt if it matches user-provided
                     # constraints
-                    required = '%s is not None' % param.name in [c.expr for c in pkg_spec.constraints]
+                    required = ('%s is not None' % spec_ast.preprocess_package_name(param.name)
+                                in [c.expr for c in pkg_spec.constraints])
                     if required or dep_name in param_values:
                         dep_pkg = visit(param_doc.get(dep_name, dep_name))
                     else:

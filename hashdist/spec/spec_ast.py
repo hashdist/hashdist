@@ -32,12 +32,11 @@ class CoerceError(Exception):
 
 
 class BaseExpr(object):
-    def __init__(self, expr, when=None, node=None):
+    def __init__(self, expr, node=None):
         if isinstance(expr, basestring):
             node = node or expr
         self.node = node
         self.expr = expr
-        self.when = when
         if node and hasattr(node, 'start_mark'):
             self.source = str(node.start_mark)
             self.start_mark = node.start_mark
@@ -59,7 +58,7 @@ class Expr(BaseExpr):
     def __init__(self, expr, result_coercion=lambda x: x, node=None):
         if isinstance(expr, Expr):
             expr = expr.expr
-        super(Expr, self).__init__(expr, node)
+        super(Expr, self).__init__(expr, node=node)
         expr = preprocess_version_literal(expr)
         try:
             root_node = ast.parse(expr, mode='eval')
@@ -75,9 +74,9 @@ class Expr(BaseExpr):
             return self.result_coercion(eval(self.compiled, GLOBALS, parameters))
         except CoerceError as e:
             reason = str(e)
-            raise PackageError(self.node, "expression %s: %s" % (reason, self.expr))
+            raise PackageError(self, "expression %s: %s" % (reason, self.expr))
         except NameError as e:
-            raise ProfileError(self, "parameter not defined: %s" % e)
+            raise ProfileError(self, "in expression '%s': %s" % (self.expr, e))
         except:
             raise PackageError(self, "exception %s raised during execution of \"%s\": %r" % (
                 sys.exc_info()[0].__name__, self.node, str(sys.exc_info()[1])))
@@ -101,7 +100,8 @@ class StrExpr(BaseExpr):
     DENY_STRINGIFY = (bool,)  # subclass of int..
 
     def __init__(self, expr, when=None, node=None):
-        super(StrExpr, self).__init__(expr, when, node)
+        super(StrExpr, self).__init__(expr, node)
+        self.when = when
 
         self.expressions = []
         def f(match):
@@ -126,14 +126,12 @@ class StrExpr(BaseExpr):
 
 
 def _handle_dash(parameters):
-    new_parameters = dict((key.replace('-', '_dash_'), value) for key, value in parameters.items())
+    new_parameters = dict((preprocess_package_name(key), value) for key, value in parameters.items())
     return new_parameters
 
 
-def preprocess(expr, parameters):
-    parameters = _handle_dash(parameters)
-    expr = preprocess_version_literal(expr)
-    return expr, parameters
+def preprocess_package_name(name):
+    return name.replace('-', '_dash_')
 
 
 def eval_condition(expr, parameters):
@@ -141,29 +139,6 @@ def eval_condition(expr, parameters):
         return True
     else:
         return expr.eval(parameters)
-
-
-ALLOW_STRINGIFY = (basestring, int, Version)
-DENY_STRINGIFY = (bool,)  # subclass of int..
-
-def eval_strexpr(expr, parameters, node=None):
-    """
-    We allow *some* stringification, but not most of them; having
-    bool turn into 'True' is generally not useful
-    """
-    expr_p, parameters_p = preprocess(expr, parameters)
-    node = node if node is not None else expr
-    try:
-        result = eval(expr_p, GLOBALS, parameters_p)
-        if not isinstance(result, ALLOW_STRINGIFY) or isinstance(result, DENY_STRINGIFY):
-            # We want to avoid bools turning into 'True' etc. without explicit
-            raise PackageError(expr, "expression must return a string: %s" % expr_p)
-        return str(result)
-    except NameError as e:
-        raise PackageError(expr, "parameter not defined: %s" % e)
-    except SyntaxError as e:
-        raise PackageError(expr, "syntax error in expression '%s'" % expr_p)
-
 
 
 CONDITIONAL_RE = re.compile(r'^when (.*)$')

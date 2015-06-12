@@ -111,7 +111,7 @@ def test_Expr():
     eq_(e.eval({'x': True}), 1)
     with assert_raises(ProfileError) as ex:
         e.eval({})
-    assert 'parameter not defined' in str(ex.exc_val)
+    assert 'is not defined' in str(ex.exc_val)
     with assert_raises(PackageError) as ex:
         spec_ast.Expr('<<<')
     assert 'syntax error' in str(ex.exc_val)
