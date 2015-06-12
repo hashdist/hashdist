@@ -403,8 +403,8 @@ class Package(DictRepr):
         package.init(node)
         return package
 
-    def pre_instantiate(self, param_values):
-        return PackageInstance(self, param_values)
+    def pre_instantiate(self, *args):
+        return PackageInstance(self, *args)
 
 
 class PackageYAML(object):
@@ -527,9 +527,10 @@ class PackageInstance(object):
     call `init()` after which _impl becomes available and the package should
     be considered immutable.
     """
-    def __init__(self, spec, param_values=None):
+    def __init__(self, spec, param_values=None, sources_override=None):
         self._spec = spec
         self._param_values = param_values
+        self._sources_override = sources_override
 
     def init(self, node=None):
         self._spec.check_constraints(self._param_values, node)
@@ -559,9 +560,14 @@ class PackageInstanceImpl(object):
 
         loader = PackageLoader(self._spec, self._param_values)
         self.doc = loader.doc
+        if api_part._sources_override is not None:
+            self.doc['sources'] = api_part._sources_override
+        if 'sources' in self.doc:
+            _transform_sources_inplace(self.doc['sources'])
         self.hook_files = loader.get_hook_files()
         self.build_deps = dict([(key, value) for key, value in self._param_values.items()
                                 if not key.startswith('_run_') and isinstance(value, PackageInstance)])
+
 
     def fetch_sources(self, source_cache):
         for source_clause in self.doc.get('sources', []):
@@ -723,6 +729,24 @@ class PackageInstanceImpl(object):
             raise ProfileError(action['value'].start_mark, 'Please use "${VAR}", not $VAR')
         action['value'] = value
         return action
+
+
+def _transform_sources_inplace(sources):
+    """
+    Transforms the github: shorthand
+    """
+    for section in sources:
+        if 'github' in section:
+            # profile has requested a specific commit, overriding package defaults
+            from urlparse import urlsplit
+            import posixpath
+            target_url = section['github']
+            split_url = urlsplit(target_url)
+            commit = posixpath.split(split_url.path)[1]
+            git_repo = target_url.rsplit('/commit/')[0] + '.git'
+            section['url'] = git_repo
+            section['key'] = 'git:' + commit
+            del section['github']
 
 
 def assemble_build_script(doc, ctx):

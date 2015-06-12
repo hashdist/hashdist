@@ -300,7 +300,7 @@ class Profile(object):
 
             # Step 2: Type-check and remove parameters that are not declared
             # (also according to when-conditions)
-            x = result[pkgname] = pkg_spec.pre_instantiate(param_values)
+            x = result[pkgname] = pkg_spec.pre_instantiate(param_values, param_doc.get('sources', None))
             visiting.remove(pkgname)
             return x
 

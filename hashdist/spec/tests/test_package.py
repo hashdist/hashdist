@@ -67,7 +67,7 @@ def test_create_build_spec():
     """))
     parameters = {"X": "x", "BASH": "/bin/bash"}
     imports = [{"ref": "OTHERLIB", "id": "otherlib/abcdefg"}]
-    build_spec = package.create_build_spec('mylib', doc, parameters, imports, [])
+    build_spec = package.create_build_spec('mylib', doc, parameters, imports, {}, [])
     expected = {
         "name": "mylib",
         "build": {
@@ -566,6 +566,27 @@ def test_parse_deps():
 
 
 @temp_working_dir_fixture
+def test_github_sources_transform(d):
+    # Tests two features; a) the github: key, and b) overriding sources list from profile.
+    # These are unrelated.
+    dump('foo.yaml', "")
+
+    dump('profile.yaml', """
+        package_dirs: [.]
+        packages:
+          foo:
+            sources:
+            - github: https://github.com/bartman/git-wip/commit/c1c9b1a22668f653fe5291be2384dc397f9e0dcc
+    """)
+    prof = profile.load_profile(null_logger, profile.TemporarySourceCheckouts(None),
+                                pjoin(d, "profile.yaml"))
+    pkgs = prof.resolve_parameters()
+    assert pkgs['foo']._impl.doc['sources'] == [{
+        'url': 'https://github.com/bartman/git-wip.git',
+        'key': 'git:c1c9b1a22668f653fe5291be2384dc397f9e0dcc'}]
+
+
+@temp_working_dir_fixture
 @build_store_fixture()
 def test_source_local(tmphashdist, sc, bldr, config, tmpdir):
     from hashdist.core.test.test_source_cache import write_mock_git_repo
@@ -585,23 +606,25 @@ def test_source_local(tmphashdist, sc, bldr, config, tmpdir):
     parameters:
     - name: PATH
     sources:
-    - local: %s
+    - url: git://somthing/foo/will/be/overridden
+      key: git:ba9d639aa2f6b47a85bff6b309866de049db4e14
     build_stages:
     - handler: bash
       bash: "cp READ* $ARTIFACT"
-    """ % srcdir)
+    """)
 
     dump('profile.yaml', """
         package_dirs: [.]
         packages:
           foo:
+            sources:
+            - local: %s
         parameters:
           BASH: /bin/bash
           PATH: "/bin:/usr/bin"
-    """)
+    """ % srcdir)
 
-    logging.basicConfig(level=100)
-    null_logger = logging.getLogger('')#null_logger')
+    null_logger = logging.getLogger('null_logger')
     p = profile.load_profile(null_logger, profile.TemporarySourceCheckouts(None),
                              pjoin(tmpdir, "profile.yaml"))
     pb = ProfileBuilder(logger, sc, bldr, p)

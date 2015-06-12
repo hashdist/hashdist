@@ -160,35 +160,8 @@ class PackageLoader(PackageLoaderBase):
         Load package yaml and postprocess it.
         """
         super(PackageLoader, self).__init__(package_spec, param_values)
-        self.override_requested_sources()
         self.expand_globs_in_build_stages_files()
         self.topo_order_stages()
-
-    def override_requested_sources(self):
-        """
-        Allow profile to override sources in the package
-
-        Supports "sources" and "github" param_values.
-        """
-        if 'sources' in self.param_values:
-            self.doc['sources'] = self.param_values['sources']
-        elif 'github' in self.param_values:
-            # profile has requested a specific commit, overriding package defaults
-            from urlparse import urlsplit
-            import posixpath
-            target_url = self.param_values['github']
-            split_url = urlsplit(target_url)
-            git_id = posixpath.split(split_url.path)[1]
-            git_repo = target_url.rsplit('/commit/')[0] + '.git'
-            sources = self.doc.get('sources', None)
-            if sources is None:
-                raise PackageError(self.doc, 'GitHub URL provided but no source to override')
-            if len(sources) != 1:
-                raise PackageError(sources, 'GitHub URL provided but only one source can be overriden')
-            source = sources[0]
-            source['url'] = git_repo
-            source['key'] = 'git:' + git_id
-            self.doc['sources'] = [source]
 
     def expand_globs_in_build_stages_files(self):
         """
