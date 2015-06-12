@@ -628,7 +628,11 @@ class PackageInstanceImpl(object):
             if local:
                 if 'key' in source_clause or 'uri' in source_clause:
                     raise PackageError(source_clause, 'if using local:, one should not use key:/uri:')
-                local_sources_info[local] = source_cache.fetch_local(local, self._spec.name)
+                key = source_cache.fetch_local(local, self._spec.name)
+                # when using local: we always translate to git-tree:, not git:, even if git: is available
+                if key.startswith('git:'):
+                    key = source_cache.git_commit_to_tree(key)
+                local_sources_info[local] = key
 
         return local_sources_info
 

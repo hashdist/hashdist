@@ -591,45 +591,54 @@ def test_github_sources_transform(d):
 def test_source_local(tmphashdist, sc, bldr, config, tmpdir):
     from hashdist.core.test.test_source_cache import write_mock_git_repo
     from hashdist.spec.builder import ProfileBuilder
+    null_logger = logging.getLogger('null_logger')
 
+    # set up the stack
     srcdir = os.path.join(tmpdir, 'foocheckout')
-    os.mkdir(srcdir)
-    master_commit, devel_commit = write_mock_git_repo(srcdir)  # current checkout is on devel branch
-    # make non-committed change (should be included)
-    dump(pjoin(srcdir, 'README'), 'a change')
-    # make a non-git-controlled file (should not be included)
-    dump(pjoin(srcdir, 'README_GARBAGE'), 'foo')
-
-    # Test parsing and construction of PackageSpec, i.e. YAML files loaded
-    # and the interface to other packages parsed.
     dump('foo.yaml', """
     parameters:
     - name: PATH
     sources:
-    - url: git://somthing/foo/will/be/overridden
-      key: git:ba9d639aa2f6b47a85bff6b309866de049db4e14
+    - local: %s
     build_stages:
     - handler: bash
       bash: "cp READ* $ARTIFACT"
-    """)
+    """ % srcdir)
 
     dump('profile.yaml', """
         package_dirs: [.]
         packages:
           foo:
-            sources:
-            - local: %s
         parameters:
           BASH: /bin/bash
           PATH: "/bin:/usr/bin"
-    """ % srcdir)
+    """)
 
-    null_logger = logging.getLogger('null_logger')
-    p = profile.load_profile(null_logger, profile.TemporarySourceCheckouts(None),
-                             pjoin(tmpdir, "profile.yaml"))
-    pb = ProfileBuilder(logger, sc, bldr, p)
-    build_spec_key = pb.get_build_spec('foo').doc['sources'][1]['key']
-    artifact_id, path = pb.build('foo', config, 1, keep_build="always", debug=False)
-    assert not os.path.exists(pjoin(path, 'README_GARBAGE'))
-    with open(pjoin(path, 'README')) as f:
-        assert f.read() == 'a change'
+    def build():
+        # build the profile and return some data, we're using this twice
+        p = profile.load_profile(null_logger, profile.TemporarySourceCheckouts(None),
+                                 pjoin(tmpdir, "profile.yaml"))
+        pb = ProfileBuilder(logger, sc, bldr, p)
+        source_key = pb.get_build_spec('foo').doc['sources'][1]['key']
+        artifact_id, artifact_path = pb.build('foo', config, 1, keep_build="always", debug=False)
+        with open(pjoin(artifact_path, 'README')) as f:
+            readme_contents = f.read()
+        return source_key, artifact_path, readme_contents
+
+
+    # Make initial git repo
+    os.mkdir(srcdir)
+    master_commit, devel_commit = write_mock_git_repo(srcdir)  # current checkout is on devel branch
+
+    source_key, artifact_path, readme_contents = build()
+    assert readme_contents == 'Second revision'
+    assert source_key == 'git-tree:a6fa764672a8516ab6af2b7957bd51897c94052d'  # stable
+
+    # make non-committed change (should be included)
+    dump(pjoin(srcdir, 'README'), 'a change')
+    # make a non-git-controlled file (should not be included)
+    dump(pjoin(srcdir, 'README_GARBAGE'), 'foo')
+
+    source_key, artifact_path, readme_contents = build()
+    assert readme_contents == 'a change'
+    assert not os.path.exists(pjoin(artifact_path, 'README_GARBAGE'))
