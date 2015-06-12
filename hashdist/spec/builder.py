@@ -156,13 +156,10 @@ class ProfileBuilder(object):
         hook_files = [self.profile.resolve(fname) for fname in pkg._impl.hook_files]
 
         dep_vars = []
-        parameters = {}
         for key, value in pkg._param_values.items():
-            if isinstance(value, PackageInstance):
-                if not key.startswith('_run_'):
-                    dep_vars.append(to_env_var(key))
-            else:
-                parameters[key] = value
+            if isinstance(value, PackageInstance) and not key.startswith('_run_'):
+                dep_vars.append(to_env_var(key))
+        parameters = dict(pkg._param_values)
 
         ctx = hook_api.PackageBuildContext(pkg._spec.name, dep_vars, parameters)
         hook.load_hooks(ctx, hook_files)
