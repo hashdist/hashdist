@@ -565,7 +565,8 @@ class PackageInstanceImpl(object):
 
     def fetch_sources(self, source_cache):
         for source_clause in self.doc.get('sources', []):
-            source_cache.fetch(source_clause['url'], source_clause['key'], self._spec.name)
+            if 'local' not in source_clause:
+                source_cache.fetch(source_clause['url'], source_clause['key'], self._spec.name)
 
     def assemble_build_spec(self, source_cache, ctx, dependency_id_map, profile):
         """
@@ -579,7 +580,8 @@ class PackageInstanceImpl(object):
         ----------
 
         source_cache : :class:`hashdist.core.source_cache.SourceCache`
-            The source cache where the build script is to be stored.
+            The source cache where the build script is to be stored,
+            and information about sources can be stored.
 
         ctx : :class:`hashdist.spec.hook_api.PackageBuildContext`
             Part of the hook api
@@ -599,14 +601,30 @@ class PackageInstanceImpl(object):
             dependency_commands += value._impl.assemble_build_import_commands(key)
 
         build_script_key = self._store_files(source_cache, ctx, profile)
+
+        # Pre-process local: in sources list
+        local_sources_info = self._process_locals(source_cache)
+
         build_spec = create_build_spec(
             name=self._spec.name,
             doc=self.doc,
             parameters=self._param_values,
             imports=imports,
+            local_sources_info=local_sources_info,
             dependency_commands=dependency_commands,
             extra_sources=[{'target': '.', 'key': build_script_key}])
         return build_spec
+
+    def _process_locals(self, source_cache):
+        local_sources_info = {}  # { local path : key in source_cache }
+        for source_clause in self.doc.get("sources", []):
+            local = source_clause.get('local', None)
+            if local:
+                if 'key' in source_clause or 'uri' in source_clause:
+                    raise PackageError(source_clause, 'if using local:, one should not use key:/uri:')
+                local_sources_info[local] = source_cache.fetch_local(local, self._spec.name)
+
+        return local_sources_info
 
     def _store_files(self, source_cache, ctx, profile):
         """
@@ -744,7 +762,7 @@ def _postprocess_commands(doc):
 
 
 def create_build_spec(name, doc, parameters, imports,
-                      dependency_commands,
+                      dependency_commands, local_sources_info,
                       extra_sources=()):
     if 'BASH' not in parameters:
         raise ProfileError(doc, 'BASH must be provided in profile parameters')
@@ -753,7 +771,12 @@ def create_build_spec(name, doc, parameters, imports,
     sources = list(extra_sources)
     for source_clause in doc.get("sources", []):
         target = source_clause.get("target", ".")
-        sources.append({"target": target, "key": source_clause["key"]})
+        local = source_clause.get("local", None)
+        if local:
+            key = local_sources_info[local]
+        else:
+            key = source_clause["key"]
+        sources.append({"target": target, "key": key})
 
     # build commands
     commands = list(dependency_commands)
