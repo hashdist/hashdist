@@ -811,17 +811,19 @@ class LocalSourceCache(object):
         False to blindly commit everything
         """
 
-        # Make the tree object, using a temporary index file to avoid changing anything
+        # Make the tree object, copying the index file to avoid changing anything
         # about the users index. The has of the tree object is what we'll return in the end.
         temp_dir = tempfile.mkdtemp()
         try:
             temp_index = pjoin(temp_dir, 'index')
             env = {'GIT_INDEX_FILE': temp_index}
             if update:
-                self.checked_target_git(path, ['read-tree', 'HEAD'], env=env)
+                # take the current index file, then apply 'git add --update'. This includes
+                # all modifications (staged or not), including on new files newly staged
+                shutil.copy(pjoin(path, '.git', 'index'), temp_index)
+                self.checked_target_git(path, ['add', '--update'], env=env)
             else:
                 self.checked_target_git(path, ['add', '.'], env=env)
-            self.checked_target_git(path, ['add', '--update'], env=env)
             tree_hash = self.checked_target_git(path, ['write-tree'], env=env).strip()
         finally:
             shutil.rmtree(temp_dir)

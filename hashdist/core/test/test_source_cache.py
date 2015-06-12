@@ -408,14 +408,23 @@ def test_local_git(sc):
 
     # Now modify something...
     dump(pjoin(mock_git_repo, 'README'), 'a change to readme file')
-    # ..and fetch again
+    # add a file to index, then modify it...
+    dump(pjoin(mock_git_repo, 'README2'), 'about to add to index')
+    with working_directory(mock_git_repo):
+        git('add', 'README2', repo=mock_git_repo)
+    # modify it after adding to index...
+    dump(pjoin(mock_git_repo, 'README2'), 'after adding to index')
+
+    # ...and fetch again
     key = sc.fetch_local(mock_git_repo, 'foo')
-    assert key == 'git-tree:d7d038d67e5bb61db8d72d7f5282f63e77ddc35b'  # stable, no metadata
+    assert key == 'git-tree:c6863d7d7a9b660147ddc73dc6693b43f7c7a441'  # stable, no metadata
     # unpack using the git-tree key
     with temp_dir() as d:
         sc.unpack(key, d)
         with file(pjoin(d, 'README')) as f:
             assert f.read() == 'a change to readme file'
+        with file(pjoin(d, 'README2')) as f:
+            assert f.read() == 'after adding to index'
 
 @utils.contextmanager_to_decorator(temp_dir)
 @utils.contextmanager_to_decorator(temp_source_cache)
