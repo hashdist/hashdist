@@ -3,6 +3,7 @@ import os
 from os.path import join as pjoin
 import sys
 from collections import defaultdict
+from ..deps.yaml.error import MarkedYAMLError
 
 from ..formats import marked_yaml
 from ..formats.marked_yaml import load_yaml_from_file, is_null, marked_yaml_load, raw_tree
@@ -67,7 +68,7 @@ def parse_deps_and_constraints(doc, when=TRUE_EXPR):
 
             dep_when = expr_and(when, node.when)
             parameters[param_name] = Parameter(
-                name=param_name,
+                name=marked_yaml.unicode_node(param_name, node.start_mark, node.end_mark),
                 type=PackageType(pkg_name),
                 declared_when=dep_when and spec_ast.Expr(dep_when, bool),
                 doc=node)
@@ -479,7 +480,16 @@ class PackageYAML(object):
                            in_directory=self.in_directory, doc=doc)
 
     def _init_load(self, filename):
-        doc = load_yaml_from_file(filename)
+        try:
+            doc = load_yaml_from_file(filename)
+        except MarkedYAMLError as e:
+            problem = e.problem
+            # translate some problems to more user-friendly notes
+            if 'unhashable type' in e.problem:
+                problem = 'remember to always quote strings containing an {{expression}}'
+
+            raise PackageError(e.problem_mark, 'Syntax error (%s)' % problem)
+
         if doc is None:
             doc = marked_yaml.dict_node({}, None, None)
         # YAML-level pre-processing

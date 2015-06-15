@@ -237,7 +237,6 @@ class Profile(object):
 
         def visit(pkgname):
             assert isinstance(pkgname, basestring)
-            pkgname = str(pkgname)
             if pkgname in visiting:
                 raise ProfileError(pkgname, 'dependency cycle between packages, '
                                    'including package "%s"' % pkgname)
@@ -285,6 +284,7 @@ class Profile(object):
                                 in [c.expr for c in pkg_spec.constraints])
                     if required or dep_name in param_doc:
                         value = param_doc.get(dep_name, None) or dep_name  # take into account null as value
+                        value = marked_yaml.unicode_node(value, dep_name.start_mark, dep_name.end_mark)
                         dep_pkg = visit(value)
                     else:
                         # Optional and not explicitly provided. Solve this in second pass
