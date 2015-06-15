@@ -283,7 +283,7 @@ class Profile(object):
                     # constraints
                     required = ('%s is not None' % spec_ast.preprocess_package_name(param.name)
                                 in [c.expr for c in pkg_spec.constraints])
-                    if required or dep_name in param_values or dep_name in param_doc:
+                    if required or dep_name in param_doc:
                         value = param_doc.get(dep_name, None) or dep_name  # take into account null as value
                         dep_pkg = visit(value)
                     else:
