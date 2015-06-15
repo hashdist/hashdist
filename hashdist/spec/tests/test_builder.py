@@ -128,9 +128,10 @@ def test_profile_packages_section(d):
           barparam: 'fromprofile'
         packages:
            a:
+             k:      # optional dependency pulled in here
            b:
            c:
-             b: a  # pass a as the b package...
+             b: a    # pass a as the b package...
            d:
              use: c  # really just assigns d as alias for c
            e:
@@ -139,7 +140,7 @@ def test_profile_packages_section(d):
     """)
 
     dump(pjoin(d, 'pkgs/a.yaml'), dedent("""\
-        dependencies: {build: [x, +q, +y, +z], run: [x, +q, +w]}
+        dependencies: {build: [x, +q, +y, +z, +k], run: [x, +q, +w]}
         parameters:
           - name: fooparam  # default value filled in
             type: int
@@ -159,6 +160,7 @@ def test_profile_packages_section(d):
     dump(pjoin(d, 'pkgs/y.yaml'), "parameters: [{name: myval}]")
     dump(pjoin(d, 'pkgs/z.yaml'), "")
     dump(pjoin(d, 'pkgs/q.yaml'), "")
+    dump(pjoin(d, 'pkgs/k.yaml'), "")
 
     p = profile.load_profile(null_logger, profile.TemporarySourceCheckouts(None),
                              pjoin(d, "profile.yaml"))
@@ -174,6 +176,9 @@ def test_profile_packages_section(d):
     for name, pkg in pkgs.items():
         assert pkg.package == name
 
+    # k: optional dep pulled in by specifying arg with default arg
+    assert 'k' in pkgs
+    assert isinstance(pkgs['a'].k, PackageInstance)
     # x: required package not specified in profile, auto-pulled in
     assert 'x' in pkgs
     assert '_run_x' not in pkgs
@@ -229,14 +234,16 @@ def test_profile_packages_section(d):
                        'ref': 'Q'},
                       {'id': 'x/cye2gqdezpn343yduqzttawplswxdubw',
                        'ref': 'X'},
-                      {'id': 'a/cefcdsfgxmwf5aysx56yedb6zv3eiouw',
+                      {'id': 'a/47u3iou36abi2vfqudn25wlvq6ldwnyq',
                        'ref': 'A'},
                       {'id': 'b/n3inim7xqv4vkqn5oc7pop23g4uslptu',
                        'ref': 'B'},
-                      {'id': 'c/nzfy5wj3cavumi7kb3srcf352ouychrq',
+                      {'id': 'c/yw7zdyopg6ooaiw6a2bz7tkpdlxgxppy',
                        'ref': 'C'},
-                      {'id': 'e/ry4sqshmcartjaz2p2bmdmcswygh3rfv',
+                      {'id': 'e/rxw6olgk5ht5ykl5l7xzngzu5mzh3c3u',
                        'ref': 'E'},
+                      {'id': 'k/wze2cvgpxiruuadv6jiejripxe4obnlp',
+                       'ref': 'K'},
                       {'id': 'y/66vt2inbxuodtn3jilnpkoajwtsb46kk',
                        'ref': 'Y'}]},
         'name': 'profile',
