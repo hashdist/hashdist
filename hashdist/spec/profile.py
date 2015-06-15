@@ -274,7 +274,8 @@ class Profile(object):
                 elif param.has_package_type():
                     dep_name = param.name
                     if dep_name.startswith('_run_'):
-                        dep_name = dep_name[len('_run_'):]
+                        dep_name = marked_yaml.unicode_node(dep_name[len('_run_'):],
+                                                            dep_name.start_mark, dep_name.end_mark)
                     dep_pkg = None  # if left None in the end, it is optional and we don't provide id
 
                     # Do some very basic matching on constraints; this is only likely to match our

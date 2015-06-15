@@ -43,6 +43,7 @@ class BaseExpr(object):
             self.end_mark = node.end_mark
         else:
             self.source = '<string>'
+            self.start_mark = self.end_mark = None
 
 
 class Expr(BaseExpr):
@@ -56,8 +57,8 @@ class Expr(BaseExpr):
     """
 
     def __init__(self, expr, result_coercion=lambda x: x, node=None):
-        if isinstance(expr, Expr):
-            expr = expr.expr
+        assert isinstance(expr, basestring)
+        assert callable(result_coercion)
         super(Expr, self).__init__(expr, node=node)
         expr = preprocess_version_literal(expr)
         try:
@@ -208,25 +209,25 @@ class choose_value_node(object):
         self.when = when
         self.references = reduce(frozenset.union, (child.references for child in self.children), frozenset())
 
-def expr_and(x, y):
+def expr_and(x, y, node=None):
     if x.always_true():
         return y
     elif y.always_true():
         return x
     else:
-        return Expr(sexpr_and(x.expr, y.expr), bool)
+        return Expr(sexpr_and(x.expr, y.expr), bool, node=node or x)
 
-def expr_or(x, y):
+def expr_or(x, y, node=None):
     if x.always_true() or y.always_true():
         return TRUE_EXPR
     else:
-        return Expr(sexpr_or(x.expr, y.expr), bool)
+        return Expr(sexpr_or(x.expr, y.expr), bool, node=node or x)
 
 def expr_implies(when, then):
     if when.always_true():
         return then
     else:
-        return Expr(sexpr_implies(when.expr, then.expr), bool)
+        return Expr(sexpr_implies(when.expr, then.expr), bool, node=then)
 
 
 def sexpr_and(x, y):
@@ -270,6 +271,7 @@ def when_transform_yaml(doc, when=TRUE_EXPR):
     transforms it into Node, under the condition `when`.
     """
     assert when is not None
+    assert isinstance(when, Expr)
     if type(doc) is dict and len(doc) == 0:
         # Special case, it's so convenient to do foo.get(key, {})...
         return dict_node(marked_yaml.dict_node({}, None, None), when)
@@ -280,7 +282,7 @@ def when_transform_yaml(doc, when=TRUE_EXPR):
         marked_yaml.unicode_node: StrExpr,
         marked_yaml.null_node: null_node,
         marked_yaml.bool_node: bool_node}
-    return mapping[type(doc)](doc, Expr(when, result_coercion=bool))
+    return mapping[type(doc)](doc, when)
 
 def _transform_dict(doc, when):
     # Probe whether we should assume merge-in-dict or choose-a-scalar behaviour
@@ -298,7 +300,7 @@ def _transform_choose_scalar(doc, when):
         if not m:
             raise PackageError(value, "all dict entries must be a 'when'-clause if a sibling when-clause "
                                       "contains a scalar")
-        sub_when = expr_and(when, Expr(m.group(1), True))
+        sub_when = expr_and(when, Expr(m.group(1), bool, node=key))
         children.append(when_transform_yaml(value, sub_when))
     return choose_value_node(children, when)
 
@@ -312,7 +314,7 @@ def _transform_dict_merge(doc, when):
         if m:
             if not isinstance(value, dict):
                 raise PackageError(value, "'when' dict entry must contain another dict")
-            sub_when = expr_and(when, Expr(m.group(1), True))
+            sub_when = expr_and(when, Expr(m.group(1), bool, node=key))
             to_merge = _transform_dict(value, sub_when)
             for k, v in to_merge.value.items():
                 if k in result:
@@ -333,7 +335,7 @@ def _transform_list(doc, when):
             if m:
                 if not isinstance(value, list):
                     raise PackageError(value, "'when' clause within list must contain another list")
-                sub_when = expr_and(when, Expr(m.group(1), bool))
+                sub_when = expr_and(when, Expr(m.group(1), bool, node=key))
                 to_extend = _transform_list(value, sub_when)
                 result.extend(to_extend.value)
             else:

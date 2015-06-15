@@ -45,8 +45,9 @@ def parse_deps_and_constraints(doc, when=TRUE_EXPR):
     constraints = []
 
     for c in doc.get_value('constraints', []):
-        when = Expr(c.when, bool)
-        c = Expr(spec_ast.evaluate_doc(c, {}), bool)  # no when clauses *within* or variable expansions
+        assert isinstance(c, spec_ast.StrExpr)
+        when = c.when
+        c = Expr(spec_ast.evaluate_doc(c, {}), bool, node=c)  # no when clauses *within* or variable expansions
         constraints.append(expr_implies(when, c))
 
     deps_section = doc.value.get('dependencies', None)
@@ -70,7 +71,7 @@ def parse_deps_and_constraints(doc, when=TRUE_EXPR):
             parameters[param_name] = Parameter(
                 name=marked_yaml.unicode_node(param_name, node.start_mark, node.end_mark),
                 type=PackageType(pkg_name),
-                declared_when=dep_when and spec_ast.Expr(dep_when, bool),
+                declared_when=dep_when,
                 doc=node)
             if required:
                 c = expr_implies(dep_when, spec_ast.Expr(
@@ -323,7 +324,6 @@ class Package(DictRepr):
                     add_param(param.copy_with(declared_when=expr_and(parent_when, param.declared_when)),
                               default_from_self=True)
                 for constraint in parent.constraints:
-                    constraint = spec_ast.Expr(constraint, bool)
                     if parent_when is None:
                         constraints.append(constraint)
                     else:
@@ -394,10 +394,10 @@ class Package(DictRepr):
                 declared[param.name] = value
         return declared
 
-    def check_constraints(self, param_values, node=None):
+    def check_constraints(self, param_values=None):
         for c in self.constraints:
             if not eval_condition(c, param_values):
-                raise ProfileError(node, '%s package: constraint not satisfied: "%s"' % (self.name, c.expr))
+                raise ProfileError(c, '%s package: constraint not satisfied: "%s"' % (self.name, c.expr))
 
     def instantiate(self, param_values, node=None):
         package = self.pre_instantiate(param_values)
@@ -542,7 +542,7 @@ class PackageInstance(object):
         self._param_values = param_values
 
     def init(self, node=None):
-        self._spec.check_constraints(self._param_values, node)
+        self._spec.check_constraints(self._param_values)
         self._impl = PackageInstanceImpl(self)
 
     def __getattr__(self, key):
