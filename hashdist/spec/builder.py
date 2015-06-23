@@ -100,20 +100,19 @@ class ProfileBuilder(object):
         profile_list = [{"id": build_spec.artifact_id} for build_spec in self._build_specs.values()]
 
         # Topologically sort by run-time dependencies
-        def get_run_deps(pkgname):
-            return [str(param_name[len('_run_'):]) for param_name, param_value in self._packages[pkgname]._param_values.items()
-                    if param_name.startswith('_run_') and param_value is not None]
-        sorted_packages = utils.topological_sort(self._packages.keys(), get_run_deps)
+        def get_run_deps(tup):
+            return [(dep_name, dep) for dep_name, dep in tup[1]._param_values.items()
+                    if dep_name.startswith('_run_')]
+        sorted_packages = utils.topological_sort(self._packages.items(), get_run_deps)
 
         imports = []
-        for pkgname in sorted_packages:
-            imports.append({'ref': '%s' % to_env_var(pkgname),
-                            'id': self._build_specs[self._packages[pkgname]].artifact_id})
+        for dep_name, dep in sorted_packages:
+            imports.append({'ref': '%s' % to_env_var(dep_name),
+                            'id': self._build_specs[dep].artifact_id})
 
         commands = []
         install_link_rules = []
-        for pkgname in sorted_packages:
-            pkg = self._packages[pkgname]
+        for pkgname, pkg in sorted_packages:
             commands += pkg._impl.assemble_build_import_commands(pkgname)
             install_link_rules += pkg._impl.assemble_link_dsl(pkgname, '${ARTIFACT}', link_type)
         commands.extend([{"hit": ["create-links", "$in0"],
