@@ -283,8 +283,12 @@ class Profile(object):
                     # constraints
                     required = ('%s is not None' % spec_ast.preprocess_package_name(param.name)
                                 in [c.expr for c in pkg_spec.constraints])
-                    if required or dep_name in param_doc:
-                        value = param_doc.get(dep_name, None) or dep_name  # take into account null as value
+
+                    if dep_name in param_doc and isinstance(param_doc[dep_name], marked_yaml.null_node):
+                        # Explicitly passed null, don't include
+                        dep_pkg = None
+                    elif required or dep_name in param_doc:
+                        value = param_doc.get(dep_name, '') or dep_name  # empty string means dep_name
                         value = marked_yaml.unicode_node(value, dep_name.start_mark, dep_name.end_mark)
                         dep_pkg = visit(value)
                     else:

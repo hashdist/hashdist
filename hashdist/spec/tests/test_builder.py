@@ -128,7 +128,8 @@ def test_profile_packages_section(d):
           barparam: 'fromprofile'
         packages:
            a:
-             k:      # optional dependency pulled in here
+             k: k    # optional dependency pulled in here
+             m: null # explicitly set to null
            b:
            c:
              b: a    # pass a as the b package...
@@ -137,10 +138,11 @@ def test_profile_packages_section(d):
            e:
            y:
              myval: yup
+           m: # built, but should not be passed to a
     """)
 
     dump(pjoin(d, 'pkgs/a.yaml'), dedent("""\
-        dependencies: {build: [x, +q, +y, +z, +k], run: [x, +q, +w]}
+        dependencies: {build: [x, +q, +y, +z, +k, +m], run: [x, +q, +w]}
         parameters:
           - name: fooparam  # default value filled in
             type: int
@@ -161,6 +163,7 @@ def test_profile_packages_section(d):
     dump(pjoin(d, 'pkgs/z.yaml'), "")
     dump(pjoin(d, 'pkgs/q.yaml'), "")
     dump(pjoin(d, 'pkgs/k.yaml'), "")
+    dump(pjoin(d, 'pkgs/m.yaml'), "")
 
     p = profile.load_profile(null_logger, profile.TemporarySourceCheckouts(None),
                              pjoin(d, "profile.yaml"))
@@ -179,6 +182,9 @@ def test_profile_packages_section(d):
     # k: optional dep pulled in by specifying arg with default arg
     assert 'k' in pkgs
     assert isinstance(pkgs['a'].k, PackageInstance)
+    # m: built, but not passed to a
+    assert 'm' in pkgs
+    assert pkgs['a'].m is None
     # x: required package not specified in profile, auto-pulled in
     assert 'x' in pkgs
     assert '_run_x' not in pkgs
@@ -217,19 +223,15 @@ def test_profile_packages_section(d):
     pb._compute_specs()
 
     assert 'yup' in pb.get_build_script('a')
-
     spec = pb.get_profile_build_spec()
     eq_(spec.doc, {
-        'build': {
-            'commands': [
-                {'hit': ['create-links', '$in0'], 'inputs': [{'json': [
-                    {'action': 'relative_symlink',
-                     'dirs': False,
-                     'prefix': '${X_DIR}',
-                     'select': u'${X_DIR}/*/**/*',
-                     'target': '${ARTIFACT}'}]}
-                    ]},
-                {'hit': ['build-postprocess', '--write-protect']}],
+           'build': {'commands': [{'hit': ['create-links', '$in0'],
+                         'inputs': [{'json': [{'action': 'relative_symlink',
+                                               'dirs': 0,
+                                               'prefix': '${X_DIR}',
+                                               'select': '${X_DIR}/*/**/*',
+                                               'target': '${ARTIFACT}'}]}]},
+                        {'hit': ['build-postprocess', '--write-protect']}],
            'import': [{'id': 'q/deoatuqg6fqo6tcmoxvwbmtpkxitqyp6',
                        'ref': 'Q'},
                       {'id': 'x/cye2gqdezpn343yduqzttawplswxdubw',
@@ -244,7 +246,9 @@ def test_profile_packages_section(d):
                        'ref': 'E'},
                       {'id': 'k/wze2cvgpxiruuadv6jiejripxe4obnlp',
                        'ref': 'K'},
+                      {'id': 'm/woouzl2fipmvxip3yvtw43r2xc6kcy5a',
+                       'ref': 'M'},
                       {'id': 'y/66vt2inbxuodtn3jilnpkoajwtsb46kk',
                        'ref': 'Y'}]},
-        'name': 'profile',
-        'version': 'n'})
+ 'name': 'profile',
+ 'version': 'n'})
