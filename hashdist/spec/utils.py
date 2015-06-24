@@ -18,13 +18,13 @@ def substitute_profile_parameters(s, parameters):
 class GraphCycleError(Exception):
     pass
 
-def topological_sort(roots, get_deps):
+def topological_sort(roots, get_deps, key=None):
     def toposort(node):
         if node in visiting:
             raise GraphCycleError()
         if node not in visited:
             visiting.add(node)
-            for dep in sorted(get_deps(node)):
+            for dep in sorted(get_deps(node), key=key):
                 toposort(dep)
             visiting.remove(node)
             visited.add(node)
@@ -33,7 +33,7 @@ def topological_sort(roots, get_deps):
     visited = set()
     visiting = set()
     result = []
-    for node in sorted(roots):
+    for node in sorted(roots, key=key):
         toposort(node)
     return result
 

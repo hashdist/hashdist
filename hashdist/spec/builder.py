@@ -99,20 +99,27 @@ class ProfileBuilder(object):
     def get_profile_build_spec(self, link_type='relative', write_protect=True):
         profile_list = [{"id": build_spec.artifact_id} for build_spec in self._build_specs.values()]
 
-        # Topologically sort by run-time dependencies
-        def get_run_deps(tup):
-            return [(dep_name, dep) for dep_name, dep in tup[1]._param_values.items()
-                    if dep_name.startswith('_run_')]
-        sorted_packages = utils.topological_sort(self._packages.items(), get_run_deps)
+
+        # Should topologically sort by run-time dependencies, uniquely
+        # by package instance (so can't have name anywhere but must use
+        # key arg to topological_sort), finally we just have to generate
+        # package names because we could have two differently compiled
+        # packages with the same name really....
+        def get_run_deps(dep):
+            return [dep for dep_name, dep in dep._param_values.items()
+                    if dep is not None and dep_name.startswith('_run_')]
+        sorted_packages = utils.topological_sort(self._packages.values(), get_run_deps, key=lambda p: p._spec.name)
 
         imports = []
-        for dep_name, dep in sorted_packages:
+        for i, dep in enumerate(sorted_packages):
+            dep_name = 'PKG%d' % i
             imports.append({'ref': '%s' % to_env_var(dep_name),
                             'id': self._build_specs[dep].artifact_id})
 
         commands = []
         install_link_rules = []
-        for pkgname, pkg in sorted_packages:
+        for i, pkg in enumerate(sorted_packages):
+            pkgname = 'PKG%d' % i
             commands += pkg._impl.assemble_build_import_commands(pkgname)
             install_link_rules += pkg._impl.assemble_link_dsl(pkgname, '${ARTIFACT}', link_type)
         commands.extend([{"hit": ["create-links", "$in0"],
