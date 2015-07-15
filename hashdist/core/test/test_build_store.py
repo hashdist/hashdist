@@ -124,8 +124,9 @@ def test_basic(tempdir, sc, bldr, config):
         got = sorted(f.readlines())
         eq_(''.join(got), dedent('''\
         .
+        ./_hashdist
+        ./_hashdist/build.log
         ./build.json
-        ./build.log
         ./build.sh
         ./job
         ./subdir

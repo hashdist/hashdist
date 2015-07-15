@@ -111,7 +111,7 @@ are set:
     scripts.
 
 The build specification is available under ``$BUILD/build.json``, and
-stdout and stderr are redirected to ``$BUILD/build.log``. These two
+stdout and stderr are redirected to ``$BUILD/_hashdist/build.log``. These two
 files will also be present in ``$ARTIFACT`` after the build.
 
 Build artifact storage format
@@ -618,7 +618,8 @@ class ArtifactBuilder(object):
         os.mkdir(job_tmp_dir)
         job_spec = self.build_spec.doc['build']
 
-        log_filename = pjoin(build_dir, 'build.log')
+        os.mkdir(pjoin(build_dir, '_hashdist'))
+        log_filename = pjoin(build_dir, '_hashdist', 'build.log')
         self.logger.warning('Building %s, follow log with:' % self.build_spec.short_artifact_id)
         self.logger.warning('  tail -f %s' % log_filename)
         self.logger.debug('Start log output to file %s', log_filename)
