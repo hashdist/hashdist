@@ -180,7 +180,7 @@ class Status(ProfileFrontendBase):
 
     def profile_builder_action(self):
         report = self.builder.get_status_report()
-        report = sorted(report.values())
+        report = sorted(report.values(), key=lambda tup: tup[0].short_artifact_id.lower())
         for build_spec, is_built in report:
             status = 'OK' if is_built else 'needs build'
             sys.stdout.write('%-50s [%s]\n' % (build_spec.short_artifact_id, status))
