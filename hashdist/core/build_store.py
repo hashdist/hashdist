@@ -415,7 +415,9 @@ class BuildStore(object):
             ignore_patterns = ['.*\.pyc',
                                '.*\.pyo',
                                '.id',
-                               '.artifact.json']
+                               '.artifact.json',
+                               '.build.json',
+                               '.build.log.gz']
             for pattern in ignore_patterns:
                 if re.match(pattern, s):
                     return
