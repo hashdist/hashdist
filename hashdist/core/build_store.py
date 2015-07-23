@@ -429,10 +429,12 @@ class BuildStore(object):
                 with open(location_file, 'r') as f:
                     from_b = pjoin(f.read()).encode(
                         sys.getfilesystemencoding())
-            else:
+            elif os.getenv('HASHDIST_MIRROR_BLD') != None:
                 from_b =  pjoin(os.getenv('HASHDIST_MIRROR_BLD'),
                                 artifact_dir).encode(
-                                    sys.getfilesystemencoding())
+                    sys.getfilesystemencoding())
+            else:
+                return
             if not is_link and os.path.isfile(path):
                 with open(path) as f:
                     data = f.read()
