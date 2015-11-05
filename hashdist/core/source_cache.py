@@ -474,7 +474,7 @@ class GitSourceCache(object):
     def _mark_commit_as_in_use(self, repo_name, commit):
         self._ensure_branch(repo_name, 'inuse/%s' % commit, commit)
 
-    def fetch(self, url, type, commit, repo_name):
+    def fetch(self, url, type, commit, repo_name, no_check_certificate):
         assert type == 'git'
         if repo_name is None:
             raise TypeError('Need to provide repo_name when fetching git archive')
