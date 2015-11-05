@@ -266,7 +266,7 @@ class SourceCache(object):
         """
         return GitSourceCache(self).fetch_git(repository, rev, repo_name)
 
-    def fetch_archive(self, url, type=None):
+    def fetch_archive(self, url, type=None, no_check_certificate=False):
         """Fetches  a tarball without knowing the key up-front.
 
         In automated settings, :meth:`fetch` should be used instead.
@@ -283,7 +283,8 @@ class SourceCache(object):
             when this cannot be determined from the suffix of the url.
 
         """
-        return ArchiveSourceCache(self).fetch_archive(url, type, None)
+        return ArchiveSourceCache(self).fetch_archive(url, type, None,
+                no_check_certificate)
 
 
     def put(self, files):
@@ -745,11 +746,11 @@ class ArchiveSourceCache(object):
     def contains(self, type, hash):
         return os.path.exists(self.get_pack_filename(type, hash))
 
-    def fetch_from_mirrors(self, type, hash):
+    def fetch_from_mirrors(self, type, hash, no_check_certificate):
         for mirror in self.mirrors:
             url = '%s/%s/%s/%s' % (mirror, PACKS_DIRNAME, type, hash)
             try:
-                self._download_archive(url, type, hash)
+                self._download_archive(url, type, hash, no_check_certificate)
             except SourceNotFoundError:
                 continue
             else:
@@ -766,7 +767,8 @@ class ArchiveSourceCache(object):
         if expected_hash is not None:
             found = self.contains(type, expected_hash)
             if not found:
-                found = self.fetch_from_mirrors(type, expected_hash)
+                found = self.fetch_from_mirrors(type, expected_hash,
+                        no_check_certificate)
             if found:
                 return '%s:%s' % (type, expected_hash)
         return self._download_archive(url, type, expected_hash,
