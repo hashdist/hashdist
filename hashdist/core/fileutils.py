@@ -26,10 +26,8 @@ def silent_copy(src, dst):
             shutil.copytree(src, dst)
         else:
             shutil.copy(src, dst)
-    except OSError:
-        if not filecmp.cmp(src, dst):
-            raise
-
+    except:
+        pass
 
 def silent_relative_symlink(src, dst):
     try:
