@@ -405,7 +405,7 @@ class BuildStore(object):
             self.logger.warning(msg)
             raise RemoteBuildStoreFetchError(msg)
         os.chmod(temp_path, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
-        subprocess.check_call(['tar', 'xzf', temp_path], cwd=self.artifact_root)
+        subprocess.check_call(['tar', 'xzvf', temp_path], cwd=self.artifact_root)
         os.remove(temp_path)
         def relocate(artifact_dir, path):
             artifact_full_path = pjoin(self.artifact_root, artifact_dir)
