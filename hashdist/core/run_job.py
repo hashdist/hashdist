@@ -679,7 +679,7 @@ class CommandTreeExecution(object):
                 sys.stderr.write('  %s\n' % args)
                 sys.stderr.write('\n')
                 sys.stderr.write('When you are done, "exit 1" to abort build, or "exit 0" to continue.\n\n')
-                proc = subprocess.Popen([self.debug_shell, '--noprofile', '--rcfile', rcfile])
+                proc = subprocess.Popen(['env', '-i', self.debug_shell, '--noprofile', '--rcfile', rcfile])
                 retcode = proc.wait()
                 if retcode != 0:
                     self.logger.error("Debug build manually aborted")
