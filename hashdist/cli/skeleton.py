@@ -100,7 +100,8 @@ class SkeletonPypi(object):
             ctx.logger.error('Could not find sdist distribution in URLs.')
             return 2
 
-        key = store.fetch_archive(archive_url)
+        key = store.fetch_archive(archive_url,
+                no_check_certificate=args.no_check_certificate)
 
         # todo - discover build dependencies
         build_dependencies = []
