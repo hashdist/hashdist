@@ -70,6 +70,10 @@ class Fetch(object):
         ap.add_argument('--type', type=str, help='What kind of archive')
         ap.add_argument('url', help='Local or remote path/URL to archive')
         ap.add_argument('key', nargs='?', help='Expected key of archive')
+        ap.add_argument(
+            '-N', '--no-check-certificate', default=False, action='store_true',
+            help='Skip SSL certification verification for downloading over HTTPS.'
+        )
 
     @staticmethod
     def run(ctx, args):
@@ -77,7 +81,8 @@ class Fetch(object):
         # Simple heuristic for whether to prepend file: to url or not;
         # could probably do a better job
         args.url = as_url(args.url)
-        key = store.fetch_archive(args.url, args.type)
+        key = store.fetch_archive(args.url, args.type,
+                args.no_check_certificate)
         sys.stderr.write('\n')
         sys.stdout.write('sources:\n')
         sys.stdout.write('- key: %s\n' % key)
