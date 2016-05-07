@@ -18,6 +18,8 @@ from ..exceptions import ProfileError
 def gitify(dir):
     with working_directory(dir):
         subprocess.check_call(['git', 'init'], stdout=open(os.devnull, 'wb'))
+        subprocess.check_call(['git', 'config', 'user.name', 'Hashdist User'], stdout=open(os.devnull, 'wb'))
+        subprocess.check_call(['git', 'config', 'user.email', 'hashdistuser@example.com'], stdout=open(os.devnull, 'wb'))
         subprocess.check_call(['git', 'add', '.'], stdout=open(os.devnull, 'wb'))
         subprocess.check_call(['git', 'commit', '-m', 'Initial commit'], stdout=open(os.devnull, 'wb'))
         p = subprocess.Popen(['git', 'rev-parse', 'HEAD'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)

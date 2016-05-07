@@ -113,6 +113,8 @@ def make_mock_git_repo(submodules=None):
     with working_directory(mock_git_repo):
         repo = os.path.join(mock_git_repo, '.git')
         git('init', repo=repo)
+        git('config', 'user.name', 'Hashdist User', repo=repo)
+        git('config', 'user.email', 'hashdistuser@example.com', repo=repo)
         cat('README', 'First revision')
         git('add', 'README', repo=repo)
         if submodules:
