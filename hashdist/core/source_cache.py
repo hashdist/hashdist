@@ -900,6 +900,25 @@ class TarballHandler(object):
         return StringIO(archive_data)
 
 
+class TarSubprocessHandler(TarballHandler):
+    """
+    Call external tar
+
+    This handler should only be used as fallback, it lacks some
+    features and/or depends on the vagueries of the host tar.
+    """
+    
+    def verify(self, filename):
+        return True
+
+    def unpack(self, infile, target_dir, hash):
+        self.logger.debug('Calling tar to unpack %s -> %s', infile, target_dir)
+        try:
+            subprocess.check_call(['tar', 'xf', infile.name, '-C', target_dir, '--strip-components=1'])
+        except subprocess.CalledProcessError:
+            raise CorruptSourceCacheError("Archive corrupt and/or cannot be unpacked: '%s'" % filename)
+
+
 class TarGzHandler(TarballHandler):
     type = 'tar.gz'
     exts = ['tar.gz', 'tgz']
@@ -911,6 +930,7 @@ class TarBz2Handler(TarballHandler):
     exts = ['tar.bz2', 'tb2', 'tbz2']
     read_mode = 'r:bz2'
 
+
 class TarXzHandler(TarballHandler):
     type = 'tar.xz'
     exts = ['tar.xz']
@@ -920,21 +940,23 @@ class TarXzHandler(TarballHandler):
     # XXX: so we use lzma module for Python 2 compatibility.
 
     def tarfileobj_from_name(self, filename):
-        try:
-            import lzma
-        except ImportError:
-            self.logger.error("Please install pyliblzma")
         return lzma.LZMAFile(filename)
 
     def tarfileobj_from_data(self, archive_data):
         # XXX: tarfile has built-in 'r:xz' support only in Python 3, so we use lzma module
         # XXX: lzma.open() and lzma.LZMAFile() accept only file names, so we uncompress in memory
-        try:
-            import lzma
-        except ImportError:
-            self.logger.error("Please install pyliblzma")
         from StringIO import StringIO
         return StringIO(lzma.LZMADecompressor().decompress(archive_data))
+
+
+try:
+    import lzma
+except ImportError:
+    # OSX does not include pyliblzma, but OSX tar can unpack tar.xz
+    class TarXzHandler(TarSubprocessHandler):
+        type = 'tar.xz'
+        exts = ['tar.xz']
+
 
 class ZipHandler(object):
     type = 'zip'
