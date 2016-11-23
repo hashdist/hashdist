@@ -424,7 +424,7 @@ class BuildStore(object):
 
             artifact_dir_b = artifact_dir.encode(sys.getfilesystemencoding())
             is_link = os.path.islink(path)
-            location_file = pjoin(artifact_dir, 'location')
+            location_file = pjoin(artifact_full_path, 'location')
             if os.path.isfile(location_file):
                 with open(location_file, 'r') as f:
                     from_b = pjoin(f.read()).encode(
