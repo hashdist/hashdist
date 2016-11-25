@@ -351,6 +351,8 @@ class BuildStore(object):
 
     def _download_artifact(self, url, path, name, digest):
         import subprocess
+        import glob
+        from .build_tools import _check_call
         # Provide a special case for local files
         use_urllib = not SIMPLE_FILE_URL_RE.match(url)
         if not use_urllib:
@@ -441,15 +443,41 @@ class BuildStore(object):
                 if artifact_dir_b in data:
                     to_b = pjoin(self.artifact_root,artifact_dir).encode(
                         sys.getfilesystemencoding())
-                    new_data = data.replace(from_b, to_b)
-                    self.logger.warning(
-                        'File contains reference  to "%s", which is being replaced with : %s' % (from_b, to_b))
-                    st = os.stat(path)
-                    os.chmod( path, st.st_mode | stat.S_IWRITE )
-                    os.unlink( path )
-                    with open(path,'w') as f:
-                        data = f.write(new_data)
-                    os.chmod( path, st.st_mode)
+                    to_b = os.path.split(os.path.split(to_b)[0])[0]
+                    from_b = os.path.split(os.path.split(from_b)[0])[0]
+                    if '\x7fELF' in data[:4]:
+                        self.logger.warning(os.getenv('PROFILE_BIN_DIR'))
+                        self.logger.warning(
+                            'ELF contains reference  to "%s", which is being replaced with : %s' % (from_b, to_b))
+                        #if 'PATCHELF' not in env:
+                        #    raise Exception('PATCHELF not set (Linux relocatable packages depend on patchelf)')
+                        patchelf = glob.glob(os.path.join(to_b,'patchelf','*','bin','patchelf'))[0]
+                        
+                        # OK, we have an ELF, patch it. We first shrink the RPATH to what is actually used.
+                        filename=path
+                        #_check_call(logger, [patchelf, '--shrink-rpath', filename])
+                        
+                        # Then grab the RPATH, replace old location
+                        out = _check_call(self.logger, [patchelf, '--print-rpath', filename]).strip()
+                        if out:
+                            # non-empty RPATH, patch it
+                            abs_rpaths_str = out.strip()
+                            abs_rpaths = abs_rpaths_str.split(':')
+                            d = os.path.dirname(os.path.realpath(filename))
+                            new_abs_rpaths = [abs_rpath.replace(from_b,to_b) for abs_rpath in abs_rpaths]
+                            new_abs_rpaths_str = ':'.join(new_abs_rpaths)
+                            self.logger.warning('Rewriting RPATH on "%s" from "%s" to "%s"' % (filename, abs_rpaths_str, new_abs_rpaths_str))
+                            _check_call(self.logger, [patchelf, '--set-rpath', new_abs_rpaths_str, filename])
+                    else:
+                        new_data = data.replace(from_b, to_b)
+                        self.logger.warning(
+                            'File contains reference  to "%s", which is being replaced with : %s' % (from_b, to_b))
+                        st = os.stat(path)
+                        os.chmod( path, st.st_mode | stat.S_IWRITE )
+                        os.unlink( path )
+                        with open(path,'w') as f:
+                            data = f.write(new_data)
+                        os.chmod( path, st.st_mode)
         for dirpath, dirnames, filenames in os.walk(path, topdown=False):
             st = os.stat(dirpath)
             os.chmod(dirpath, st.st_mode | stat.S_IWRITE)
