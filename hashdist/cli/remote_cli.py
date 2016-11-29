@@ -44,13 +44,15 @@ def makeRemoteConfigDir(name, ctx):
 @register_subcommand
 class Remote(object):
 
-    """Manage remote build store and source cache.
+    """Manage remote build store and source caches.
 
-    Currently, only cloud-based and ssh server storage is supported. See
-    https://github.com/netheosgithub/pcs_api for information on cloud-based
-    storage.
+    Currently, only pcs_api (https://github.com/netheosgithub/pcs_api)
+    and ssh server protocols are supported for pushing to remotes with
+    `hit push`. Explicit `hit pull` support is not yet
+    implemented. Instead, the remotes must expose src or bld
+    directories via http to be used in builds.
 
-    Example (Cloud):: **First**, create a dropbox app for your remote at
+    Example (Dropbox):: **First**, create a dropbox app for your remote at
     https://www.dropbox.com/developers/apps. See the wiki here for graphical
     insructions https://github.com/hashdist/hashdist/wiki/How-to-add-remotes.
     Next, add the remote:
@@ -66,6 +68,9 @@ class Remote(object):
 
         $ hit remote add remote_name --ssh="username@server:remote_dir/"
 
+    Example (Source mirror)::
+
+        $ hit remote add https://dl.dropboxusercontent.com/u/26353144/hashdist_src/src --objects="source"
     """
     command = 'remote'
 
@@ -183,6 +188,10 @@ class Remote(object):
                 if args.check:
                     remoteHandler = RemoteHandlerSSH(remote_config_path, ctx)
                     remoteHandler.check()
+            if args.objects in ['source', 'build']:
+                remote_type_path = pjoin(remote_config_path, args.objects)
+                with open(remote_type_file) as f:
+                    f.write("Existence of this file restricts push to "+args.objects+" objects only")
         elif args.subcommand == 'remove':
             ctx.logger.info("Attempting to remove remote")
             if (args.name.startswith('http://') or
@@ -284,13 +293,24 @@ class Remote(object):
 @register_subcommand
 class Push(object):
 
-    """
-    Push artifacts to remote build store
+    """Push artifacts to remote build store
 
-    Example::
+    Example (defaults):: Pushes to 'primary'. If 'primary' was added
+    with --objects='source' or --objects='build', then the default
+    command only objects of that type which were built since the last
+    push. Otherwise it pushes everything.
 
         $ hit push
 
+    Example (source only):: This will always push source objects built
+    since the last push of source objects.
+
+        $ hit push --objects='source'
+
+    Example (force):: You can override manifest on the remote and push
+    artifacts with
+
+        $ hit push --force
     """
     command = 'push'
 
@@ -319,6 +339,15 @@ class Push(object):
                 remoteHandler = RemoteHandlerSSH(remote_config_path, ctx)
             else:
                 remoteHandler = RemoteHandlerPCS(remote_config_path, ctx)
+        if args.objects is 'build_and_source':
+            if os.path.isfile(pjoin(remote_config_path,'build')):
+                args.objects = 'build'
+                ctx.logger.warn(args.name + " is a build cache")
+                ctx.logger.warn("Use --objects='source' to override")
+            if os.path.isfile(pjoin(remote_config_path,'source')):
+                args.objects = 'source'
+                ctx.logger.warn(args.name + " is a source cache")
+                ctx.logger.warn("Use --objects='build' to override")
         if args.objects in ['build', 'build_and_source']:
             store = BuildStore.create_from_config(ctx.get_config(), ctx.logger)
             os.chdir(store.artifact_root)

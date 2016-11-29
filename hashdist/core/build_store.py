@@ -145,8 +145,8 @@ import tempfile
 import urllib2
 import stat
 
-from .source_cache import SourceCache,ProgressBar
-from .hasher import hash_document, prune_nohash,HashingWriteStream
+from .source_cache import SourceCache, ProgressBar
+from .hasher import hash_document, prune_nohash, HashingWriteStream
 from .common import (InvalidBuildSpecError, BuildFailedError,
                      IllegalBuildStoreError,
                      json_formatting_options, SHORT_ARTIFACT_ID_LEN,
