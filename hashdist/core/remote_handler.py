@@ -141,6 +141,12 @@ class RemoteHandlerPCS(HandlerBase):
         app_info_path = pjoin(remote_config_path, "app_info_data.txt")
         user_credentials_path = pjoin(remote_config_path,
                                       "user_credentials_data.txt")
+        if not pexists(remote_config_path):
+            msg = 'No remote named '+os.path.split(remote_config_path)[1]
+            ctx.logger.critical(msg)
+            msg = "Run 'hit remote add ...'"
+            ctx.logger.critical(msg)
+            exit(1)
         if not pexists(app_info_path):
             msg = 'No remote application information: ' \
                   + repr(app_info_path)

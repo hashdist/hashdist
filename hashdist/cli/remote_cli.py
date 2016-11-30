@@ -188,9 +188,9 @@ class Remote(object):
                 if args.check:
                     remoteHandler = RemoteHandlerSSH(remote_config_path, ctx)
                     remoteHandler.check()
-            if args.objects in ['source', 'build']:
+            if (args.pcs or args.ssh) and args.objects in ['source', 'build']:
                 remote_type_path = pjoin(remote_config_path, args.objects)
-                with open(remote_type_file) as f:
+                with open(remote_type_path) as f:
                     f.write("Existence of this file restricts push to "+args.objects+" objects only")
         elif args.subcommand == 'remove':
             ctx.logger.info("Attempting to remove remote")
@@ -245,7 +245,10 @@ class Remote(object):
                 sys.stdout.write(source_mirror.values()[-1] + " (fetch:src)\n")
             for build_mirror in config['build_stores'][1:]:
                 sys.stdout.write(build_mirror.values()[-1] + " (fetch:bld)\n")
-            for remote_name in os.listdir(pjoin(DEFAULT_STORE_DIR, "remotes")):
+            remotes_dir_list = []
+            if pexists(pjoin(DEFAULT_STORE_DIR, "remotes")):
+                remotes_dir_list = os.listdir(pjoin(DEFAULT_STORE_DIR, "remotes"))
+            for remote_name in remotes_dir_list:
                 sys.stdout.write(remote_name + " (push)\n")
                 if args.verbose or args.check:
                     import pprint
