@@ -339,15 +339,14 @@ def postprocess_sh_script(logger, patterns, artifact_dir, filename):
     with open(filename, 'w') as f:
         f.write(''.join(lines))
 
-def insert_location(logger, artifact_dir, filename):
+def insert_location(logger, artifact_dir, path):
     """
     Insert the build artificat cache location
     """
-    if not filename.startswith(artifact_dir):
-        raise ValueError('filename must be prefixed with artifact_dir')
-    logger.info("Writing "+artifact_dir+" to location file")
-    with open(pjoin(artifact_dir,"location"), "w") as  f:
-        f.write(artifact_dir)
+    if artifact_dir == path:
+        logger.info("Writing "+artifact_dir+" to location file")
+        with open(pjoin(artifact_dir,"location"), "w") as  f:
+            f.write(artifact_dir)
 
 def check_relocatable(logger, ignore_patterns, artifact_dir, filename):
     """

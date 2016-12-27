@@ -92,7 +92,13 @@ def robust_rmtree(path, logger=None, max_retries=6):
                 logger.info('Retrying after %d seconds' % dt)
             time.sleep(dt)
             dt *= 2
-
+        except UnicodeDecodeError:
+            if logger:
+                logger.info('UnicodeDecodeError, unable to remove path: %s' % path)
+                logger.info('Trying to explicitly encode')
+            path = path.decode("utf-8").encode("utf-8")
+            if logger:
+                logger.info('Now trying path: %s' % path)
     # Final attempt, pass any Exceptions up to caller.
     shutil.rmtree(path)
 
