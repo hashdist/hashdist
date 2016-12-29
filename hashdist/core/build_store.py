@@ -380,11 +380,11 @@ class BuildStore(object):
         try:
             f = os.fdopen(temp_fd, 'wb')
             tee = HashingWriteStream(hashlib.sha256(), f)
-            # if use_urllib:
-            #     if 'Content-Length' in stream.headers:
-            #         progress = ProgressBar(int(stream.headers["Content-Length"]))
-            #     else:
-            #         progress = ProgressSpinner()
+            if use_urllib:
+                if 'Content-Length' in stream.headers:
+                    progress = ProgressBar(int(stream.headers["Content-Length"]), logger=self.logger)
+                else:
+                    progress = ProgressSpinner(logger=self.logger)
             try:
                 n = 0
                 while True:
@@ -392,13 +392,13 @@ class BuildStore(object):
                     if not chunk: break
                     if use_urllib:
                         n += len(chunk)
-                        # progress.update(n)
+                        progress.update(n)
                     tee.write(chunk)
             finally:
                 stream.close()
                 f.close()
-                # if use_urllib:
-                #     progress.finish()
+                if use_urllib:
+                    progress.finish()
         except Exception as e:
             # Remove temporary file if there was a failure
             os.unlink(temp_path)

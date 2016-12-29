@@ -100,7 +100,7 @@ from timeit import default_timer as clock
 import contextlib
 import urlparse
 from contextlib import closing
-
+import logging
 from .common import working_directory
 from .hasher import hash_document, format_digest, HashingReadStream, HashingWriteStream
 from .fileutils import silent_makedirs
@@ -134,13 +134,14 @@ class SecurityError(SourceCacheError):
 
 class ProgressBar(object):
 
-    def __init__(self, total_size, bar_length=25):
+    def __init__(self, total_size, logger, bar_length=25):
         """
         total_size ... the size in bytes of the file to be downloaded
         """
         self._total_size = total_size
         self._bar_length = bar_length
         self._t1 = clock()
+        self.logger = logger
 
     def update(self, current_size):
         """
@@ -165,26 +166,31 @@ class ProgressBar(object):
         msg = "\r[" + "="*f1 + " "*f2 + "] %4.1f%% (%.1fMB of %.1fMB) %s  " % \
                 (percent, current_size / 1024.**2, self._total_size / 1024.**2,
                         rate_eta_str)
-        sys.stdout.write(msg)
-        sys.stdout.flush()
+        if self.logger.level <= logging.DEBUG:
+            sys.stdout.write(msg)
+            sys.stdout.flush()
 
     def finish(self):
-        sys.stdout.write("\n")
+        if self.logger.level <= logging.DEBUG:
+            sys.stdout.write("\n")
 
 class ProgressSpinner(object):
     """Replacement for ProgressBar when we don't know the file length."""
     ANIMATE = ['-', '/', '|', '\\']
 
-    def __init__(self):
+    def __init__(self, logger):
         self._i = 0
+        self.logger = logger
 
     def update(self, current_size):
-        sys.stdout.write('\r{}'.format(self.ANIMATE[self._i]))
-        sys.stdout.flush()
-        self._i = (self._i + 1) % len(self.ANIMATE)
+        if self.logger.level <= logging.DEBUG:
+            sys.stdout.write('\r{}'.format(self.ANIMATE[self._i]))
+            sys.stdout.flush()
+            self._i = (self._i + 1) % len(self.ANIMATE)
 
     def finish(self):
-        sys.stdout.write("\n")
+        if self.logger.level <= logging.DEBUG:
+            sys.stdout.write("\n")
 
 def mkdir_if_not_exists(path):
     try:
@@ -690,7 +696,6 @@ class ArchiveSourceCache(object):
                 raise SourceNotFoundError(str(e))
         else:
             # Make request.
-            sys.stderr.write('Downloading %s...\n' % url)
             try:
                 stream = urllib2.urlopen(url)
             except urllib2.HTTPError, e:
@@ -709,11 +714,12 @@ class ArchiveSourceCache(object):
         try:
             f = os.fdopen(temp_fd, 'wb')
             tee = HashingWriteStream(hashlib.sha256(), f)
-            # if use_urllib:
-            #     if 'Content-Length' in stream.headers:
-            #         progress = ProgressBar(int(stream.headers["Content-Length"]))
-            #     else:
-            #         progress = ProgressSpinner()
+            if use_urllib:
+                if self.logger.level > logging.DEBUG:
+                    if 'Content-Length' in stream.headers:
+                        progress = ProgressBar(int(stream.headers["Content-Length"]),logger=self.logger)
+                    else:
+                        progress = ProgressSpinner(logger=self.logger)
             try:
                 n = 0
                 while True:
@@ -721,13 +727,13 @@ class ArchiveSourceCache(object):
                     if not chunk: break
                     if use_urllib:
                         n += len(chunk)
-                        # progress.update(n)
+                        progress.update(n)
                     tee.write(chunk)
             finally:
                 stream.close()
                 f.close()
-                # if use_urllib:
-                #     progress.finish()
+                if use_urllib:
+                    progress.finish()
         except Exception as e:
             # Remove temporary file if there was a failure
             os.unlink(temp_path)
