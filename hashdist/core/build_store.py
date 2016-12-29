@@ -366,11 +366,11 @@ class BuildStore(object):
                 stream = urllib2.urlopen(url)
             except urllib2.HTTPError, e:
                 msg = "urllib failed to download (code: %d): %s" % (e.code, url)
-                self.logger.warning(msg)
+                self.logger.info(msg)
                 raise RemoteBuildStoreFetchError(msg)
             except urllib2.URLError, e:
                 msg = "urllib failed to download (reason: %s): %s" % (e.reason, url)
-                self.logger.warning(msg)
+                self.logger.info(msg)
                 raise RemoteBuildStoreFetchError(msg)
 
         # Download file to a temporary file within self.packs_path, while hashing
