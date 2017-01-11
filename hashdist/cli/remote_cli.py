@@ -460,7 +460,7 @@ class Push(object):
                 skipping = ''
                 pushing = ''
                 for subdir in [pjoin('packs', pack_type) for
-                               pack_type in ['tar.bz2', 'tar.gz', 'zip']]:
+                               pack_type in ['tar.bz2', 'tar.gz', 'tar.xz', 'zip']]:
                     for source_pack in os.listdir(pjoin(cache.cache_path,
                                                         subdir)):
                         if (subdir in local_manifest and
