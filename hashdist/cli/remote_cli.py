@@ -490,7 +490,7 @@ class Push(object):
                 ctx.logger.info("Calculating which packages to push")
                 push_manifest = {}
                 for subdir in [pjoin('packs', pack_type)
-                               for pack_type in ['tar.bz2', 'tar.gz', 'zip']]:
+                               for pack_type in ['tar.bz2', 'tar.gz', 'tar.xz', 'zip']]:
                     if subdir not in manifest:
                         manifest[subdir] = []
                     for source_pack in os.listdir(pjoin(cache.cache_path,
