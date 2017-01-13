@@ -436,16 +436,18 @@ class BuildStore(object):
                     sys.getfilesystemencoding())
             else:
                 return
+            from_b_parent = os.path.split(os.path.split(os.path.split(from_b)[0])[0])[0]
             if not is_link and os.path.isfile(path):
                 with open(path) as f:
                     data = f.read()
-                if artifact_dir_b in data:
+                if from_b_parent in data or from_b in data:
                     to_b = pjoin(self.artifact_root,artifact_dir).encode(
                         sys.getfilesystemencoding())
                     to_b = os.path.split(os.path.split(to_b)[0])[0]
+                    to_b_parent = os.path.split(to_b)[0]
                     from_b = os.path.split(os.path.split(from_b)[0])[0]
                     if '\x7fELF' in data[:4]:
-                        self.logger.debug(
+                        self.logger.info(
                             'ELF contains reference  to "%s", which is being replaced with : %s' % (from_b, to_b))
                         #if 'PATCHELF' not in env:
                         #    raise Exception('PATCHELF not set (Linux relocatable packages depend on patchelf)')
@@ -456,19 +458,24 @@ class BuildStore(object):
                         #_check_call(logger, [patchelf, '--shrink-rpath', filename])
                         
                         # Then grab the RPATH, replace old location
-                        out = _check_call(self.logger, [patchelf, '--print-rpath', filename]).strip()
+                        try:
+                            out = _check_call(self.logger, [patchelf, '--print-rpath', filename]).strip()
+                        except:
+                            out = False#did our best...
                         if out:
                             # non-empty RPATH, patch it
                             abs_rpaths_str = out.strip()
                             abs_rpaths = abs_rpaths_str.split(':')
                             d = os.path.dirname(os.path.realpath(filename))
                             new_abs_rpaths = [abs_rpath.replace(from_b,to_b) for abs_rpath in abs_rpaths]
+                            new_abs_rpaths = [abs_rpath.replace(from_b_parent,to_b_parent) for abs_rpath in new_abs_rpaths]
                             new_abs_rpaths_str = ':'.join(new_abs_rpaths)
-                            self.logger.debug('Rewriting RPATH on "%s" from "%s" to "%s"' % (filename, abs_rpaths_str, new_abs_rpaths_str))
+                            self.logger.info('Rewriting RPATH on "%s" from "%s" to "%s"' % (filename, abs_rpaths_str, new_abs_rpaths_str))
                             _check_call(self.logger, [patchelf, '--set-rpath', new_abs_rpaths_str, filename])
                     else:
                         new_data = data.replace(from_b, to_b)
-                        self.logger.debug(
+                        new_data = new_data.replace(from_b_parent, to_b_parent)
+                        self.logger.info(
                             'File contains reference  to "%s", which is being replaced with : %s' % (from_b, to_b))
                         st = os.stat(path)
                         os.chmod( path, st.st_mode | stat.S_IWRITE )
