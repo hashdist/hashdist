@@ -234,7 +234,9 @@ class PackageSpec(object):
         commands = list(dependency_commands)
         commands.append({"set": "BASH", "nohash_value": parameters['BASH']})
         if 'PATH' in parameters:
-            commands.insert(0, {"set": "PATH", "nohash_value": parameters['PATH']})
+            commands.insert(0, {"set": "PATH", "nohash_value": parameters['PATH'].rstrip()})
+        if 'PKG_CONFIG_PATH' in parameters:
+            commands.insert(0, {"set": "PKG_CONFIG_PATH", "nohash_value": parameters['PKG_CONFIG_PATH'].rstrip()})
         commands.append({"cmd": ["$BASH", "_hashdist/build.sh"]})
         commands.extend(postprocess_commands)
 
